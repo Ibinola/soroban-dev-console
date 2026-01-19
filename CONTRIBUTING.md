@@ -103,9 +103,4 @@ We are committed to providing a friendly, safe, and welcoming environment for al
 
 ---
 
-## ❓ Need Help?
-
-- **Questions?** Open a [GitHub Discussion](https://github.com/Ibinola/soroban-dev-console/discussions).
-- **Chat:** Join the [Drips Discord](https://discord.gg/BakDKKDpHF) or [Stellar Developer Discord](https://discord.gg/stellardev).
-
 Happy Coding! 🚀
