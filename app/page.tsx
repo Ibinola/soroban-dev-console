@@ -6,7 +6,7 @@ export default function Home() {
             <div className="space-y-4 text-center">
                 <h1 className="text-4xl font-bold">Soroban DevConsole</h1>
                 <p className="text-muted-foreground">
-                    Wave #1 - Building the foundation
+                    Build, test, and monitor Soroban smart contracts without the CLI.
                 </p>
                 <div className="flex gap-2 justify-center">
                     <Button>Connect Wallet</Button>
