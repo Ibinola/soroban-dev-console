@@ -1,3 +1,4 @@
+import { ConnectWalletButton } from "@/components/wallet-connect";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
@@ -9,7 +10,7 @@ export default function Home() {
                     Build, test, and monitor Soroban smart contracts without the CLI.
                 </p>
                 <div className="flex gap-2 justify-center">
-                    <Button>Connect Wallet</Button>
+                    <ConnectWalletButton />
                     <Button variant="secondary">View Docs</Button>
                 </div>
             </div>
