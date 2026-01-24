@@ -1,7 +1,7 @@
 'use client';
 
 import { signTransaction } from '@stellar/freighter-api'; // Assuming Freighter for now
-import { Contract, SorobanRpc, TimeoutInfinite, TransactionBuilder } from '@stellar/stellar-sdk';
+import { Contract, rpc as SorobanRpc, TimeoutInfinite, TransactionBuilder } from '@stellar/stellar-sdk';
 import { Loader2, Play, Plus, Send, Terminal, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -62,7 +62,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       // Build a basic transaction just for simulation
       const account = await server.getAccount(source).catch(() => null);
       // Fallback for non-existent account (common in simulation)
-      const sequence = account ? account.sequence : '0';
+      const sequence = account ? account.sequenceNumber() : '0';
 
       const tx = new TransactionBuilder(
         // @ts-ignore - Minimal account object for builder
@@ -78,7 +78,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       if (SorobanRpc.Api.isSimulationSuccess(sim)) {
         // We'll just dump the result XDR to string for now
         // In a real app, use scValToNative(sim.result.retval)
-        setResult(`Success! Cost: ${sim.cost.cpuInsns} CPU. Result XDR available.`);
+        setResult(`Simulation Success! Result XDR available.`);
       } else {
         setResult(`Simulation Failed: ${sim.error || 'Unknown error'}`);
       }
@@ -124,16 +124,16 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       }
 
       // 2. Prepare transaction data (resources)
-      const preparedTx = await server.prepareTransaction(tx, sim);
+      const preparedTx = SorobanRpc.assembleTransaction(tx, sim).build();
 
       // 3. Sign with Wallet (Freighter)
-      const signedXdr = await signTransaction(preparedTx.toXDR(), {
-        network: network.id === 'mainnet' ? 'PUBLIC' : 'TESTNET',
+      const signedResult = await signTransaction(preparedTx.toXDR(), {
+        networkPassphrase: network.networkPassphrase,
       });
 
       // 4. Submit
       const sendRes = await server.sendTransaction(
-        new TransactionBuilder.fromXDR(signedXdr, network.networkPassphrase)
+        TransactionBuilder.fromXDR(signedResult.signedTxXdr, network.networkPassphrase)
       );
 
       if (sendRes.status !== 'PENDING') {
