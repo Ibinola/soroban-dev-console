@@ -21,12 +21,12 @@ import {
 const items = [
     {
         title: "Dashboard",
-        url: "#",
+        url: "/account",
         icon: LayoutDashboard,
     },
     {
         title: "Contract Explorer",
-        url: "#",
+        url: "/contracts",
         icon: FileCode,
     },
     {
