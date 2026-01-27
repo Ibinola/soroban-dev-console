@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sheet"
 
 import { Menu } from "lucide-react"
+import { ModeToggle } from "./mode-toggle"
 
 export function SiteHeader() {
   return (
@@ -31,6 +32,7 @@ export function SiteHeader() {
           {/* Desktop View */}
           <div className="hidden md:flex items-center gap-4">
             <NetworkSwitcher />
+            <ModeToggle />
             <ConnectWalletButton />
           </div>
 
@@ -50,6 +52,12 @@ export function SiteHeader() {
 
               <div className="flex flex-col gap-4 mt-8 px-2">
                 <NetworkSwitcher />
+
+                <div className="flex justify-between items-center">
+                  <span>Theme</span>
+                  <ModeToggle />
+                </div>
+
                 <ConnectWalletButton />
               </div>
             </SheetContent>
