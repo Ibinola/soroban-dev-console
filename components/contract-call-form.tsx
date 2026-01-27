@@ -5,7 +5,7 @@ import {
   Contract,
   TransactionBuilder,
   TimeoutInfinite,
-  SorobanRpc,
+  rpc as SorobanRpc,
 } from '@stellar/stellar-sdk';
 import {
   Play,
@@ -15,7 +15,7 @@ import {
   Loader2,
   Terminal,
   Save,
-  Bookmarks,
+  Bookmark,
 } from 'lucide-react';
 import { useWallet } from '@/store/useWallet';
 import { useNetworkStore } from '@/store/useNetworkStore';
@@ -99,8 +99,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       const tx = new TransactionBuilder(
         {
-          accountId: source,
-          sequenceNumber: sequence,
+          accountId: () => source,
+          sequenceNumber: () => sequence,
           incrementSequenceNumber: () => {},
         },
         { fee: '100', networkPassphrase: network.networkPassphrase },
@@ -113,12 +113,15 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       if (SorobanRpc.Api.isSimulationSuccess(sim)) {
         setResult(`Simulation Success! Result XDR available.`);
+        toast.success(`Simulation Success!`);
       } else {
         setResult(`Simulation Failed: ${sim.error || 'Unknown error'}`);
+        toast.error(`Simulation Failed: ${sim.error || 'Unknown error'}`);
       }
     } catch (e: any) {
       console.error(e);
       setResult(`Error: ${e.message}`);
+      toast.error(`Simulation Error: ${e.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -177,6 +180,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     } catch (e: any) {
       console.error(e);
       setResult(`Submission Error: ${e.message}`);
+      toast.error(`Submission Error: ${e.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -266,7 +270,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               <div className="w-[120px]">
                 <Select
                   value={arg.type}
-                  onValueChange={(v) => updateArg(arg.id, 'type', v)}
+                  onValueChange={(v: ArgType) => updateArg(arg.id, 'type', v)}
                 >
                   <SelectTrigger>
                     <SelectValue />

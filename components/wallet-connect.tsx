@@ -43,15 +43,16 @@ export function ConnectWalletButton() {
             if (type === "freighter") await connectFreighter();
             if (type === "albedo") await connectAlbedo();
             setIsOpen(false);
+            toast.success("Wallet connected successfully!");
         } catch (error) {
-            alert("Failed to connect wallet. Check console for details.");
+            toast.error("Failed to connect wallet. Check console for details.");
         }
     };
 
     const handleCopy = () => {
         if (address) {
             navigator.clipboard.writeText(address);
-            // Optional: Toast notification here
+            toast.success("Address copied to clipboard");
         }
     };
 

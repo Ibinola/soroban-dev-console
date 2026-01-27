@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Horizon } from '@stellar/stellar-sdk';
 import { useWallet } from '@/store/useWallet';
-import { useNetworkStore, NetworkId } from '@/store/useNetworkStore';
+import { useNetworkStore } from '@/store/useNetworkStore';
 import {
     Activity,
     CheckCircle2,
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 
-const getHorizonUrl = (networkId: NetworkId) => {
+const getHorizonUrl = (networkId: string) => {
     switch (networkId) {
         case 'mainnet': return 'https://horizon.stellar.org';
         case 'testnet': return 'https://horizon-testnet.stellar.org';

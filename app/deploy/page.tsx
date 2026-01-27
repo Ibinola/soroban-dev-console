@@ -5,7 +5,7 @@ import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useContractStore } from "@/store/useContractStore";
 import {
-    SorobanRpc,
+    rpc as SorobanRpc,
     TransactionBuilder,
     TimeoutInfinite,
     xdr,
@@ -87,12 +87,12 @@ export default function DeployPage() {
 
             const preparedTx = await server.prepareTransaction(tx);
             const signedXdr = await signTransaction(preparedTx.toXDR(), {
-                network: network.id === "mainnet" ? "PUBLIC" : "TESTNET",
+                networkPassphrase: network.networkPassphrase,
             });
 
             setStatus("Submitting WASM...");
             const sendRes = await server.sendTransaction(
-                new TransactionBuilder.fromXDR(signedXdr, network.networkPassphrase),
+                TransactionBuilder.fromXDR(signedXdr.signedTxXdr, network.networkPassphrase),
             );
 
             if (sendRes.status !== "PENDING")
@@ -135,7 +135,7 @@ export default function DeployPage() {
             // Refresh sequence number
             const sourceAccount2 = await server.getAccount(address);
 
-            const createOp = Operation.createContract({
+            const createOp = Operation.createCustomContract({
                 wasmHash: Buffer.from(wasmHash, "hex"),
                 address: Address.fromString(address), // Deployer
                 salt: Buffer.alloc(32).fill(0), // Simple salt (should be random in prod)
@@ -151,11 +151,11 @@ export default function DeployPage() {
 
             const preparedCreate = await server.prepareTransaction(createTx);
             const signedCreate = await signTransaction(preparedCreate.toXDR(), {
-                network: network.id === "mainnet" ? "PUBLIC" : "TESTNET",
+                networkPassphrase: network.networkPassphrase,
             });
 
             const createRes = await server.sendTransaction(
-                new TransactionBuilder.fromXDR(signedCreate, network.networkPassphrase),
+                TransactionBuilder.fromXDR(signedCreate.signedTxXdr, network.networkPassphrase),
             );
 
             if (createRes.status !== "PENDING")
@@ -179,7 +179,7 @@ export default function DeployPage() {
                     // But let's just use the `returnValue` if available or display success.
 
                     // For MVP, we calculate deterministic ID if we used a known salt:
-                    const contractId = new Address(address)
+                    const contractId = (new Address(address) as any)
                         .contractId(Buffer.alloc(32).fill(0), network.networkPassphrase)
                         .toString();
 

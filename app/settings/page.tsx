@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useNetworkStore } from '@/store/useNetworkStore';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

@@ -11,7 +11,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bookmarks, Trash2, PlayCircle } from 'lucide-react';
+import { Bookmark, Trash2, PlayCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface SavedCallsSheetProps {
@@ -31,7 +31,7 @@ export function SavedCallsSheet({
     <Sheet>
       <SheetTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
-          <Bookmarks className="h-4 w-4" />
+          <Bookmark className="h-4 w-4" />
           Saved Calls
           <Badge variant="secondary" className="ml-1 px-1 h-5 min-w-[20px]">
             {relevantCalls.length}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SorobanRpc } from "@stellar/stellar-sdk";
+import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { Loader2, AlertCircle } from "lucide-react";
 import {
@@ -21,7 +21,7 @@ interface ContractEventsProps {
 interface EventRecord {
   id: string;
   type: string;
-  topic: string[]; // Decoded or raw
+  topic: any[]; // Decoded or raw
   data: string;
   ledger: number;
   ts: string;

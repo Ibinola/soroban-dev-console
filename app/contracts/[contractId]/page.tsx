@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { SorobanRpc, Address } from "@stellar/stellar-sdk";
+import { rpc as SorobanRpc, Address, xdr } from "@stellar/stellar-sdk";
 import {
   ArrowLeft,
   Box,
@@ -54,11 +54,11 @@ export default function ContractDetailPage() {
           throw new Error("Invalid Contract ID format.");
         }
 
-        const ledgerKey = SorobanRpc.xdr.LedgerKey.contractData(
-          new SorobanRpc.xdr.LedgerKeyContractData({
+        const ledgerKey = xdr.LedgerKey.contractData(
+          new xdr.LedgerKeyContractData({
             contract: new Address(contractId).toScAddress(),
-            key: SorobanRpc.xdr.ScVal.scvLedgerKeyContractInstance(),
-            durability: SorobanRpc.xdr.ContractDataDurability.persistent(),
+            key: xdr.ScVal.scvLedgerKeyContractInstance(),
+            durability: xdr.ContractDataDurability.persistent(),
           }),
         );
 

@@ -21,6 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toast } from "sonner";
+
 
 export default function ContractsPage() {
   const { contracts, addContract, removeContract } = useContractStore();
@@ -32,6 +34,7 @@ export default function ContractsPage() {
     const id = inputVal.trim();
 
     if (!id.startsWith("C") || id.length !== 56) {
+      toast.error('Invalid Contract ID. Must start with "C" and be 56 characters.');
       setError(
         'Invalid Contract ID. Must start with "C" and be 56 characters.',
       );
@@ -41,6 +44,7 @@ export default function ContractsPage() {
     addContract(id, "testnet"); // Defaulting to testnet for now
     setInputVal("");
     setError("");
+    toast.success("Contract added successfully!");
   };
 
   return (
@@ -127,7 +131,10 @@ export default function ContractsPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => removeContract(contract.id)}
+                      onClick={() => {
+                        removeContract(contract.id);
+                        toast.success("Contract removed");
+                      }}
                       className="text-muted-foreground hover:text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
