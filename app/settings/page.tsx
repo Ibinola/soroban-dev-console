@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Trash2, Plus, Wifi, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { DataManagement } from '@/components/data-management';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
@@ -178,6 +179,11 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="max-w-2xl">
+        <h2 className="text-xl font-semibold mb-4">Application Data</h2>
+        <DataManagement />
       </div>
     </div>
   );
