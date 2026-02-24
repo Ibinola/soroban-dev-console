@@ -9,6 +9,10 @@ datasource db {
 
 model Workspace {
   id                String             @id @default(cuid())
+<<<<<<< Updated upstream
+=======
+  shareId           String             @unique @map("share_id")
+>>>>>>> Stashed changes
   name              String
   createdAt         DateTime           @default(now()) @map("created_at")
   savedContracts    SavedContract[]
