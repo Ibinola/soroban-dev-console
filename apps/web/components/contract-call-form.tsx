@@ -25,7 +25,7 @@ import {
   ArgType,
   ContractArg,
   convertToScVal,
-  createNormalizedContractSpecFromFunctionNames,
+  type NormalizedContractSpec,
 } from "@devconsole/soroban-utils";
 import { signTransaction } from "@stellar/freighter-api";
 import { SavedCallsSheet } from "./saved-calls-sheet";
@@ -68,6 +68,72 @@ type SimulationMetrics = {
   memBytes: number;
 };
 
+const DEFAULT_TOKEN_SPEC: NormalizedContractSpec = {
+  contractId: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  source: "workspace",
+  rawSpec: "",
+  ingestedAt: Date.now(),
+  functions: [
+    {
+      name: "balance",
+      inputs: [{ name: "id", type: "address", required: true }],
+      outputs: [{ name: "balance", type: "i128", required: true }],
+    },
+    {
+      name: "decimals",
+      inputs: [],
+      outputs: [{ name: "decimals", type: "u32", required: true }],
+    },
+    {
+      name: "name",
+      inputs: [],
+      outputs: [{ name: "name", type: "string", required: true }],
+    },
+    {
+      name: "symbol",
+      inputs: [],
+      outputs: [{ name: "symbol", type: "symbol", required: true }],
+    },
+    {
+      name: "transfer",
+      inputs: [
+        { name: "from", type: "address", required: true },
+        { name: "to", type: "address", required: true },
+        { name: "amount", type: "i128", required: true },
+      ],
+      outputs: [],
+    },
+    {
+      name: "mint",
+      inputs: [
+        { name: "to", type: "address", required: true },
+        { name: "amount", type: "i128", required: true },
+      ],
+      outputs: [],
+    },
+    {
+      name: "burn",
+      inputs: [
+        { name: "from", type: "address", required: true },
+        { name: "amount", type: "i128", required: true },
+      ],
+      outputs: [],
+    },
+  ],
+};
+
+function toContractArg(field: NonNullable<NormalizedContractSpec["functions"][number]>["inputs"][number]): ContractArg {
+  return {
+    id: crypto.randomUUID(),
+    name: field.name,
+    type:
+      field.type === "unknown" || field.type === "bytes"
+        ? "string"
+        : field.type,
+    value: "",
+  };
+}
+
 export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const genId = () => Math.random().toString(36).substring(2, 9);
   const { isConnected, address } = useWallet();
@@ -85,6 +151,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [saveName, setSaveName] = useState("");
   const { getSpec, setSpec } = useAbiStore();
   const spec = getSpec(contractId);
+  const selectedFunction = spec?.functions.find((entry) => entry.name === fnName);
+  const usesAbiInputs = Boolean(selectedFunction && selectedFunction.inputs.length > 0);
 
   const formatInt = (value: number) =>
     new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
@@ -185,13 +253,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" &&
       !spec
     ) {
-      setSpec(contractId, {
-        ...createNormalizedContractSpecFromFunctionNames(
-          ["balance", "decimals", "name", "symbol", "transfer", "mint", "burn"],
-          "workspace",
-        ),
-        contractId,
-      });
+      setSpec(contractId, DEFAULT_TOKEN_SPEC);
     }
   }, [contractId, spec, setSpec]);
 
@@ -199,17 +261,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     setFnName(name);
     setSimulationMetrics(null);
     setRequiredAuthKeys([]);
-    if (name === "transfer") {
-      setArgs([
-        { id: genId(), name: "from", type: "address", value: "" },
-        { id: genId(), name: "to", type: "address", value: "" },
-        { id: genId(), name: "amount", type: "i128", value: "" },
-      ]);
-    } else if (name === "balance") {
-      setArgs([{ id: genId(), name: "id", type: "address", value: "" }]);
-    } else {
-      setArgs([]);
-    }
+    const nextFunction = spec?.functions.find((entry) => entry.name === name);
+
+    setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
   };
 
   const addArg = () => {
@@ -437,44 +491,62 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label>Arguments ({args.length})</Label>
-            <Button size="sm" variant="outline" onClick={addArg}>
-              <Plus className="mr-1 h-3 w-3" /> Add Arg
-            </Button>
+            {!usesAbiInputs && (
+              <Button size="sm" variant="outline" onClick={addArg}>
+                <Plus className="mr-1 h-3 w-3" /> Add Arg
+              </Button>
+            )}
           </div>
+
+          {selectedFunction?.doc && (
+            <p className="text-sm text-muted-foreground">{selectedFunction.doc}</p>
+          )}
+
+          {args.length === 0 && selectedFunction && (
+            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+              {usesAbiInputs
+                ? "This function does not require any arguments."
+                : "No ABI-defined inputs were found for this function. Add manual arguments only if the contract expects them."}
+            </div>
+          )}
 
           {args.map((arg) => (
             <div key={arg.id} className="flex items-start gap-2">
-              <div className="w-[120px]">
-                <Select
-                  value={arg.type}
-                  onValueChange={(v: ArgType) => updateArg(arg.id, "type", v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="symbol">Symbol</SelectItem>
-                    <SelectItem value="address">Address</SelectItem>
-                    <SelectItem value="i32">i32 (Int)</SelectItem>
-                    <SelectItem value="string">String</SelectItem>
-                    <SelectItem value="bool">Bool</SelectItem>
-                    <SelectItem value="vec">Vec (JSON)</SelectItem>
-                    <SelectItem value="map">Map (JSON)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!usesAbiInputs && (
+                <div className="w-[120px]">
+                  <Select
+                    value={arg.type}
+                    onValueChange={(v: ArgType) => updateArg(arg.id, "type", v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="symbol">Symbol</SelectItem>
+                      <SelectItem value="address">Address</SelectItem>
+                      <SelectItem value="i32">i32 (Int)</SelectItem>
+                      <SelectItem value="string">String</SelectItem>
+                      <SelectItem value="bool">Bool</SelectItem>
+                      <SelectItem value="vec">Vec (JSON)</SelectItem>
+                      <SelectItem value="map">Map (JSON)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <AbiInputField
                 arg={arg}
                 onChange={(id, val) => updateArg(id, "value", val)}
               />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="text-destructive"
-                onClick={() => removeArg(arg.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {!usesAbiInputs && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={() => removeArg(arg.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
