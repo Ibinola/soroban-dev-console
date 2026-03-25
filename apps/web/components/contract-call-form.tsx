@@ -32,6 +32,7 @@ import { signTransaction } from "@stellar/freighter-api";
 import { SavedCallsSheet } from "./saved-calls-sheet";
 import { AbiInputField } from "./abi-input-field";
 import { useAbiStore } from "@/store/useAbiStore";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
@@ -142,6 +143,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [simulation, setSimulation] =
     useState<NormalizedSimulationResult | null>(null);
   const { saveCall } = useSavedCallsStore();
+  const { activeWorkspaceId, linkSavedCall } = useWorkspaceStore();
   const [isSaveOpen, setIsSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const { getSpec, setSpec } = useAbiStore();
@@ -332,13 +334,14 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const handleSave = () => {
     if (!saveName.trim()) return;
 
-    saveCall({
+    const savedCall = saveCall({
       name: saveName,
       contractId,
       fnName,
       args,
       network: getActiveNetworkConfig().id,
     });
+    linkSavedCall(activeWorkspaceId, savedCall.id);
 
     setIsSaveOpen(false);
     setSaveName("");

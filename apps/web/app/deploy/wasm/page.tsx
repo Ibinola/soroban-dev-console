@@ -5,6 +5,7 @@ import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWasmStore } from "@/store/useWasmStore";
 import { useContractStore } from "@/store/useContractStore";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import {
   TransactionBuilder,
   TimeoutInfinite,
@@ -51,6 +52,7 @@ export default function WasmRegistryPage() {
   const { isConnected, address } = useWallet();
   const { getActiveNetworkConfig } = useNetworkStore();
   const { wasms, addWasm, removeWasm } = useWasmStore();
+  const { activeWorkspaceId, attachArtifact } = useWorkspaceStore();
   const { addContract } = useContractStore();
 
   const [file, setFile] = useState<File | null>(null);
@@ -123,6 +125,7 @@ export default function WasmRegistryPage() {
         installedAt: Date.now(),
         functions: previewFunctions,
       });
+      attachArtifact(activeWorkspaceId, { kind: "wasm", id: wasmHash });
 
       toast.success("WASM Uploaded & Saved!");
       setFile(null);

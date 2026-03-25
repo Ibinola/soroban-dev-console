@@ -31,6 +31,7 @@ import { Input } from "@devconsole/ui";
 import { Label } from "@devconsole/ui";
 import { toast } from "sonner";
 import { useAbiStore } from "@/store/useAbiStore";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import {
   createNormalizedContractSpecFromFunctionNames,
   normalizeAbiJson,
@@ -49,6 +50,7 @@ export default function ContractDetailPage() {
   const contractId = params.contractId as string;
   const { getActiveNetworkConfig } = useNetworkStore();
   const { setSpec } = useAbiStore();
+  const { activeWorkspaceId, addContractToWorkspace } = useWorkspaceStore();
 
   const [data, setData] = useState<ContractData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,6 +144,7 @@ export default function ContractDetailPage() {
           setData({ exists: false });
         } else {
           const entry = response.entries[0];
+          addContractToWorkspace(activeWorkspaceId, cleanId);
           setData({
             exists: true,
             lastModified: entry.lastModifiedLedgerSeq,
@@ -157,7 +160,7 @@ export default function ContractDetailPage() {
     }
 
     fetchContract();
-  }, [contractId, getActiveNetworkConfig]);
+  }, [contractId, getActiveNetworkConfig, activeWorkspaceId, addContractToWorkspace]);
 
   return (
     <div className="container mx-auto space-y-8 p-6">
