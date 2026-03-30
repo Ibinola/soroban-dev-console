@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useContractStore } from "@/store/useContractStore";
-import { Trash2, Plus, Search, FileCode } from "lucide-react";
+import { Trash2, Plus, Search, FileCode, FlaskConical } from "lucide-react";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import Link from "next/link";
@@ -22,12 +22,14 @@ import {
   TableRow,
 } from "@devconsole/ui";
 import { toast } from "sonner";
+import { getDeployedFixtures } from "@/lib/fixture-manifest";
 
 export default function ContractsPage() {
   const { contracts, addContract, removeContract } = useContractStore();
   const [inputVal, setInputVal] = useState("");
   const [error, setError] = useState("");
   const [isMounted, setIsMounted] = useState(false);
+  const fixtures = getDeployedFixtures();
 
   useEffect(() => {
     setIsMounted(true);
@@ -158,6 +160,55 @@ export default function ContractsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* FE-015: Fixture contracts from manifest */}
+      {fixtures.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FlaskConical className="h-4 w-4" />
+              Demo Fixture Contracts
+            </CardTitle>
+            <CardDescription>
+              Pre-deployed contracts for testing and demos. Add one to your
+              watchlist with a single click.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fixtures.map((f) => (
+                <div
+                  key={f.key}
+                  className="flex items-start justify-between gap-3 rounded-md border p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium">{f.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {f.description}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                      {f.contractId}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => {
+                      addContract(f.contractId!, f.network);
+                      toast.success(`${f.label} added`);
+                    }}
+                    disabled={contracts.some((c) => c.id === f.contractId)}
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type {
   WorkspaceArtifactRef,
   WorkspaceSnapshot,
 } from "./workspace-schema";
+import { workspacesApi, type CreateWorkspacePayload } from "@/lib/api/workspaces";
 
 type LegacyWorkspace = {
   id: string;
@@ -17,6 +18,9 @@ type LegacyWorkspace = {
 interface WorkspaceState {
   workspaces: WorkspaceSnapshot[];
   activeWorkspaceId: string;
+  /** cloud record id for the active workspace, if synced */
+  cloudId: string | null;
+  syncState: "idle" | "syncing" | "error";
 
   createWorkspace: (name: string, selectedNetwork?: string) => void;
   setActiveWorkspace: (id: string) => void;
@@ -26,6 +30,8 @@ interface WorkspaceState {
   setWorkspaceNetwork: (workspaceId: string, networkId: string) => void;
   getActiveWorkspace: () => WorkspaceSnapshot | undefined;
   deleteWorkspace: (id: string) => void;
+  /** Push the active workspace to the cloud API */
+  syncToCloud: (payload: CreateWorkspacePayload) => Promise<string | null>;
 }
 
 function createWorkspaceSnapshot(
@@ -64,6 +70,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     (set, get) => ({
       workspaces: [defaultWorkspace],
       activeWorkspaceId: defaultWorkspace.id,
+      cloudId: null,
+      syncState: "idle" as const,
 
       createWorkspace: (name, selectedNetwork = useNetworkStore.getState().currentNetwork) =>
         set((state) => ({
@@ -155,6 +163,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               ? "default"
               : state.activeWorkspaceId,
         })),
+
+      syncToCloud: async (payload) => {
+        set({ syncState: "syncing" });
+        try {
+          const remote = await workspacesApi.create(payload);
+          set({ cloudId: remote.id, syncState: "idle" });
+          return remote.share_id;
+        } catch {
+          set({ syncState: "error" });
+          return null;
+        }
+      },
     }),
     {
       name: "soroban-workspaces",
