@@ -13,15 +13,24 @@
     "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@nestjs/common": "^11.1.17",
+    "@nestjs/config": "^4.0.3",
+    "@nestjs/core": "^11.1.17",
+    "@nestjs/platform-express": "^11.1.17",
     "@prisma/client": "^6.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@nestjs/testing": "^11.1.17",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.4",
     "@types/node": "^25.0.9",
+    "@types/uuid": "^10.0.0",
     "prisma": "^6.5.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.3"

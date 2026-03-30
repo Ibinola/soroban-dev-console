@@ -1,77 +1,29 @@
-import cors from "cors";
-import express from "express";
+import "reflect-metadata";
+import "dotenv/config";
+
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "./app.module.js";
 import { prisma } from "./lib/prisma.js";
 
-const app = express();
-const port = 4000;
+const port = Number(process.env.PORT ?? 4000);
 const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
 
-app.use((req, res, next) => {
-  const origin = req.get("origin");
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { logger: ["log", "warn", "error"] });
 
-  if (origin && origin !== webOrigin) {
-    res.status(403).json({
-      error: "CORS origin not allowed"
-    });
-    return;
-  }
-
-  next();
-});
-
-app.use(
-  cors({
+  app.enableCors({
     origin: webOrigin,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-  })
-);
-app.use(express.json());
-
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({
-    ok: true
+    credentials: true,
   });
-});
 
-app.get("/api/workspaces", async (_req, res) => {
-  try {
-    const workspaces = await prisma.workspace.findMany({
-      orderBy: {
-        createdAt: "desc"
-      }
-    });
-
-    res.status(200).json(workspaces);
-  } catch (error) {
-    console.error("Failed to load workspaces", error);
-    res.status(500).json({
-      error: "Failed to load workspaces"
-    });
-  }
-});
-
-const server = app.listen(port, () => {
+  await app.listen(port);
   console.log(`API server listening on http://localhost:${port}`);
-});
+}
 
-const shutdown = async (signal: string) => {
-  console.log(`${signal} received, shutting down API server...`);
-  server.close(async () => {
-    await prisma.$disconnect();
-    process.exit(0);
-  });
-};
-
-process.on("SIGINT", () => {
-  void shutdown("SIGINT");
-});
-
-process.on("SIGTERM", () => {
-  void shutdown("SIGTERM");
-});
-
-process.on("beforeExit", async () => {
+bootstrap().catch(async (err) => {
+  console.error("Failed to start API server", err);
   await prisma.$disconnect();
+  process.exit(1);
 });

@@ -8,7 +8,9 @@
     "types": ["node"],
     "rootDir": "src",
     "outDir": "dist",
-    "noEmitOnError": true
+    "noEmitOnError": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": ["src/**/*.ts"]
 }
