@@ -13,7 +13,9 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "analyze": "ANALYZE=true npm run build",
+    "check-budget": "node scripts/performance-budget.js"
   },
   "dependencies": {
     "@albedo-link/intent": "^0.13.0",
@@ -46,6 +48,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^14.1.0",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.5.2",

@@ -75,6 +75,22 @@ jobs:
       - name: Run unit tests
         run: npm run test:run -w web
 
+      - name: Analyze bundle size
+        run: npm run analyze -w web
+        env:
+          ANALYZE: 'true'
+
+      - name: Check performance budgets
+        run: npm run check-budget -w web
+
+      - name: Upload bundle analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: apps/web/.next/analyze/
+          retention-days: 30
+
   packages:
     name: Package Validation (${{ matrix.workspace }})
     needs: changes
