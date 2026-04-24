@@ -7,8 +7,40 @@ on:
     branches: ["main"]
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      packages: ${{ steps.filter.outputs.packages }}
+      api: ${{ steps.filter.outputs.api }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/ui/**'
+              - 'packages/soroban-utils/**'
+            packages:
+              - 'packages/**'
+            api:
+              - 'apps/api/**'
+              - 'packages/api-contracts/**'
+            contracts:
+              - 'contracts/**'
+            e2e:
+              - 'apps/web/e2e/**'
+              - 'apps/web/playwright.config.ts'
+
   web:
     name: Web
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -40,8 +72,29 @@ jobs:
       - name: Typecheck web
         run: npm run typecheck -w web
 
+      - name: Run unit tests
+        run: npm run test:run -w web
+
+      - name: Analyze bundle size
+        run: npm run analyze -w web
+        env:
+          ANALYZE: 'true'
+
+      - name: Check performance budgets
+        run: npm run check-budget -w web
+
+      - name: Upload bundle analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: apps/web/.next/analyze/
+          retention-days: 30
+
   packages:
     name: Package Validation (${{ matrix.workspace }})
+    needs: changes
+    if: needs.changes.outputs.packages == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -74,6 +127,8 @@ jobs:
 
   api:
     name: API
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -111,11 +166,13 @@ jobs:
 
   contracts:
     name: Contracts (${{ matrix.contract }})
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        contract: ["auth-tester", "error-trigger", "source-registry", "types-tester"]
+        contract: ["auth-tester", "counter-fixture", "error-trigger", "event-fixture", "failure-fixture", "source-registry", "token-fixture", "types-tester"]
 
     steps:
       - name: Checkout repository
@@ -136,3 +193,35 @@ jobs:
 
       - name: Build contract
         run: cargo build --release --manifest-path contracts/${{ matrix.contract }}/Cargo.toml
+
+  e2e:
+    name: E2E Tests
+    needs: [changes, web]
+    if: (needs.changes.outputs.e2e == 'true' || needs.changes.outputs.web == 'true') || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: npm run test:e2e -w web
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 30
