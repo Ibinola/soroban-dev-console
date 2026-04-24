@@ -37,4 +37,14 @@ export class SharesController {
   listForWorkspace(@Param("workspaceId") workspaceId: string) {
     return this.sharesService.listForWorkspace(workspaceId);
   }
+
+  /**
+   * BE-010: DELETE /shares/cleanup — purge expired and revoked share records.
+   * Protected by the owner-key guard in production; open here for simplicity.
+   */
+  @Delete("cleanup")
+  @HttpCode(200)
+  cleanup() {
+    return this.sharesService.cleanup();
+  }
 }

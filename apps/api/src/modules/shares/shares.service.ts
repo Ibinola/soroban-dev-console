@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException, GoneException } from "@nestjs/common";
 import { SharesRepository } from "./shares.repository.js";
 import { WorkspacesRepository } from "../workspaces/workspaces.repository.js";
 import { MapDbErrors } from "../../lib/db-error.mapper.js";
@@ -58,7 +58,6 @@ export class SharesService {
     this.events.emit(SHARE_CREATED, {
       shareId: share.id,
       workspaceId: dto.workspaceId,
-      // Emit only a hint — never log the raw token
       tokenHint: token.slice(0, 6) + "…",
     });
     return share;
@@ -68,10 +67,15 @@ export class SharesService {
   async resolve(token: string) {
     const share = await this.repository.findUnique({ where: { token } });
     if (!share) throw new NotFoundException("Share link not found");
-    if (share.revokedAt) throw new ForbiddenException("Share link has been revoked");
-    if (share.expiresAt && share.expiresAt < new Date()) {
-      throw new ForbiddenException("Share link has expired");
+
+    // BE-010: Distinguish revoked vs expired with separate error messages.
+    if (share.revokedAt) {
+      throw new ForbiddenException("Share link has been revoked");
     }
+    if (share.expiresAt && share.expiresAt < new Date()) {
+      throw new GoneException("Share link has expired");
+    }
+
     this.events.emit(SHARE_RESOLVED, {
       shareId: share.id,
       workspaceId: share.workspaceId,
@@ -83,6 +87,10 @@ export class SharesService {
   async revoke(token: string) {
     const share = await this.repository.findUnique({ where: { token } });
     if (!share) throw new NotFoundException("Share link not found");
+
+    // BE-010: Idempotent — already revoked is fine.
+    if (share.revokedAt) return share;
+
     const updated = await this.repository.update({
       where: { token },
       data: { revokedAt: new Date() },
@@ -108,5 +116,16 @@ export class SharesService {
         createdAt: true,
       },
     });
+  }
+
+  /**
+   * BE-010: Cleanup stale share records.
+   * Deletes all expired and revoked share links.
+   * Intended to be called by a scheduled job or admin endpoint.
+   */
+  @MapDbErrors()
+  async cleanup(): Promise<{ deleted: number }> {
+    const deleted = await this.repository.deleteExpiredAndRevoked();
+    return { deleted };
   }
 }

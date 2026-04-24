@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { useNetworkStore } from "@/store/useNetworkStore";
-import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import {
   Tooltip,
   TooltipContent,
@@ -11,44 +10,53 @@ import {
 } from "@devconsole/ui";
 import { cn } from "@devconsole/ui";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
 export function NetworkHealth() {
-  const { getActiveNetworkConfig, health, setHealth } = useNetworkStore();
-  const config = getActiveNetworkConfig();
+  const { currentNetwork, health, setHealth } = useNetworkStore();
 
   useEffect(() => {
+    let cancelled = false;
+
     async function checkHealth() {
-      const server = new SorobanRpc.Server(config.rpcUrl);
-      const start = Date.now();
-
       try {
-        const latestLedger = await server.getLatestLedger();
-        const latency = Date.now() - start;
-
-        // In a real implementation, you might fetch protocol via server.getNetwork()
-        // Here we simulate protocol 21 for demonstration
-        setHealth({
-          status: latency > 1000 ? "degraded" : "healthy",
-          latestLedger: latestLedger.sequence,
-          protocolVersion: 21,
-          latencyMs: latency,
-          lastCheck: Date.now(),
-        });
+        const res = await fetch(`${API_BASE}/health/networks/${currentNetwork}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json() as {
+          status: "healthy" | "degraded" | "offline";
+          latestLedger: number;
+          latencyMs: number;
+          checkedAt: number;
+        };
+        if (!cancelled) {
+          setHealth({
+            status: data.status,
+            latestLedger: data.latestLedger,
+            protocolVersion: 0,
+            latencyMs: data.latencyMs,
+            lastCheck: data.checkedAt,
+          });
+        }
       } catch {
-        setHealth({
-          status: "offline",
-          latestLedger: 0,
-          protocolVersion: 0,
-          latencyMs: 0,
-          lastCheck: Date.now(),
-        });
+        if (!cancelled) {
+          setHealth({
+            status: "offline",
+            latestLedger: 0,
+            protocolVersion: 0,
+            latencyMs: 0,
+            lastCheck: Date.now(),
+          });
+        }
       }
     }
 
     checkHealth();
-    const interval = setInterval(checkHealth, 30000); // Poll every 30s
-
-    return () => clearInterval(interval);
-  }, [config.rpcUrl, setHealth]);
+    const interval = setInterval(checkHealth, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentNetwork, setHealth]);
 
   if (!health) return null;
 
@@ -77,7 +85,6 @@ export function NetworkHealth() {
         <TooltipContent side="bottom" className="space-y-1 text-xs">
           <p className="font-bold uppercase">{health.status}</p>
           <p>Ledger: {health.latestLedger}</p>
-          <p>Protocol: {health.protocolVersion}</p>
           <p className="text-[10px] opacity-70">
             Last check: {new Date(health.lastCheck).toLocaleTimeString()}
           </p>

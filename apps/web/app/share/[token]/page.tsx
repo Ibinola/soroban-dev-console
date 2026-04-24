@@ -30,20 +30,20 @@ export default function SharedWorkspacePage() {
     sharesApi
       .get(token)
       .then((link) => {
-        if (link.revokedAt) {
-          setState({ status: "error", message: "This share link has been revoked." });
-          return;
-        }
-        if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
-          setState({ status: "error", message: "This share link has expired." });
-          return;
-        }
         const payload = deserializeWorkspace(link.snapshotJson);
         setState({ status: "ready", link, payload });
       })
       .catch((err: unknown) => {
-        const msg =
-          err instanceof Error ? err.message : "Share link not found.";
+        // BE-010: API now returns 403 for revoked and 410 for expired.
+        // Fall back to a generic message for other errors.
+        let msg = "Share link not found.";
+        if (err instanceof Error) {
+          msg = err.message;
+        } else if (typeof err === "object" && err !== null && "status" in err) {
+          const status = (err as { status: number }).status;
+          if (status === 403) msg = "This share link has been revoked.";
+          else if (status === 410) msg = "This share link has expired.";
+        }
         setState({ status: "error", message: msg });
       });
   }, [token]);

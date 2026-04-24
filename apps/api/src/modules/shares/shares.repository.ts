@@ -39,4 +39,18 @@ export class SharesRepository {
   }) {
     return this.prisma.shareLink.delete(params);
   }
+
+  /** BE-010: Delete all expired or revoked share records. Returns count of deleted rows. */
+  async deleteExpiredAndRevoked(): Promise<number> {
+    const now = new Date();
+    const result = await this.prisma.shareLink.deleteMany({
+      where: {
+        OR: [
+          { revokedAt: { not: null } },
+          { expiresAt: { lt: now } },
+        ],
+      },
+    });
+    return result.count;
+  }
 }

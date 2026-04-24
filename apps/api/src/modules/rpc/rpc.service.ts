@@ -15,6 +15,12 @@ import {
   RPC_UPSTREAM_ERROR,
 } from "../../lib/domain-events.js";
 import { RpcCacheService } from "./rpc-cache.service.js";
+import { RpcFailoverService } from "./rpc-failover.service.js";
+import {
+  isMethodAllowed,
+  getMethodPolicy,
+  buildMethodNotAllowedError,
+} from "./rpc-method-policy.js";
 
 const networkSchema = z.enum(["mainnet", "testnet", "futurenet", "local"]);
 
@@ -36,7 +42,6 @@ type RpcNetwork = z.infer<typeof networkSchema>;
 
 const MAX_BATCH_REQUESTS = 25;
 const MAX_PAYLOAD_BYTES = 50_000;
-const REQUEST_TIMEOUT_MS = 15_000;
 
 export type ProxiedRpcResponse = {
   statusCode: number;
@@ -50,18 +55,8 @@ export class RpcService {
     private readonly configService: ConfigService,
     private readonly events: DomainEventBus,
     private readonly rpcCache: RpcCacheService,
+    private readonly failover: RpcFailoverService,
   ) {}
-
-  private getRpcUrl(network: RpcNetwork) {
-    const urls: Record<RpcNetwork, string | undefined> = {
-      mainnet: this.configService.get<string>("SOROBAN_RPC_MAINNET_URL"),
-      testnet: this.configService.get<string>("SOROBAN_RPC_TESTNET_URL"),
-      futurenet: this.configService.get<string>("SOROBAN_RPC_FUTURENET_URL"),
-      local: this.configService.get<string>("SOROBAN_RPC_LOCAL_URL")
-    };
-
-    return urls[network];
-  }
 
   async proxy(network: string, payload: unknown): Promise<ProxiedRpcResponse> {
     const parsedNetwork = networkSchema.safeParse(network);
@@ -86,6 +81,31 @@ export class RpcService {
       );
     }
 
+    // BE-007: Enforce method policy on single requests.
+    // For batch requests, reject the whole batch if any method is unsupported.
+    const isSingle = !Array.isArray(parsedPayload.data);
+    if (isSingle) {
+      const method = (parsedPayload.data as { method: string }).method;
+      if (!isMethodAllowed(method)) {
+        const id = (parsedPayload.data as { id?: string | number | null }).id;
+        return {
+          statusCode: 200,
+          contentType: "application/json",
+          body: buildMethodNotAllowedError(method, id),
+        };
+      }
+    } else {
+      const disallowed = (parsedPayload.data as Array<{ method: string; id?: string | number | null }>)
+        .filter((r) => !isMethodAllowed(r.method));
+      if (disallowed.length > 0) {
+        return {
+          statusCode: 200,
+          contentType: "application/json",
+          body: disallowed.map((r) => buildMethodNotAllowedError(r.method, r.id)),
+        };
+      }
+    }
+
     const serializedPayload = JSON.stringify(parsedPayload.data);
     if (serializedPayload.length > MAX_PAYLOAD_BYTES) {
       throw new PayloadTooLargeException(
@@ -93,19 +113,19 @@ export class RpcService {
       );
     }
 
-    const rpcUrl = this.getRpcUrl(parsedNetwork.data);
-    if (!rpcUrl) {
+    // BE-008: Get ordered endpoints (healthy first).
+    const endpoints = this.failover.getEndpoints(parsedNetwork.data);
+    if (endpoints.length === 0) {
       throw new ServiceUnavailableException(
         `RPC URL is not configured for network '${parsedNetwork.data}'`
       );
     }
 
-    // Only single (non-batch) requests are eligible for caching/deduplication.
-    const isSingle = !Array.isArray(parsedPayload.data);
     const method = isSingle
-      ? parsedPayload.data.method
-      : (parsedPayload.data[0]?.method ?? "batch");
+      ? (parsedPayload.data as { method: string }).method
+      : ((parsedPayload.data as Array<{ method: string }>)[0]?.method ?? "batch");
 
+    // Only single (non-batch) requests are eligible for caching/deduplication.
     if (isSingle && this.rpcCache.isCacheable(method)) {
       const cacheKey = this.rpcCache.buildKey(
         parsedNetwork.data,
@@ -113,20 +133,18 @@ export class RpcService {
         (parsedPayload.data as { params?: unknown }).params,
       );
 
-      // Cache hit — return immediately without hitting upstream.
       const cached = this.rpcCache.get(cacheKey);
       if (cached !== undefined) {
         this.events.emit(RPC_CACHE_HIT, { network: parsedNetwork.data, method });
         return cached as ProxiedRpcResponse;
       }
 
-      // Deduplicate in-flight requests for the same cache key.
       return this.rpcCache.deduplicate(cacheKey, async () => {
-        const result = await this.fetchUpstream(
-          rpcUrl,
-          serializedPayload,
+        const result = await this.fetchWithFailover(
+          endpoints,
           parsedNetwork.data,
           method,
+          serializedPayload,
         );
         if (result.statusCode === 200) {
           this.rpcCache.set(cacheKey, method, result);
@@ -135,7 +153,37 @@ export class RpcService {
       });
     }
 
-    return this.fetchUpstream(rpcUrl, serializedPayload, parsedNetwork.data, method);
+    return this.fetchWithFailover(endpoints, parsedNetwork.data, method, serializedPayload);
+  }
+
+  /** BE-008: Try each endpoint in order, recording failures for flap prevention. */
+  private async fetchWithFailover(
+    endpoints: string[],
+    network: string,
+    method: string,
+    serializedPayload: string,
+  ): Promise<ProxiedRpcResponse> {
+    let lastError: unknown;
+
+    for (const url of endpoints) {
+      try {
+        const result = await this.fetchUpstream(url, serializedPayload, network, method);
+        this.failover.recordSuccess(network, url);
+        return result;
+      } catch (err) {
+        this.failover.recordFailure(network, url);
+        lastError = err;
+        // Continue to next endpoint unless it's a client error (4xx)
+        if (
+          err instanceof BadRequestException ||
+          err instanceof PayloadTooLargeException
+        ) {
+          throw err;
+        }
+      }
+    }
+
+    throw lastError ?? new BadGatewayException("All upstream RPC endpoints failed");
   }
 
   private async fetchUpstream(
@@ -144,8 +192,9 @@ export class RpcService {
     network: string,
     method: string,
   ): Promise<ProxiedRpcResponse> {
+    const policy = getMethodPolicy(method);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), policy.timeoutMs);
     const start = Date.now();
 
     try {
@@ -180,12 +229,10 @@ export class RpcService {
 
       return result;
     } catch (error) {
-      console.error("RPC proxy request failed", error);
-
       if (error instanceof Error && error.name === "AbortError") {
         this.events.emit(RPC_UPSTREAM_ERROR, { network, method, errorName: "AbortError" });
         throw new GatewayTimeoutException(
-          `RPC upstream timed out after ${REQUEST_TIMEOUT_MS}ms`
+          `RPC upstream timed out after ${policy.timeoutMs}ms`
         );
       }
 
