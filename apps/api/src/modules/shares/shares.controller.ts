@@ -6,42 +6,57 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
+  Req,
+  UseGuards,
 } from "@nestjs/common";
-import { SharesService, CreateShareDto } from "./shares.service.js";
+import type { Request } from "express";
+import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
+import { SharesService, CreateShareDto, ListSharesDto } from "./shares.service.js";
+
+type OwnerKeyRequest = Request & { ownerKey: string };
 
 @Controller("shares")
 export class SharesController {
   constructor(private readonly sharesService: SharesService) {}
 
-  /** POST /shares — create a new share link */
+  /** POST /shares — create a share link (requires ownership of the workspace) */
   @Post()
-  create(@Body() dto: CreateShareDto) {
-    return this.sharesService.create(dto);
+  @UseGuards(OwnerKeyGuard)
+  create(@Body() dto: CreateShareDto, @Req() req: Request) {
+    return this.sharesService.create((req as OwnerKeyRequest).ownerKey, dto);
   }
 
-  /** GET /shares/:token — resolve a share link (read-only) */
+  /** GET /shares/:token — public read-only resolve, returns snapshot data only */
   @Get(":token")
   resolve(@Param("token") token: string) {
     return this.sharesService.resolve(token);
   }
 
-  /** DELETE /shares/:token — revoke a share link */
+  /** DELETE /shares/:token — revoke (requires ownership of the workspace) */
   @Delete(":token")
   @HttpCode(200)
-  revoke(@Param("token") token: string) {
-    return this.sharesService.revoke(token);
+  @UseGuards(OwnerKeyGuard)
+  revoke(@Param("token") token: string, @Req() req: Request) {
+    return this.sharesService.revoke(token, (req as OwnerKeyRequest).ownerKey);
   }
 
-  /** GET /shares/workspace/:workspaceId — list shares for a workspace */
+  /** GET /shares/workspace/:workspaceId — list shares (requires ownership) */
   @Get("workspace/:workspaceId")
-  listForWorkspace(@Param("workspaceId") workspaceId: string) {
-    return this.sharesService.listForWorkspace(workspaceId);
+  @UseGuards(OwnerKeyGuard)
+  listForWorkspace(
+    @Param("workspaceId") workspaceId: string,
+    @Query() query: ListSharesDto,
+    @Req() req: Request,
+  ) {
+    return this.sharesService.listForWorkspace(
+      workspaceId,
+      (req as OwnerKeyRequest).ownerKey,
+      query,
+    );
   }
 
-  /**
-   * BE-010: DELETE /shares/cleanup — purge expired and revoked share records.
-   * Protected by the owner-key guard in production; open here for simplicity.
-   */
+  /** DELETE /shares/cleanup — purge expired and revoked share records */
   @Delete("cleanup")
   @HttpCode(200)
   cleanup() {

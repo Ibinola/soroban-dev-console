@@ -1,5 +1,10 @@
 import { Prisma } from "@prisma/client";
-import { Injectable, NotFoundException, ForbiddenException, GoneException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  GoneException,
+} from "@nestjs/common";
 import { SharesRepository } from "./shares.repository.js";
 import { WorkspacesRepository } from "../workspaces/workspaces.repository.js";
 import { MapDbErrors } from "../../lib/db-error.mapper.js";
@@ -11,7 +16,8 @@ import {
 } from "../../lib/domain-events.js";
 import { randomBytes } from "crypto";
 
-import { IsString, IsOptional, IsObject } from "class-validator";
+import { IsString, IsOptional, IsObject, IsInt, Min, IsIn } from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateShareDto {
   @IsString()
@@ -29,6 +35,48 @@ export class CreateShareDto {
   expiresAt?: string;
 }
 
+/** BE-005: Pagination and filtering for share list */
+export class ListSharesDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  take?: number;
+
+  @IsOptional()
+  @IsIn(["createdAt", "expiresAt"])
+  sortBy?: "createdAt" | "expiresAt";
+
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  sortOrder?: "asc" | "desc";
+}
+
+/** BE-005: Pagination response envelope */
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    total: number;
+    skip: number;
+    take: number;
+  };
+}
+
+/** Fields exposed by the public resolve endpoint — no internal IDs or ownerKey. */
+interface PublicShareView {
+  token: string;
+  label: string | null;
+  snapshotJson: Prisma.JsonValue;
+  expiresAt: Date | null;
+  createdAt: Date;
+}
+
 @Injectable()
 export class SharesService {
   constructor(
@@ -37,12 +85,16 @@ export class SharesService {
     private readonly events: DomainEventBus,
   ) {}
 
+  /** BE-003: create requires the caller to own the target workspace. */
   @MapDbErrors()
-  async create(dto: CreateShareDto) {
+  async create(ownerKey: string, dto: CreateShareDto) {
     const workspace = await this.workspacesRepository.findUnique({
       where: { id: dto.workspaceId },
     });
     if (!workspace) throw new NotFoundException("Workspace not found");
+    if (workspace.ownerKey !== ownerKey) {
+      throw new ForbiddenException("You do not own this workspace");
+    }
 
     const token = randomBytes(24).toString("base64url");
 
@@ -63,12 +115,15 @@ export class SharesService {
     return share;
   }
 
+  /**
+   * BE-003: Public resolve — returns only snapshot data.
+   * Internal fields (id, workspaceId) are not exposed.
+   */
   @MapDbErrors()
-  async resolve(token: string) {
+  async resolve(token: string): Promise<PublicShareView> {
     const share = await this.repository.findUnique({ where: { token } });
     if (!share) throw new NotFoundException("Share link not found");
 
-    // BE-010: Distinguish revoked vs expired with separate error messages.
     if (share.revokedAt) {
       throw new ForbiddenException("Share link has been revoked");
     }
@@ -80,15 +135,31 @@ export class SharesService {
       shareId: share.id,
       workspaceId: share.workspaceId,
     });
-    return share;
+
+    // BE-003: Return only the fields a public consumer needs.
+    return {
+      token: share.token,
+      label: share.label,
+      snapshotJson: share.snapshotJson,
+      expiresAt: share.expiresAt,
+      createdAt: share.createdAt,
+    };
   }
 
+  /** BE-003: revoke requires the caller to own the workspace the share belongs to. */
   @MapDbErrors()
-  async revoke(token: string) {
+  async revoke(token: string, ownerKey: string) {
     const share = await this.repository.findUnique({ where: { token } });
     if (!share) throw new NotFoundException("Share link not found");
 
-    // BE-010: Idempotent — already revoked is fine.
+    const workspace = await this.workspacesRepository.findUnique({
+      where: { id: share.workspaceId },
+    });
+    if (!workspace || workspace.ownerKey !== ownerKey) {
+      throw new ForbiddenException("You do not own this workspace");
+    }
+
+    // Idempotent — already revoked is fine.
     if (share.revokedAt) return share;
 
     const updated = await this.repository.update({
@@ -103,26 +174,48 @@ export class SharesService {
   }
 
   @MapDbErrors()
-  async listForWorkspace(workspaceId: string) {
-    return this.repository.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        token: true,
-        label: true,
-        expiresAt: true,
-        revokedAt: true,
-        createdAt: true,
-      },
+  async listForWorkspace(
+    workspaceId: string,
+    ownerKey: string,
+    query: ListSharesDto = {},
+  ): Promise<PaginatedResponse<any>> {
+    const workspace = await this.workspacesRepository.findUnique({
+      where: { id: workspaceId },
     });
+    if (!workspace) throw new NotFoundException("Workspace not found");
+    if (workspace.ownerKey !== ownerKey) {
+      throw new ForbiddenException("You do not own this workspace");
+    }
+
+    const skip = query.skip ?? 0;
+    const take = query.take ?? 20;
+    const sortBy = query.sortBy ?? "createdAt";
+    const sortOrder = query.sortOrder ?? "desc";
+
+    const where = { workspaceId };
+    const select = {
+      id: true,
+      token: true,
+      label: true,
+      expiresAt: true,
+      revokedAt: true,
+      createdAt: true,
+    };
+
+    const [data, total] = await Promise.all([
+      this.repository.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        select,
+        skip,
+        take,
+      }),
+      this.repository.count({ where }),
+    ]);
+
+    return { data, pagination: { total, skip, take } };
   }
 
-  /**
-   * BE-010: Cleanup stale share records.
-   * Deletes all expired and revoked share links.
-   * Intended to be called by a scheduled job or admin endpoint.
-   */
   @MapDbErrors()
   async cleanup(): Promise<{ deleted: number }> {
     const deleted = await this.repository.deleteExpiredAndRevoked();

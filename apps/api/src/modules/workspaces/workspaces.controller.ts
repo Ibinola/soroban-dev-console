@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -16,6 +17,7 @@ import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 import {
   CreateWorkspaceDto,
   ImportWorkspaceDto,
+  ListWorkspacesDto,
   UpdateWorkspaceDto,
 } from "./workspace.dto.js";
 import { WorkspacesService } from "./workspaces.service.js";
@@ -28,8 +30,8 @@ export class WorkspacesController {
   constructor(private readonly workspacesService: WorkspacesService) {}
 
   @Get()
-  list(@Req() req: Request) {
-    return this.workspacesService.list((req as OwnerKeyRequest).ownerKey);
+  list(@Req() req: Request, @Query() query: ListWorkspacesDto) {
+    return this.workspacesService.list((req as OwnerKeyRequest).ownerKey, query);
   }
 
   @Get(":id")

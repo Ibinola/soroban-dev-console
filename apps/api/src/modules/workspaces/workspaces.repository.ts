@@ -10,8 +10,14 @@ export class WorkspacesRepository {
     where?: Prisma.WorkspaceWhereInput;
     orderBy?: Prisma.WorkspaceOrderByWithRelationInput;
     select?: Prisma.WorkspaceSelect;
+    skip?: number;
+    take?: number;
   }) {
     return this.prisma.workspace.findMany(params);
+  }
+
+  async count(params: { where?: Prisma.WorkspaceWhereInput }) {
+    return this.prisma.workspace.count(params);
   }
 
   async findFirst(params: {

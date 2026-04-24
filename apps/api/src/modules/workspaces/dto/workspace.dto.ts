@@ -8,6 +8,7 @@ import {
   IsInt,
   Min,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 const NETWORKS = ["testnet", "mainnet", "futurenet", "local"] as const;
 
@@ -40,6 +41,16 @@ export class UpdateWorkspaceDto {
   @IsOptional()
   @IsIn(NETWORKS)
   selectedNetwork?: string;
+
+  /**
+   * BE-006: Optimistic concurrency control.
+   * If provided, the update is rejected with 409 if the stored revision differs.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  revision?: number;
 }
 
 export class ImportWorkspaceDto {
@@ -70,3 +81,41 @@ export class ImportWorkspaceDto {
   @IsString()
   selectedNetwork!: string;
 }
+
+/** BE-005: Pagination and filtering for workspace list */
+export class ListWorkspacesDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  take?: number;
+
+  @IsOptional()
+  @IsIn(["updatedAt", "createdAt", "name"])
+  sortBy?: "updatedAt" | "createdAt" | "name";
+
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  sortOrder?: "asc" | "desc";
+
+  @IsOptional()
+  @IsString()
+  network?: string;
+}
+
+/** BE-005: Pagination response envelope */
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    total: number;
+    skip: number;
+    take: number;
+  };
+}
+

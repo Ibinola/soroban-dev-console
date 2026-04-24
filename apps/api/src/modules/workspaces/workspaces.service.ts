@@ -18,6 +18,8 @@ import {
 import type {
   CreateWorkspaceDto,
   ImportWorkspaceDto,
+  ListWorkspacesDto,
+  PaginatedResponse,
   UpdateWorkspaceDto,
 } from "./workspace.dto.js";
 
@@ -29,19 +31,38 @@ export class WorkspacesService {
   ) {}
 
   @MapDbErrors()
-  list(ownerKey: string) {
-    return this.repository.findMany({
-      where: { ownerKey },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        selectedNetwork: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+  async list(ownerKey: string, query: ListWorkspacesDto = {}): Promise<PaginatedResponse<any>> {
+    const skip = query.skip ?? 0;
+    const take = query.take ?? 20;
+    const sortBy = query.sortBy ?? "updatedAt";
+    const sortOrder = query.sortOrder ?? "desc";
+
+    const where = {
+      ownerKey,
+      ...(query.network ? { selectedNetwork: query.network } : {}),
+    };
+
+    const select = {
+      id: true,
+      name: true,
+      description: true,
+      selectedNetwork: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
+    const [data, total] = await Promise.all([
+      this.repository.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        select,
+        skip,
+        take,
+      }),
+      this.repository.count({ where }),
+    ]);
+
+    return { data, pagination: { total, skip, take } };
   }
 
   @MapDbErrors()
@@ -111,7 +132,14 @@ export class WorkspacesService {
 
   @MapDbErrors()
   async update(id: string, ownerKey: string, dto: UpdateWorkspaceDto) {
-    await this.get(id, ownerKey);
+    const current = await this.get(id, ownerKey);
+
+    // BE-006: Reject stale updates when the caller supplies a revision.
+    if (dto.revision !== undefined && dto.revision !== (current as any).revision) {
+      throw new ConflictException(
+        `Workspace has been modified (expected revision ${dto.revision}, got ${(current as any).revision}). Reload and retry.`,
+      );
+    }
 
     const workspace = await this.repository.update({
       where: { id },
@@ -123,6 +151,7 @@ export class WorkspacesService {
         ...(dto.selectedNetwork !== undefined
           ? { selectedNetwork: dto.selectedNetwork }
           : {}),
+        revision: { increment: 1 },
       },
     });
     this.events.emit(WORKSPACE_UPDATED, {

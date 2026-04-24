@@ -10,8 +10,14 @@ export class SharesRepository {
     where?: Prisma.ShareLinkWhereInput;
     orderBy?: Prisma.ShareLinkOrderByWithRelationInput;
     select?: Prisma.ShareLinkSelect;
+    skip?: number;
+    take?: number;
   }) {
     return this.prisma.shareLink.findMany(params);
+  }
+
+  async count(params: { where?: Prisma.ShareLinkWhereInput }) {
+    return this.prisma.shareLink.count(params);
   }
 
   async findUnique(params: {

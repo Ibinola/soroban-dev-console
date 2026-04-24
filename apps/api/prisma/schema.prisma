@@ -14,6 +14,8 @@ model Workspace {
   name              String
   description       String?
   selectedNetwork   String              @default("testnet") @map("selected_network")
+  /// BE-006: Monotonically increasing revision counter for optimistic concurrency control.
+  revision          Int                 @default(0)
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
   savedContracts    SavedContract[]
