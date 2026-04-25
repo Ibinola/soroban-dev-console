@@ -6,43 +6,39 @@ import { Prisma } from "@prisma/client";
 export class SharesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findMany(params: {
-    where?: Prisma.ShareLinkWhereInput;
-    orderBy?: Prisma.ShareLinkOrderByWithRelationInput;
-    select?: Prisma.ShareLinkSelect;
-    skip?: number;
-    take?: number;
-  }) {
+  async findMany<T extends Prisma.ShareLinkFindManyArgs>(
+    params: Prisma.SelectSubset<T, Prisma.ShareLinkFindManyArgs>,
+  ) {
     return this.prisma.shareLink.findMany(params);
   }
 
-  async count(params: { where?: Prisma.ShareLinkWhereInput }) {
+  async count<T extends Prisma.ShareLinkCountArgs>(
+    params: Prisma.SelectSubset<T, Prisma.ShareLinkCountArgs>,
+  ) {
     return this.prisma.shareLink.count(params);
   }
 
-  async findUnique(params: {
-    where: Prisma.ShareLinkWhereUniqueInput;
-    include?: Prisma.ShareLinkInclude;
-  }) {
+  async findUnique<T extends Prisma.ShareLinkFindUniqueArgs>(
+    params: Prisma.SelectSubset<T, Prisma.ShareLinkFindUniqueArgs>,
+  ) {
     return this.prisma.shareLink.findUnique(params);
   }
 
-  async create(params: {
-    data: Prisma.ShareLinkCreateInput;
-  }) {
+  async create<T extends Prisma.ShareLinkCreateArgs>(
+    params: Prisma.SelectSubset<T, Prisma.ShareLinkCreateArgs>,
+  ) {
     return this.prisma.shareLink.create(params);
   }
 
-  async update(params: {
-    where: Prisma.ShareLinkWhereUniqueInput;
-    data: Prisma.ShareLinkUpdateInput;
-  }) {
+  async update<T extends Prisma.ShareLinkUpdateArgs>(
+    params: Prisma.SelectSubset<T, Prisma.ShareLinkUpdateArgs>,
+  ) {
     return this.prisma.shareLink.update(params);
   }
 
-  async delete(params: {
-    where: Prisma.ShareLinkWhereUniqueInput;
-  }) {
+  async delete<T extends Prisma.ShareLinkDeleteArgs>(
+    params: Prisma.SelectSubset<T, Prisma.ShareLinkDeleteArgs>,
+  ) {
     return this.prisma.shareLink.delete(params);
   }
 

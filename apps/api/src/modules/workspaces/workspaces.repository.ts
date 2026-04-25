@@ -6,51 +6,45 @@ import { Prisma } from "@prisma/client";
 export class WorkspacesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findMany(params: {
-    where?: Prisma.WorkspaceWhereInput;
-    orderBy?: Prisma.WorkspaceOrderByWithRelationInput;
-    select?: Prisma.WorkspaceSelect;
-    skip?: number;
-    take?: number;
-  }) {
+  async findMany<T extends Prisma.WorkspaceFindManyArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceFindManyArgs>,
+  ) {
     return this.prisma.workspace.findMany(params);
   }
 
-  async count(params: { where?: Prisma.WorkspaceWhereInput }) {
+  async count<T extends Prisma.WorkspaceCountArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceCountArgs>,
+  ) {
     return this.prisma.workspace.count(params);
   }
 
-  async findFirst(params: {
-    where?: Prisma.WorkspaceWhereInput;
-    include?: Prisma.WorkspaceInclude;
-  }) {
+  async findFirst<T extends Prisma.WorkspaceFindFirstArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceFindFirstArgs>,
+  ) {
     return this.prisma.workspace.findFirst(params);
   }
 
-  async findUnique(params: {
-    where: Prisma.WorkspaceWhereUniqueInput;
-    include?: Prisma.WorkspaceInclude;
-  }) {
+  async findUnique<T extends Prisma.WorkspaceFindUniqueArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceFindUniqueArgs>,
+  ) {
     return this.prisma.workspace.findUnique(params);
   }
 
-  async create(params: {
-    data: Prisma.WorkspaceCreateInput;
-    include?: Prisma.WorkspaceInclude;
-  }) {
+  async create<T extends Prisma.WorkspaceCreateArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceCreateArgs>,
+  ) {
     return this.prisma.workspace.create(params);
   }
 
-  async update(params: {
-    where: Prisma.WorkspaceWhereUniqueInput;
-    data: Prisma.WorkspaceUpdateInput;
-  }) {
+  async update<T extends Prisma.WorkspaceUpdateArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceUpdateArgs>,
+  ) {
     return this.prisma.workspace.update(params);
   }
 
-  async delete(params: {
-    where: Prisma.WorkspaceWhereUniqueInput;
-  }) {
+  async delete<T extends Prisma.WorkspaceDeleteArgs>(
+    params: Prisma.SelectSubset<T, Prisma.WorkspaceDeleteArgs>,
+  ) {
     return this.prisma.workspace.delete(params);
   }
 }

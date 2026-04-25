@@ -138,7 +138,7 @@ export class SharesService {
 
     const share = await this.repository.create({
       data: {
-        workspaceId: dto.workspaceId,
+        workspace: { connect: { id: dto.workspaceId } },
         token,
         label: dto.label,
         snapshotJson: dto.snapshotJson,

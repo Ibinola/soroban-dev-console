@@ -1,5 +1,5 @@
-import { Contract } from "../store/useContractStore";
-import { Workspace } from "../store/useWorkspaceStore";
+import type { Contract } from "../store/useContractStore";
+import type { WorkspaceSnapshot } from "../store/workspace-schema";
 
 export type ContractSource = "workspace" | "fixture" | "recent";
 
@@ -17,7 +17,7 @@ export interface ContractIndexFilter {
 
 export function buildContractIndex(
   contracts: Contract[],
-  workspaces: Workspace[],
+  workspaces: WorkspaceSnapshot[],
   recentIds: string[] = [],
 ): IndexedContract[] {
   const workspaceContractIds = new Map<string, string>();

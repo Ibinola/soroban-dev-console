@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 });
@@ -5,6 +6,7 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     transpilePackages: ["@devconsole/soroban-utils", "@devconsole/ui"],
+    turbopack: {},
     webpack: (config, { isServer }) => {
         if (!isServer) {
             config.performance = {

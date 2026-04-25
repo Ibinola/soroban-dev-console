@@ -6,7 +6,7 @@
  * FE-028: Full share-link management — create (with expiry), list, inspect, revoke.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { Button } from "@devconsole/ui";
 import {
   Card,
@@ -312,16 +312,13 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
 
 export function DataManagement() {
   const [isImporting, setIsImporting] = useState(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const [isCopied, setIsCopied] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
   const [isGeneratingBundle, setIsGeneratingBundle] = useState(false);
 
   // FE-037: recovery state
   const [corruptionSummary, setCorruptionSummary] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
-  const { getActiveWorkspace, syncToCloud, cloudId } = useWorkspaceStore();
+  const { getActiveWorkspace, cloudId } = useWorkspaceStore();
   const { contracts } = useContractStore();
   const { savedCalls } = useSavedCallsStore();
   const { getActiveNetworkConfig } = useNetworkStore();
@@ -376,7 +373,7 @@ export function DataManagement() {
     }
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -397,17 +394,66 @@ export function DataManagement() {
             );
           }
 
-          // Merge contracts into localStorage store
-          const contractsKey = STORAGE_KEYS.CONTRACTS;
-          const existing = JSON.parse(
-            localStorage.getItem(contractsKey) ?? '{"state":{"contracts":[]}}',
+          const upsertById = <T extends { id: string }>(nextItems: T[], existingItems: T[]) => [
+            ...nextItems,
+            ...existingItems.filter(
+              (existingItem) =>
+                !nextItems.some((nextItem) => nextItem.id === existingItem.id),
+            ),
+          ];
+
+          const existingContracts = (safeReadLocalStorage(STORAGE_KEYS.CONTRACTS) as any)?.state?.contracts ?? [];
+          localStorage.setItem(
+            STORAGE_KEYS.CONTRACTS,
+            JSON.stringify({
+              state: {
+                contracts: upsertById(payload.contracts, existingContracts),
+              },
+              version: STORE_SCHEMA_VERSION,
+            }),
           );
-          const merged = [
-            ...payload.contracts,
-            ...(existing?.state?.contracts ?? []),
-          ].filter((c, i, arr) => arr.findIndex((x) => x.id === c.id) === i);
-          existing.state.contracts = merged;
-          localStorage.setItem(contractsKey, JSON.stringify(existing));
+
+          const existingSavedCalls = (safeReadLocalStorage(STORAGE_KEYS.SAVED_CALLS) as any)?.state?.savedCalls ?? [];
+          localStorage.setItem(
+            STORAGE_KEYS.SAVED_CALLS,
+            JSON.stringify({
+              state: {
+                savedCalls: upsertById(payload.savedCalls, existingSavedCalls),
+                cartItems: [],
+              },
+              version: STORE_SCHEMA_VERSION,
+            }),
+          );
+
+          const existingWorkspacesState = (safeReadLocalStorage("soroban-workspaces") as any)?.state ?? {};
+          const existingWorkspaces = existingWorkspacesState.workspaces ?? [];
+          localStorage.setItem(
+            "soroban-workspaces",
+            JSON.stringify({
+              state: {
+                ...existingWorkspacesState,
+                workspaces: upsertById([payload.workspace], existingWorkspaces),
+                activeWorkspaceId: payload.workspace.id,
+              },
+              version: STORE_SCHEMA_VERSION,
+            }),
+          );
+
+          if (payload.notes) {
+            const existingNotesState =
+              (safeReadLocalStorage("soroban-workspace-notes") as any)?.state ?? {};
+            const existingNotes = existingNotesState.notes ?? [];
+            localStorage.setItem(
+              "soroban-workspace-notes",
+              JSON.stringify({
+                state: {
+                  ...existingNotesState,
+                  notes: upsertById(payload.notes, existingNotes),
+                },
+                version: STORE_SCHEMA_VERSION,
+              }),
+            );
+          }
 
           toast.success(`Workspace "${payload.workspace.name}" imported! Reloading…`);
           setTimeout(() => window.location.reload(), 1500);
@@ -438,64 +484,6 @@ export function DataManagement() {
     };
 
     reader.readAsText(file);
-  };
-
-  // FE-014: create a shareable read-only link
-  const handleShare = async () => {
-    const workspace = getActiveWorkspace();
-    if (!workspace) {
-      toast.error("No active workspace to share");
-      return;
-    }
-
-    setIsSharing(true);
-    try {
-      let workspaceCloudId = cloudId;
-
-      // Sync to cloud first if not yet synced
-      if (!workspaceCloudId) {
-        const contractRefs = contracts
-          .filter((c) => workspace.contractIds.includes(c.id))
-          .map((c) => ({ contractId: c.id, network: c.network }));
-        const interactionRefs = savedCalls
-          .filter((c) => workspace.savedCallIds.includes(c.id))
-          .map((c) => ({ functionName: c.fnName, argumentsJson: c.args }));
-
-        const shareId = await syncToCloud({
-          name: workspace.name,
-          contracts: contractRefs,
-          interactions: interactionRefs,
-        });
-
-        if (!shareId) throw new Error("Failed to sync workspace to cloud");
-        workspaceCloudId = shareId;
-      }
-
-      const snapshot = serializeWorkspace(workspace, contracts, savedCalls);
-      const link = await sharesApi.create({
-        workspaceId: workspaceCloudId,
-        snapshotJson: snapshot,
-        label: workspace.name,
-      });
-
-      const url = `${window.location.origin}/share/${link.token}`;
-      setShareUrl(url);
-    } catch (err) {
-      console.error(err);
-      toast.error(
-        `Share failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
-  const handleCopy = async () => {
-    if (!shareUrl) return;
-    await navigator.clipboard.writeText(shareUrl);
-    setIsCopied(true);
-    toast.success("Link copied to clipboard");
-    setTimeout(() => setIsCopied(false), 2000);
   };
 
   // FE-037: scan all stores for corruption and offer salvage export
@@ -640,85 +628,73 @@ export function DataManagement() {
               custom networks. This action cannot be undone.
             </p>
           </div>
-        </CardContent>
-      </Card>
-
-        {/* FE-039: Support Bundle */}
-        <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2">
-            <Package className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">Support Bundle</p>
-              <p className="text-xs text-muted-foreground">
-                Download a redacted snapshot of workspace, calls, and environment for debugging.
-              </p>
+          {/* FE-039: Support Bundle */}
+          <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2">
+              <Package className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Support Bundle</p>
+                <p className="text-xs text-muted-foreground">
+                  Download a redacted snapshot of workspace, calls, and environment for debugging.
+                </p>
+              </div>
             </div>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleSupportBundle}
-            disabled={isGeneratingBundle}
-            className="shrink-0"
-          >
-            {isGeneratingBundle ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
-            Generate Bundle
-          </Button>
-        </div>
-
-        {/* FE-037: Recovery Tooling */}
-        <div className="rounded-md border p-3 space-y-2">
-          <div className="flex items-start gap-2">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
-            <div className="flex-1">
-              <p className="text-sm font-medium">State Recovery</p>
-              <p className="text-xs text-muted-foreground">
-                Scan local stores for corruption. Export salvageable data before resetting.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
             <Button
               size="sm"
               variant="outline"
-              onClick={handleRecoveryScan}
-              disabled={isScanning}
+              onClick={handleSupportBundle}
+              disabled={isGeneratingBundle}
+              className="shrink-0"
             >
-              {isScanning ? (
-                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+              {isGeneratingBundle ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <ShieldAlert className="mr-2 h-3 w-3" />
+                <Download className="mr-2 h-4 w-4" />
               )}
-              Scan for Corruption
+              Generate Bundle
             </Button>
-            {corruptionSummary && (
-              <Button size="sm" variant="outline" onClick={handleSalvageExport}>
-                <Download className="mr-2 h-3 w-3" />
-                Export Salvageable Data
+          </div>
+
+          {/* FE-037: Recovery Tooling */}
+          <div className="rounded-md border p-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">State Recovery</p>
+                <p className="text-xs text-muted-foreground">
+                  Scan local stores for corruption. Export salvageable data before resetting.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRecoveryScan}
+                disabled={isScanning}
+              >
+                {isScanning ? (
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                ) : (
+                  <ShieldAlert className="mr-2 h-3 w-3" />
+                )}
+                Scan for Corruption
               </Button>
+              {corruptionSummary && (
+                <Button size="sm" variant="outline" onClick={handleSalvageExport}>
+                  <Download className="mr-2 h-3 w-3" />
+                  Export Salvageable Data
+                </Button>
+              )}
+            </div>
+            {corruptionSummary && (
+              <pre className="mt-1 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300 whitespace-pre-wrap">
+                {corruptionSummary}
+              </pre>
             )}
           </div>
-          {corruptionSummary && (
-            <pre className="mt-1 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300 whitespace-pre-wrap">
-              {corruptionSummary}
-            </pre>
-          )}
-        </div>
-
-        <div className="flex items-start gap-3 rounded-md bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>
-            <strong>Warning:</strong> Importing data will{" "}
-            <strong>overwrite</strong> your current contracts, saved calls, and
-            custom networks. This action cannot be undone.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
       {/* FE-028: Share link management */}
       <ShareManagement workspaceCloudId={cloudId} />
     </div>

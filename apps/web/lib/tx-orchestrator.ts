@@ -11,6 +11,7 @@ import {
   TransactionBuilder,
   TimeoutInfinite,
   rpc as SorobanRpc,
+  xdr,
 } from "@stellar/stellar-sdk";
 import { Server as SorobanServer } from "@stellar/stellar-sdk/rpc";
 import { signTransaction } from "@stellar/freighter-api";
@@ -34,6 +35,8 @@ export interface TxResult {
   hash?: string;
   simulation?: NormalizedSimulationResult;
   errorMessage?: string;
+  resultMetaXdr?: string | xdr.TransactionMeta;
+  resultXdr?: string | xdr.TransactionResult;
 }
 
 export interface OrchestrationOptions {
@@ -134,6 +137,7 @@ export async function orchestrateTx(
           status: "success",
           hash: submitResult.hash,
           simulation: normalized,
+          resultMetaXdr: txStatus.resultMetaXdr,
         };
       }
 
@@ -143,6 +147,7 @@ export async function orchestrateTx(
           hash: submitResult.hash,
           errorMessage: "Transaction failed on-chain",
           simulation: normalized,
+          resultXdr: txStatus.resultXdr,
         };
       }
     }
