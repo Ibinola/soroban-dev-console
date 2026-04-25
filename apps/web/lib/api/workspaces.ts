@@ -7,8 +7,6 @@
 
 import {
   ApiEnvelope,
-  ApiErrorResponse,
-  ApiResponse,
   WorkspaceSummary,
   WorkspaceDetail,
   CreateWorkspacePayload,
@@ -19,7 +17,7 @@ import {
 } from "@devconsole/api-contracts";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // DEVOPS-001: Generate correlation IDs for request tracing
 function generateCorrelationId(): string {

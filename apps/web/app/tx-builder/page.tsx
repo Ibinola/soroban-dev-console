@@ -4,23 +4,22 @@ import {
   Contract,
   TimeoutInfinite,
   TransactionBuilder,
-  rpc as SorobanRpc,
 } from "@stellar/stellar-sdk";
-import { AlertCircle, Loader2, RotateCcw, Send, Terminal, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
-import { Loader2, Send, Terminal, SlidersHorizontal, FlaskConical } from "lucide-react";
+import {
+  AlertCircle,
+  FlaskConical,
+  Loader2,
+  Send,
+  SlidersHorizontal,
+  Terminal,
+} from "lucide-react";
 import { Server as SorobanServer } from "@stellar/stellar-sdk/rpc";
-import { Loader2, Send, Terminal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { orchestrateTx, simulateTx, type TxStatus } from "@/lib/tx-orchestrator";
 
 import { MultiOpCart } from "@/components/multi-op-cart";
-import {
-  convertToScVal,
-  type NormalizedSimulationResult,
-} from "@devconsole/soroban-utils";
+import { convertToScVal, type NormalizedSimulationResult } from "@devconsole/soroban-utils";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { SavedCall, useSavedCallsStore } from "@/store/useSavedCallsStore";
 import { useWallet } from "@/store/useWallet";
@@ -36,9 +35,6 @@ import {
 } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import { Label } from "@devconsole/ui";
-
-// ── FE-045: Draft persistence key ─────────────────────────────────────────────
-const DRAFT_KEY = "soroban-tx-builder-draft";
 
 type SimulationSummary = {
   operationCount: number;
@@ -109,15 +105,6 @@ export default function TxBuilderPage() {
     [savedCalls, currentNetwork],
   );
 
-  // FE-045: Persist draft (cart) to localStorage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(cartItems));
-    } catch {
-      // storage unavailable
-    }
-  }, [cartItems]);
-
   const resetSimulation = () => {
     setSimulation(null);
     setResult(null);
@@ -142,7 +129,6 @@ export default function TxBuilderPage() {
   const onClear = () => {
     clearCart();
     resetSimulation();
-    try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
   };
 
   const buildOperations = () =>
@@ -153,7 +139,7 @@ export default function TxBuilderPage() {
     });
 
   /** Build a raw transaction XDR from the current cart items. */
-  const buildTxXdr = async (source: string): Promise<string> => {
+  const buildTxXdr = async (source: string, fee: string): Promise<string> => {
     const network = getActiveNetworkConfig();
     const server = new SorobanServer(network.rpcUrl);
     const operations = buildOperations();
@@ -167,7 +153,7 @@ export default function TxBuilderPage() {
         sequenceNumber: () => sequence,
         incrementSequenceNumber: () => {},
       },
-      { fee: "100", networkPassphrase: network.networkPassphrase },
+      { fee, networkPassphrase: network.networkPassphrase },
     );
     operations.forEach((op) => txBuilder.addOperation(op));
     return txBuilder.setTimeout(TimeoutInfinite).build().toXDR();
@@ -193,29 +179,10 @@ export default function TxBuilderPage() {
     setOpErrors([]);
 
     try {
-      const network = getActiveNetworkConfig();
-      const server = new SorobanRpc.Server(network.rpcUrl);
-      const operations = buildOperations();
       const source =
         address || "GBZXN7PIRZGNMHGA7MUUUFFAUYVSF74BWXME4R37P2N6F5N4AUM5546F";
-      const account = await server.getAccount(source).catch(() => null);
-      const sequence = account ? account.sequenceNumber() : "0";
-
-      const txBuilder = new TransactionBuilder(
-        {
-          accountId: () => source,
-          sequenceNumber: () => sequence,
-          incrementSequenceNumber: () => {},
-        },
-        // FE-044: apply fee override
-        { fee: feeOverride, networkPassphrase: network.networkPassphrase },
-      );
-      operations.forEach((op) => txBuilder.addOperation(op));
-      const tx = txBuilder.setTimeout(TimeoutInfinite).build();
-
-      const sim = await server.simulateTransaction(tx);
-      const normalized = normalizeSimulationResult(sim);
-      const txXdr = await buildTxXdr(source);
+      const network = getActiveNetworkConfig();
+      const txXdr = await buildTxXdr(source, feeOverride);
       // FE-040: use shared orchestration layer for simulation
       const normalized = await simulateTx(txXdr, network);
       if (!normalized.ok) throw new Error(normalized.error || "Unknown simulation error");
@@ -256,8 +223,6 @@ export default function TxBuilderPage() {
 
     try {
       const network = getActiveNetworkConfig();
-      const server = new SorobanRpc.Server(network.rpcUrl);
-      const operations = buildOperations();
       const server = new SorobanServer(network.rpcUrl);
       const sourceAccount = await server.getAccount(address);
 
@@ -266,20 +231,6 @@ export default function TxBuilderPage() {
         fee: feeOverride,
         networkPassphrase: network.networkPassphrase,
       });
-      operations.forEach((op) => txBuilder.addOperation(op));
-      const tx = txBuilder.setTimeout(TimeoutInfinite).build();
-
-      const sim = await server.simulateTransaction(tx);
-      const normalized = normalizeSimulationResult(sim);
-      if (!normalized.ok) {
-        throw new Error(`Pre-flight simulation failed: ${normalized.error || "Unknown"}`);
-      }
-
-      setSimulation({ operationCount: operations.length, details: normalized });
-
-      const preparedTx = SorobanRpc.assembleTransaction(tx, sim).build();
-      const signedResult = await signTransaction(preparedTx.toXDR(), {
-        networkPassphrase: network.networkPassphrase,
       buildOperations().forEach((op) => txBuilder.addOperation(op));
       const txXdr = txBuilder.setTimeout(TimeoutInfinite).build().toXDR();
 
@@ -294,12 +245,9 @@ export default function TxBuilderPage() {
         setSimulation({ operationCount: cartItems.length, details: txResult.simulation });
       }
 
-      setResult(`Transaction submitted. Hash: ${sendResult.hash}`);
-      toast.success("Multi-operation transaction submitted.");
-      // FE-045: Clear draft on successful submit
-      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       if (txResult.status === "success") {
         setResult(`Transaction submitted. Hash: ${txResult.hash}`);
+        clearCart();
         toast.success("Multi-operation transaction submitted.");
       } else {
         throw new Error(txResult.errorMessage ?? "Transaction failed");
@@ -471,8 +419,6 @@ export default function TxBuilderPage() {
               onClick={handleSimulate}
               disabled={isLoading || cartItems.length < 2}
             >
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-              Simulate Batch
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -485,8 +431,6 @@ export default function TxBuilderPage() {
               disabled={isLoading || cartItems.length < 2 || !isConnected || isSandboxMode}
               title={isSandboxMode ? "Connect a wallet to submit" : undefined}
             >
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Sign & Submit
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (

@@ -4,6 +4,7 @@ import {
   IsIn,
   MaxLength,
   IsArray,
+  ValidateNested,
   IsObject,
   IsInt,
   Min,
@@ -11,6 +12,32 @@ import {
 import { Type } from "class-transformer";
 
 const NETWORKS = ["testnet", "mainnet", "futurenet", "local"] as const;
+
+class WorkspaceContractDto {
+  @IsString()
+  contractId!: string;
+
+  @IsOptional()
+  @IsString()
+  network?: string;
+}
+
+class WorkspaceInteractionDto {
+  @IsString()
+  functionName!: string;
+
+  @IsOptional()
+  @IsObject()
+  argumentsJson?: Record<string, unknown>;
+}
+
+class WorkspaceArtifactRefDto {
+  @IsString()
+  kind!: string;
+
+  @IsString()
+  id!: string;
+}
 
 export class CreateWorkspaceDto {
   @IsString()
@@ -25,6 +52,18 @@ export class CreateWorkspaceDto {
   @IsOptional()
   @IsIn(NETWORKS)
   selectedNetwork?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WorkspaceContractDto)
+  contracts?: WorkspaceContractDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WorkspaceInteractionDto)
+  interactions?: WorkspaceInteractionDto[];
 }
 
 export class UpdateWorkspaceDto {
@@ -75,8 +114,9 @@ export class ImportWorkspaceDto {
   savedCallIds!: string[];
 
   @IsArray()
-  @IsObject({ each: true })
-  artifactRefs!: object[];
+  @ValidateNested({ each: true })
+  @Type(() => WorkspaceArtifactRefDto)
+  artifactRefs!: WorkspaceArtifactRefDto[];
 
   @IsString()
   selectedNetwork!: string;
@@ -118,4 +158,3 @@ export interface PaginatedResponse<T> {
     take: number;
   };
 }
-

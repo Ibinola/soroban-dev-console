@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState, type ChangeEvent } from "react";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWasmStore, type WasmEntry, type ProvenanceNode, type DeployPhase } from "@/store/useWasmStore";
@@ -244,15 +244,24 @@ export default function WasmRegistryPage() {
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [previewFunctions, setPreviewFunctions] = useState<string[]>([]);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
       setFile(selected);
 
-      const arrayBuffer = await selected.arrayBuffer();
-      const functions = await parseWasmMetadata(Buffer.from(arrayBuffer));
-      const spec = createNormalizedContractSpecFromFunctionNames(functions, "wasm", selected.name);
-      setPreviewFunctions(spec.functions.map((entry) => entry.name));
+      try {
+        const arrayBuffer = await selected.arrayBuffer();
+        const functions = await parseWasmMetadata(Buffer.from(arrayBuffer));
+        const spec = createNormalizedContractSpecFromFunctionNames(
+          functions,
+          "wasm",
+          selected.name,
+        );
+        setPreviewFunctions(spec.functions.map((entry) => entry.name));
+      } catch {
+        setPreviewFunctions([]);
+        toast.error("Could not parse WASM metadata. You can still install the artifact.");
+      }
 
       if (!wasmName) setWasmName(selected.name.replace(".wasm", ""));
     }
@@ -299,7 +308,7 @@ export default function WasmRegistryPage() {
       attachArtifact(activeWorkspaceId, { kind: "wasm", id: wasmHash });
 
       // FE-048: advance to instantiate phase
-      advancePipeline("instantiate", { wasmHash, txHash: res.hash });
+      advancePipeline("instantiate", { wasmHash, txHash: txResult.hash });
 
       toast.success("WASM Uploaded & Saved!");
       setFile(null);
@@ -336,67 +345,40 @@ export default function WasmRegistryPage() {
         .setTimeout(TimeoutInfinite)
         .build();
 
-      const preparedTx = await server.prepareTransaction(tx);
-      const signedXdr = await signTransaction(preparedTx.toXDR(), {
-        networkPassphrase: network.networkPassphrase,
+      const txResult = await orchestrateTx(tx.toXDR(), network, {}, (status) => {
+        if (status === "awaiting-signature") {
+          toast.info("Awaiting wallet signature…");
+        }
+        if (status === "submitting") {
+          toast.info("Submitting deploy transaction…");
+        }
+        if (status === "polling") {
+          toast.info("Waiting for contract deployment confirmation…");
+        }
       });
 
-      const res = await server.sendTransaction(
-        TransactionBuilder.fromXDR(signedXdr.signedTxXdr, network.networkPassphrase),
-      );
+      if (txResult.status !== "success") {
+        throw new Error(txResult.errorMessage ?? "Deploy submission failed");
+      }
 
-      if (res.status !== "PENDING") throw new Error("Deploy submission failed");
-
-      let attempts = 0;
-      while (attempts < 10) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const status = await server.getTransaction(res.hash);
-        if (status.status === "SUCCESS") {
-          // FE-049: decode the real contract ID from the transaction result XDR
-          const realContractId =
-            status.resultMetaXdr
-              ? extractContractIdFromDeployResult(status.resultMetaXdr)
-              : null;
-          const contractId = realContractId ?? res.hash;
+      const realContractId = txResult.resultMetaXdr
+        ? extractContractIdFromDeployResult(txResult.resultMetaXdr)
+        : null;
+      const contractId = realContractId ?? txResult.hash ?? wasmHash;
           const relationship = realContractId ? "confirmed" : "inferred";
 
-          associateContract(wasmHash, contractId, relationship);
-          attachArtifact(activeWorkspaceId, {
-            kind: "wasm",
-            id: wasmHash,
-            contractId,
-            relationship,
-          });
-          addContract(contractId, network.id);
-          toast.success(`Contract deployed! ID: ${contractId.slice(0, 10)}…`);
-          // FE-048: advance to publish phase then done
-          advancePipeline("publish", { contractId: res.hash, txHash: res.hash });
-          setTimeout(() => advancePipeline("done", { contractId: res.hash }), 800);
-          toast.success("Contract Instantiated Successfully!");
-          break;
-        }
-        if (status.status === "FAILED") {
-          // FE-049: preserve failure context for debugging
-          const errorDetail = (status as any).resultXdr ?? "unknown";
-          throw new Error(`Transaction failed. Result XDR: ${errorDetail}`);
-        }
-        attempts++;
-      // FE-040: use shared orchestration layer for sign + submit + poll
-      const txResult = await orchestrateTx(tx.toXDR(), network);
-
-      if (txResult.status === "success" && txResult.hash) {
-        // SC-003/SC-004: record as inferred until source-registry confirms
-        associateContract(wasmHash, txResult.hash, "inferred");
-        attachArtifact(activeWorkspaceId, {
-          kind: "wasm",
-          id: wasmHash,
-          contractId: txResult.hash,
-          relationship: "inferred",
-        });
-        toast.success("Contract Instantiated Successfully!");
-      } else {
-        throw new Error(txResult.errorMessage ?? "Deploy failed");
-      }
+      associateContract(wasmHash, contractId, relationship);
+      attachArtifact(activeWorkspaceId, {
+        kind: "wasm",
+        id: wasmHash,
+        contractId,
+        relationship,
+      });
+      addContract(contractId, network.id);
+      toast.success(`Contract deployed! ID: ${contractId.slice(0, 10)}…`);
+      advancePipeline("publish", { contractId, txHash: txResult.hash ?? null });
+      setTimeout(() => advancePipeline("done", { contractId }), 800);
+      toast.success("Contract instantiated successfully!");
     } catch (e: any) {
       console.error(e);
       advancePipeline("error", { error: e.message }); // FE-048
@@ -497,9 +479,8 @@ export default function WasmRegistryPage() {
                   </TableRow>
                 ) : (
                   wasms.map((entry) => (
-                    <>
+                    <Fragment key={entry.hash}>
                       <TableRow
-                        key={entry.hash}
                         className="cursor-pointer"
                         onClick={() =>
                           setExpandedHash(expandedHash === entry.hash ? null : entry.hash)
@@ -577,7 +558,7 @@ export default function WasmRegistryPage() {
                         </TableCell>
                       </TableRow>
                       {expandedHash === entry.hash && (
-                        <TableRow key={`${entry.hash}-detail`}>
+                        <TableRow>
                           <TableCell colSpan={5} className="bg-muted/20 pb-3 pt-0">
                             <ProvenancePanel nodes={entry.provenance ?? []} />
                             <VerifySourcePanel
@@ -589,7 +570,7 @@ export default function WasmRegistryPage() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   ))
                 )}
               </TableBody>

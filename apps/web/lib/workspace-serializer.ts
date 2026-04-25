@@ -8,7 +8,11 @@
  */
 
 import { SERIALIZER_VERSION, assertSupportedVersion } from "@/store/schema-version";
-import type { WorkspaceSnapshot, WorkspaceNote } from "@/store/workspace-schema";
+import type {
+  WorkspaceCheckpoint,
+  WorkspaceNote,
+  WorkspaceSnapshot,
+} from "@/store/workspace-schema";
 import type { Contract } from "@/store/useContractStore";
 import type { SavedCall } from "@/store/useSavedCallsStore";
 
@@ -187,7 +191,7 @@ export function sanitizeForExport(workspace: WorkspaceSnapshot): WorkspaceSnapsh
   for (const field of EPHEMERAL_FIELDS) {
     delete copy[field];
   }
-  return copy as WorkspaceSnapshot;
+  return copy as unknown as WorkspaceSnapshot;
 }
 
 export function serializeWorkspace(
@@ -228,10 +232,6 @@ export function deserializeWorkspace(raw: unknown): SerializedWorkspace {
   return payload;
 }
 
-// ── FE-031: Checkpoint serialization ─────────────────────────────────────────
-
-import type { WorkspaceCheckpoint } from "@/store/workspace-schema";
-
 /**
  * Serialize a checkpoint to a portable JSON-safe object.
  * The checkpoint embeds a full WorkspaceSnapshot so it is self-contained.
@@ -259,6 +259,8 @@ export function deserializeCheckpoint(raw: string): WorkspaceCheckpoint {
     throw new Error("Malformed checkpoint: missing required fields");
   }
   return cp;
+}
+
 /**
  * FE-025: Parse, validate, and repair a raw import payload.
  * Returns the repaired payload and the validation result.

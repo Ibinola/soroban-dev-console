@@ -33,6 +33,30 @@ export interface WasmEntry {
   pinnedBy?: string[];
 }
 
+// ── FE-048: Deploy pipeline state machine ─────────────────────────────────────
+
+/** Ordered phases of the guided deploy pipeline */
+export type DeployPhase = "idle" | "install" | "instantiate" | "publish" | "done" | "error";
+
+export interface DeployPipelineState {
+  phase: DeployPhase;
+  wasmHash: string | null;
+  contractId: string | null;
+  txHash: string | null;
+  error: string | null;
+  /** Timestamp when the current phase started */
+  phaseStartedAt: number | null;
+}
+
+const INITIAL_PIPELINE: DeployPipelineState = {
+  phase: "idle",
+  wasmHash: null,
+  contractId: null,
+  txHash: null,
+  error: null,
+  phaseStartedAt: null,
+};
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 interface WasmState {
@@ -205,27 +229,3 @@ export const useWasmStore = create<WasmState>()(
     { name: "soroban-wasm-storage" },
   ),
 );
-
-// ── FE-048: Deploy pipeline state machine ─────────────────────────────────────
-
-/** Ordered phases of the guided deploy pipeline */
-export type DeployPhase = "idle" | "install" | "instantiate" | "publish" | "done" | "error";
-
-export interface DeployPipelineState {
-  phase: DeployPhase;
-  wasmHash: string | null;
-  contractId: string | null;
-  txHash: string | null;
-  error: string | null;
-  /** Timestamp when the current phase started */
-  phaseStartedAt: number | null;
-}
-
-const INITIAL_PIPELINE: DeployPipelineState = {
-  phase: "idle",
-  wasmHash: null,
-  contractId: null,
-  txHash: null,
-  error: null,
-  phaseStartedAt: null,
-};

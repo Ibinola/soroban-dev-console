@@ -47,8 +47,8 @@ describe("Workspace Serializer", () => {
       };
 
       const allContracts: Contract[] = [
-        { id: "contract-1", network: "testnet", abi: [] } as Contract,
-        { id: "contract-2", network: "testnet", abi: [] } as Contract,
+        { id: "contract-1", name: "Contract 1", network: "testnet", addedAt: 1000 },
+        { id: "contract-2", name: "Contract 2", network: "testnet", addedAt: 1001 },
       ];
 
       const result = serializeWorkspace(workspace, allContracts, []);
@@ -202,9 +202,9 @@ describe("Workspace Serializer", () => {
       };
 
       const contracts: Contract[] = [
-        { id: "c1", network: "mainnet", abi: [] } as Contract,
-        { id: "c2", network: "mainnet", abi: [] } as Contract,
-        { id: "c3", network: "mainnet", abi: [] } as Contract,
+        { id: "c1", name: "Contract C1", network: "mainnet", addedAt: 1000 },
+        { id: "c2", name: "Contract C2", network: "mainnet", addedAt: 1001 },
+        { id: "c3", name: "Contract C3", network: "mainnet", addedAt: 1002 },
       ];
 
       const savedCalls: SavedCall[] = [

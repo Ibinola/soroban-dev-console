@@ -2,6 +2,7 @@ import "reflect-metadata";
 
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NextFunction, Request, Response } from "express";
 import { AppModule } from "./app.module.js";
 import { validateEnv } from "./lib/validate-env.js";
 import { ApiErrorFilter } from "./lib/api-error.filter.js";
@@ -28,7 +29,7 @@ async function bootstrap() {
   app.setGlobalPrefix("api");
   
   // DEVOPS-002: Add security headers to all responses
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "0"); // Modern browsers use CSP instead

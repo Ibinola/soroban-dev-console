@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import {
   BadRequestException,
   ConflictException,
@@ -49,6 +50,7 @@ export class WorkspacesService {
       name: true,
       description: true,
       selectedNetwork: true,
+      revision: true,
       createdAt: true,
       updatedAt: true,
     };
@@ -116,7 +118,7 @@ export class WorkspacesService {
           ? {
               create: dto.interactions.map((i) => ({
                 functionName: i.functionName,
-                argumentsJson: i.argumentsJson || {},
+                argumentsJson: (i.argumentsJson || {}) as Prisma.InputJsonValue,
                 network: network,
               })),
             }
@@ -178,7 +180,7 @@ export class WorkspacesService {
       resourceType: "workspace",
       resourceId: id,
       summary: `Updated workspace`,
-      metadata: { changes: dto },
+      metadata: { changes: dto as Record<string, unknown> } as Prisma.InputJsonValue,
     });
     return workspace;
   }

@@ -371,7 +371,15 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const handlePin = () => {
     if (!result) return;
     const label = `Variant ${pinnedVariants.length + 1}`;
-    const v = createVariant(label, fnName, args.map((a) => a.value), result, null, simulationMetrics?.cpuInsns, simulationMetrics?.memBytes);
+    const v = createVariant(
+      label,
+      fnName,
+      args.map((a) => a.value),
+      result,
+      null,
+      simulation?.cpuInsns,
+      simulation?.memBytes,
+    );
     setPinnedVariants((prev) => [...prev.slice(-1), v]);
     toast.success(`Pinned as ${label}`);
   };
