@@ -8,6 +8,7 @@ import { validateEnv } from "./lib/validate-env.js";
 import { ApiErrorFilter } from "./lib/api-error.filter.js";
 import { ApiResponseInterceptor } from "./lib/api-response.interceptor.js";
 import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
+import { DEFAULT_API_PORT } from "@devconsole/api-contracts";
 
 async function bootstrap() {
   validateEnv();
@@ -47,7 +48,7 @@ async function bootstrap() {
     })
   );
 
-  const port = Number(process.env.PORT ?? 4000);
+  const port = Number(process.env.PORT ?? DEFAULT_API_PORT);
   await app.listen(port);
 }
 

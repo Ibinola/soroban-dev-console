@@ -16,6 +16,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       contracts: ${{ steps.filter.outputs.contracts }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      devops: ${{ steps.filter.outputs.devops }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -36,6 +37,13 @@ jobs:
             e2e:
               - 'apps/web/e2e/**'
               - 'apps/web/playwright.config.ts'
+            devops:
+              - 'scripts/**'
+              - 'packages/api-contracts/src/runtime-defaults.ts'
+              - 'README.md'
+              - 'docs/architecture.md'
+              - 'apps/api/.env.example'
+              - 'apps/web/.env.example'
 
   web:
     name: Web
@@ -225,3 +233,24 @@ jobs:
           name: playwright-report
           path: apps/web/playwright-report/
           retention-days: 30
+
+  devops:
+    name: DevOps
+    needs: changes
+    if: needs.changes.outputs.devops == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check runtime drift
+        run: npm run check-drift

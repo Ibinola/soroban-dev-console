@@ -8,7 +8,9 @@
  * DEVOPS-001: Includes correlation ID tracking for end-to-end request tracing.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { DEFAULT_LOCAL_API_URL } from "@devconsole/api-contracts";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_LOCAL_API_URL;
 
 // DEVOPS-001: Generate correlation IDs for request tracing
 function generateCorrelationId(): string {

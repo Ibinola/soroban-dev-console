@@ -83,7 +83,9 @@ export async function fetchRecentTransactions(
 
 // ── FE-047: Backend-assisted transaction polling ──────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { DEFAULT_LOCAL_API_URL } from "@devconsole/api-contracts";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_LOCAL_API_URL;
 
 export type TxPollStatus = "pending" | "success" | "failed" | "not_found";
 

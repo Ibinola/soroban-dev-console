@@ -14,10 +14,11 @@ import {
   ShareSummary,
   ShareDetail,
   CreateSharePayload,
+  DEFAULT_LOCAL_API_URL,
 } from "@devconsole/api-contracts";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_LOCAL_API_URL;
 
 // DEVOPS-001: Generate correlation IDs for request tracing
 function generateCorrelationId(): string {
