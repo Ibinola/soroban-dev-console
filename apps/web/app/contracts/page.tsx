@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { getDeployedFixtures } from "@/lib/fixture-manifest";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { useNetworkStore } from "@/store/useNetworkStore";
+import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
 export default function ContractsPage() {
   const { contracts, addContract, removeContract } = useContractStore();
@@ -201,6 +202,9 @@ export default function ContractsPage() {
         </Table>
       </div>
 
+      {/* FE-063: Fallback state indicator for fixture manifest */}
+      <FixtureFallbackIndicator />
+
       {/* FE-015: Fixture contracts from manifest */}
       {fixtures.length > 0 && (
         <Card>
@@ -208,6 +212,7 @@ export default function ContractsPage() {
             <CardTitle className="flex items-center gap-2 text-base">
               <FlaskConical className="h-4 w-4" />
               Demo Fixture Contracts
+              <FixtureFallbackIndicator compact />
             </CardTitle>
             <CardDescription>
               Pre-deployed contracts for testing and demos. Add one to your

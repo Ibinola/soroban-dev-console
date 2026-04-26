@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { DataManagement } from "@/components/data-management";
 import { toast } from "sonner";
+import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
 export default function SettingsPage() {
   const { customNetworks, addCustomNetwork, removeCustomNetwork } =
@@ -98,6 +99,9 @@ export default function SettingsPage() {
           Manage your custom RPC connections and configurations.
         </p>
       </div>
+
+      {/* FE-063: Fallback state indicator for fixture manifest */}
+      <FixtureFallbackIndicator />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         {/* Form Section */}
