@@ -18,7 +18,7 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const runtimeConfig = await fetchRuntimeConfig();
+  const runtimeConfigResult = await fetchRuntimeConfig();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -27,7 +27,7 @@ export default async function RootLayout({
         <script
           id="__runtime_config__"
           type="application/json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfig) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult) }}
         />
       </head>
       <body>

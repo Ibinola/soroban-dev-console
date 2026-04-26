@@ -19,6 +19,15 @@ import {
   normalizeSimulationResult,
   type NormalizedSimulationResult,
 } from "@devconsole/soroban-utils";
+import {
+  simulateTransaction,
+  sendTransaction,
+  pollTransactionStatus,
+} from "@/lib/api/transactions";
+import {
+  type NormalizedTransactionResult,
+  type NormalizedSimulationPayload,
+} from "@devconsole/api-contracts";
 import type { NetworkConfig } from "@/store/useNetworkStore";
 
 export type TxStatus =
@@ -59,10 +68,29 @@ export async function simulateTx(
   txXdr: string,
   network: NetworkConfig,
 ): Promise<NormalizedSimulationResult> {
-  const server = new SorobanServer(network.rpcUrl);
-  const tx = TransactionBuilder.fromXDR(txXdr, network.networkPassphrase);
-  const simResult = await server.simulateTransaction(tx);
-  return normalizeSimulationResult(simResult);
+  try {
+    const normalized = await simulateTransaction(network.name, txXdr);
+    
+    // Convert to the existing NormalizedSimulationResult format for compatibility
+    return {
+      ok: normalized.ok,
+      error: normalized.error,
+      minResourceFee: normalized.minResourceFee,
+      resultXdr: normalized.resultXdr,
+      auth: normalized.auth,
+      requiredAuthKeys: normalized.requiredAuthKeys,
+      stateChangesCount: normalized.stateChangesCount,
+      cpuInsns: normalized.cpuInsns,
+      memBytes: normalized.memBytes,
+      stateChanges: [], // Not included in normalized payload yet
+    };
+  } catch (error) {
+    // Fallback to direct RPC if normalized API fails
+    const server = new SorobanServer(network.rpcUrl);
+    const tx = TransactionBuilder.fromXDR(txXdr, network.networkPassphrase);
+    const simResult = await server.simulateTransaction(tx);
+    return normalizeSimulationResult(simResult);
+  }
 }
 
 /**
@@ -127,28 +155,62 @@ export async function orchestrateTx(
 
     // ── Poll ──────────────────────────────────────────────────────────────────
     onStatus?.("polling");
-    for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
-      await new Promise((r) => setTimeout(r, pollIntervalMs));
-      const txStatus = await server.getTransaction(submitResult.hash);
+    try {
+      const finalStatus = await pollTransactionStatus(
+        network.name,
+        submitResult.hash,
+        {
+          maxAttempts: maxPollAttempts,
+          intervalMs: pollIntervalMs,
+          onStatus: (status) => {
+            if (status.status === "success") {
+              onStatus?.("success");
+            }
+          },
+        },
+      );
 
-      if (txStatus.status === "SUCCESS") {
-        onStatus?.("success");
+      if (finalStatus.status === "success") {
         return {
           status: "success",
           hash: submitResult.hash,
           simulation: normalized,
-          resultMetaXdr: txStatus.resultMetaXdr,
+          resultMetaXdr: finalStatus.resultMetaXdr,
         };
       }
 
-      if (txStatus.status === "FAILED") {
-        return {
-          status: "error",
-          hash: submitResult.hash,
-          errorMessage: "Transaction failed on-chain",
-          simulation: normalized,
-          resultXdr: txStatus.resultXdr,
-        };
+      return {
+        status: "error",
+        hash: submitResult.hash,
+        errorMessage: finalStatus.error || "Transaction failed on-chain",
+        simulation: normalized,
+        resultXdr: finalStatus.resultXdr,
+      };
+    } catch (error) {
+      // Fallback to direct RPC polling if normalized API fails
+      for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        const txStatus = await server.getTransaction(submitResult.hash);
+
+        if (txStatus.status === "SUCCESS") {
+          onStatus?.("success");
+          return {
+            status: "success",
+            hash: submitResult.hash,
+            simulation: normalized,
+            resultMetaXdr: txStatus.resultMetaXdr,
+          };
+        }
+
+        if (txStatus.status === "FAILED") {
+          return {
+            status: "error",
+            hash: submitResult.hash,
+            errorMessage: "Transaction failed on-chain",
+            simulation: normalized,
+            resultXdr: txStatus.resultXdr,
+          };
+        }
       }
     }
 

@@ -30,6 +30,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { DataManagement } from "@/components/data-management";
+import { RuntimeConfigStatus } from "@/components/runtime-config-status";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -223,6 +224,21 @@ export default function SettingsPage() {
                 </Table>
               </div>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Runtime Configuration</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>Configuration Status</CardTitle>
+            <CardDescription>
+              Monitor and manage the application's runtime configuration and fallback behavior.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RuntimeConfigStatus showDetails={true} />
           </CardContent>
         </Card>
       </div>
