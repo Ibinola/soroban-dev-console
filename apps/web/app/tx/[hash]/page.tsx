@@ -26,11 +26,13 @@ import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
 import { toast } from "sonner";
 
+import { DEFAULT_LOCAL_HORIZON_URL } from "@devconsole/api-contracts";
+
 const HORIZON_URL: Record<string, string> = {
   mainnet: "https://horizon.stellar.org",
   testnet: "https://horizon-testnet.stellar.org",
   futurenet: "https://horizon-futurenet.stellar.org",
-  local: "http://localhost:8000",
+  local: DEFAULT_LOCAL_HORIZON_URL,
 };
 
 export default function TxDetailPage() {

@@ -2,6 +2,8 @@
  * Shared API contracts and types for Soroban Dev Console
  */
 
+export * from "./runtime-defaults.js";
+
 export interface ApiErrorResponse {
   success: false;
   error: {

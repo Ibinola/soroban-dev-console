@@ -191,14 +191,20 @@ npx prisma migrate reset
 | `SOROBAN_RPC_FUTURENET_URL` | Futurenet RPC endpoint | (optional) |
 | `SOROBAN_RPC_LOCAL_URL` | Local network RPC endpoint | (optional) |
 
-### Web Environment (apps/web/.env.local)
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_API_URL` | Backend API URL | `http://localhost:4000` |
-| `NEXT_PUBLIC_RPC_TESTNET` | Testnet RPC (client-side) | (required) |
-| `NEXT_PUBLIC_RPC_MAINNET` | Mainnet RPC (client-side) | (optional) |
 | `NEXT_PUBLIC_PASSPHRASE_*` | Network passphrases | (see .env.example) |
+
+### Runtime Defaults (Centralized)
+
+DEVOPS-025: The project uses a centralized source of truth for all runtime ports and local URLs to prevent drift.
+
+- **Canonical Source**: [packages/api-contracts/src/runtime-defaults.ts](file:///Users/mustang/Desktop/soroban-dev-console/packages/api-contracts/src/runtime-defaults.ts)
+- **Validation**: Run `npm run check-drift` to verify that all documentation and `.env.example` files are aligned with these defaults. Run `npm run check-integrity` to verify lockfile and workspace dependency consistency.
+
+| Service | Default Port | Default Local URL |
+|---------|--------------|-------------------|
+| API Backend | `4000` | `http://localhost:4000` |
+| Web App | `3000` | `http://localhost:3000` |
+| Horizon | `8000` | `http://localhost:8000` |
 
 ## Key Features
 

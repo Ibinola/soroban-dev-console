@@ -12,6 +12,8 @@
     "lint": "turbo run lint --filter=web --filter=@devconsole/ui --filter=@devconsole/soroban-utils",
     "typecheck": "turbo run typecheck --filter=web --filter=@devconsole/ui --filter=@devconsole/soroban-utils",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "check-drift": "tsx scripts/check-runtime-drift.ts",
+    "check-integrity": "tsx scripts/check-dependency-integrity.ts",
     "deploy:contracts": "bash scripts/deploy-test-suite.sh"
   },
   "devDependencies": {
@@ -19,6 +21,7 @@
     "@types/stellar-sdk": "^0.11.1",
     "prettier": "^3.2.5",
     "prettier-plugin-tailwindcss": "^0.7.2",
+    "tsx": "^4.21.0",
     "turbo": "latest"
   },
   "dependencies": {

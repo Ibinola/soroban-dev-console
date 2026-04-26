@@ -5,7 +5,9 @@
  * Falls back to env-var driven static list when the API is unreachable.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { DEFAULT_LOCAL_API_URL } from "@devconsole/api-contracts";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_LOCAL_API_URL;
 
 export interface FixtureContract {
   key: string;
