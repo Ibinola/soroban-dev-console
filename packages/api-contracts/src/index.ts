@@ -100,3 +100,37 @@ export interface CreateSharePayload {
   label?: string;
   expiresInSeconds?: number;
 }
+
+// ── Transaction Status ─────────────────────────────────────────────────────────
+
+export type NormalizedTransactionStatus = "pending" | "success" | "failed";
+
+export interface NormalizedTransactionResult {
+  status: NormalizedTransactionStatus;
+  hash?: string;
+  ledger?: number;
+  createdAt?: string;
+  resultXdr?: string;
+  resultMetaXdr?: string;
+  error?: string;
+  diagnostics?: {
+    cpuInsns?: number;
+    memBytes?: number;
+    minResourceFee?: string;
+  };
+}
+
+export interface NormalizedSimulationPayload {
+  ok: boolean;
+  error?: string;
+  resultXdr?: string;
+  minResourceFee?: string;
+  auth: Array<{
+    address: string;
+    kind: "account" | "contract" | "unknown";
+  }>;
+  requiredAuthKeys: string[];
+  stateChangesCount: number;
+  cpuInsns?: number;
+  memBytes?: number;
+}

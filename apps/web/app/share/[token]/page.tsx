@@ -8,11 +8,14 @@
  * - Fork CTA wired to FE-027 flow
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { sharesApi } from "@/lib/api/workspaces";
 import { ShareDetail } from "@devconsole/api-contracts";
 import { importWorkspace, type SerializedWorkspace } from "@/lib/workspace-serializer";
+import { useAbiStore } from "@/store/useAbiStore";
+import { useWasmStore } from "@/store/useWasmStore";
+import { DependencyDiagnostics } from "@/components/dependency-diagnostics";
 import {
   Card,
   CardContent,
@@ -125,6 +128,10 @@ export default function SharedWorkspacePage() {
   const { payload, link } = state;
   const isExpired = link.expiresAt && new Date(link.expiresAt) < new Date();
 
+  // Get store data for dependency diagnostics
+  const { specs } = useAbiStore();
+  const { wasms } = useWasmStore();
+
   return (
     <div className="container mx-auto max-w-3xl space-y-6 p-6">
       {/* Read-only banner */}
@@ -139,6 +146,14 @@ export default function SharedWorkspacePage() {
           <Badge variant="destructive" className="shrink-0">Expired</Badge>
         )}
       </div>
+
+      {/* Dependency Diagnostics */}
+      <DependencyDiagnostics
+        workspace={payload}
+        abiSpecs={specs}
+        wasms={wasms}
+        className="mb-6"
+      />
 
       {/* Workspace header */}
       <div className="flex items-start justify-between gap-4">

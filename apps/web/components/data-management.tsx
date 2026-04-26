@@ -42,6 +42,8 @@ import {
   serializeWorkspace,
   importWorkspace,
 } from "@/lib/workspace-serializer";
+import { PreImportReview } from "@/components/pre-import-review";
+import { applyImportSelection } from "@/lib/pre-import-review";
 import { sharesApi } from "@/lib/api/workspaces";
 import {
   scanAllStores,
@@ -316,6 +318,8 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
 export function DataManagement() {
   const [isImporting, setIsImporting] = useState(false);
   const [isGeneratingBundle, setIsGeneratingBundle] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [showPreImportReview, setShowPreImportReview] = useState(false);
 
   // FE-037: recovery state
   const [corruptionSummary, setCorruptionSummary] = useState<string | null>(null);
@@ -383,6 +387,13 @@ export function DataManagement() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setImportFile(file);
+    setShowPreImportReview(true);
+  };
+
+  const handlePreImportConfirm = (selection: any) => {
+    if (!importFile) return;
+
     setIsImporting(true);
     const reader = new FileReader();
 
@@ -396,9 +407,17 @@ export function DataManagement() {
 
           if (validation.warnings.length > 0) {
             toast.warning(
-              `Import repaired ${validation.warnings.length} issue(s) — workspace may be partially restored`,
+              `Import repaired ${validation.warnings.length} issue(s) — workspace may be partially restored`
             );
           }
+
+          // Apply user selection
+          const finalPayload = applyImportSelection({
+            workspace: payload,
+            contracts: payload.contracts,
+            savedCalls: payload.savedCalls,
+            notes: payload.notes || [],
+          }, selection);
 
           const upsertById = <T extends { id: string }>(nextItems: T[], existingItems: T[]) => [
             ...nextItems,
@@ -413,7 +432,7 @@ export function DataManagement() {
             STORAGE_KEYS.CONTRACTS,
             JSON.stringify({
               state: {
-                contracts: upsertById(payload.contracts, existingContracts),
+                contracts: upsertById(finalPayload.contracts, existingContracts),
               },
               version: STORE_SCHEMA_VERSION,
             }),
@@ -424,7 +443,7 @@ export function DataManagement() {
             STORAGE_KEYS.SAVED_CALLS,
             JSON.stringify({
               state: {
-                savedCalls: upsertById(payload.savedCalls, existingSavedCalls),
+                savedCalls: upsertById(finalPayload.savedCalls, existingSavedCalls),
                 cartItems: [],
               },
               version: STORE_SCHEMA_VERSION,
@@ -438,14 +457,14 @@ export function DataManagement() {
             JSON.stringify({
               state: {
                 ...existingWorkspacesState,
-                workspaces: upsertById([payload.workspace], existingWorkspaces),
-                activeWorkspaceId: payload.workspace.id,
+                workspaces: upsertById([finalPayload.workspace], existingWorkspaces),
+                activeWorkspaceId: finalPayload.workspace.id,
               },
               version: STORE_SCHEMA_VERSION,
             }),
           );
 
-          if (payload.notes) {
+          if (finalPayload.notes) {
             const existingNotesState =
               (safeReadLocalStorage("soroban-workspace-notes") as any)?.state ?? {};
             const existingNotes = existingNotesState.notes ?? [];
@@ -454,14 +473,14 @@ export function DataManagement() {
               JSON.stringify({
                 state: {
                   ...existingNotesState,
-                  notes: upsertById(payload.notes, existingNotes),
+                  notes: upsertById(finalPayload.notes, existingNotes),
                 },
                 version: STORE_SCHEMA_VERSION,
               }),
             );
           }
 
-          toast.success(`Workspace "${payload.workspace.name}" imported! Reloading…`);
+          toast.success(`Workspace "${finalPayload.workspace.name}" imported! Reloading…`);
           setTimeout(() => window.location.reload(), 1500);
           return;
         }
@@ -617,13 +636,52 @@ export function DataManagement() {
                     <div className="text-left">
                       <div className="font-semibold">Import Backup</div>
                       <div className="text-xs font-normal text-muted-foreground">
-                        Restore from .json file
+                        Restore from .json file with preview
                       </div>
                     </div>
                   </span>
                 </Button>
               </label>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Pre-Import Review Modal */}
+      {showPreImportReview && importFile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Review Import</h2>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setShowPreImportReview(false);
+                    setImportFile(null);
+                  }}
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              </div>
+              <PreImportReview
+                raw={importFile}
+                onConfirm={(selection) => {
+                  setShowPreImportReview(false);
+                  setImportFile(null);
+                  handlePreImportConfirm(selection);
+                }}
+                onCancel={() => {
+                  setShowPreImportReview(false);
+                  setImportFile(null);
+                }}
+                options={{ autoSelectAll: true, requireUserConfirmation: true }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
           </div>
 
           <div className="flex items-start gap-3 rounded-md bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
