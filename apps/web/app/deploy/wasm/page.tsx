@@ -63,6 +63,7 @@ import {
 import { registerSource } from "@/lib/source-registry";
 import { InstantiateWizard } from "@/components/instantiate-wizard";
 import { ActionGuard } from "@/components/action-guard";
+import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
 // ── Provenance panel ──────────────────────────────────────────────────────────
 
@@ -421,6 +422,9 @@ export default function WasmRegistryPage() {
         </div>
         <InstantiateWizard />
       </div>
+
+      {/* FE-063: Fallback state indicator for fixture manifest */}
+      <FixtureFallbackIndicator />
 
       {/* FE-048: Guided deploy pipeline status */}
       <DeployPipelinePanel />

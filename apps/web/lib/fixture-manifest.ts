@@ -71,6 +71,8 @@ function readRuntimeFixtures(): FixtureContract[] | null {
 // ── API fetch ─────────────────────────────────────────────────────────────────
 
 let cachedManifest: FixtureManifestPayload | null = null;
+let isUsingFallback = false;
+let fetchError: string | null = null;
 
 export async function fetchFixtureManifest(): Promise<FixtureManifestPayload> {
   if (cachedManifest) return cachedManifest;
@@ -82,9 +84,14 @@ export async function fetchFixtureManifest(): Promise<FixtureManifestPayload> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as FixtureManifestPayload;
     cachedManifest = data;
+    isUsingFallback = false;
+    fetchError = null;
     return data;
-  } catch {
-    console.warn("[fixture-manifest] Failed to fetch from API — using fallback");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn("[fixture-manifest] Failed to fetch from API — using fallback:", errorMessage);
+    isUsingFallback = true;
+    fetchError = errorMessage;
     return {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
@@ -97,6 +104,23 @@ export async function fetchFixtureManifest(): Promise<FixtureManifestPayload> {
 /** Reset the in-memory cache (useful for testing). */
 export function resetFixtureManifestCache(): void {
   cachedManifest = null;
+  isUsingFallback = false;
+  fetchError = null;
+}
+
+/** Returns true if the current manifest data is from fallback (API unavailable). */
+export function isFixtureManifestUsingFallback(): boolean {
+  return isUsingFallback;
+}
+
+/** Returns the fetch error if API failed, null otherwise. */
+export function getFixtureManifestError(): string | null {
+  return fetchError;
+}
+
+/** Returns true if the manifest was successfully fetched from API (not fallback). */
+export function isFixtureManifestLive(): boolean {
+  return cachedManifest !== null && !isUsingFallback;
 }
 
 // ── Synchronous accessors (for components that can't await) ───────────────────

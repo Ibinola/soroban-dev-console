@@ -4,6 +4,73 @@
 
 export * from "./runtime-defaults.js";
 
+// ── Runtime Config ────────────────────────────────────────────────────────
+
+export const RUNTIME_CONFIG_VERSION = 1 as const;
+
+export type RuntimeProfile = "local" | "demo" | "production";
+
+export interface RuntimeNetworkEntry {
+  id: string;
+  name: string;
+  rpcUrl: string;
+  networkPassphrase: string;
+  horizonUrl?: string;
+}
+
+export interface RuntimeFixtureEntry {
+  key: string;
+  label: string;
+  description: string;
+  network: string;
+  contractId: string | null;
+}
+
+export interface RuntimeFeatureFlags {
+  enableSharing: boolean;
+  enableMultiOp: boolean;
+  enableTokenDashboard: boolean;
+  enableAuditLog: boolean;
+  enableRpcGateway: boolean;
+}
+
+export interface RuntimeConfig {
+  version: typeof RUNTIME_CONFIG_VERSION;
+  profile: RuntimeProfile;
+  networks: RuntimeNetworkEntry[];
+  fixtures: RuntimeFixtureEntry[];
+  flags: RuntimeFeatureFlags;
+}
+
+// ── Fixture Manifest ─────────────────────────────────────────────────────
+
+export const FIXTURE_MANIFEST_SCHEMA_VERSION = 1 as const;
+
+export interface FixtureContract {
+  key: string;
+  label: string;
+  description: string;
+  network: "testnet" | "local";
+  contractId: string | null;
+  /** SHA-256 hex of the compiled WASM, if known */
+  wasmHash?: string | null;
+  version?: string;
+}
+
+export interface ArtifactManifestEntry {
+  key: string;
+  wasmHash: string | null;
+  version: string;
+  builtAt: string | null;
+}
+
+export interface FixtureManifestPayload {
+  schemaVersion: typeof FIXTURE_MANIFEST_SCHEMA_VERSION;
+  generatedAt: string;
+  fixtures: FixtureContract[];
+  artifacts: ArtifactManifestEntry[];
+}
+
 export interface ApiErrorResponse {
   success: false;
   error: {
