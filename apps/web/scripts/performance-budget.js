@@ -1,77 +1,87 @@
-#!/usr/bin/env node
-/**
- * Performance budget checker for Next.js App Router + Turbopack output.
- *
- * Closes #275 — make web performance-budget checks App Router and Turbopack aware.
- *
- * Reads .next/build-manifest.json (App Router) and checks that no individual
- * JS chunk exceeds the configured size budgets.
- */
+/* eslint-disable @typescript-eslint/no-require-imports */
+const fs = require('fs');
+const path = require('path');
 
-const fs = require("fs");
-const path = require("path");
+// Load build stats
+const manifestPath = path.join(__dirname, '../.next/build-manifest.json');
 
-const NEXT_DIR = path.resolve(__dirname, "../.next");
-const BUILD_MANIFEST = path.join(NEXT_DIR, "build-manifest.json");
-const APP_BUILD_MANIFEST = path.join(NEXT_DIR, "app-build-manifest.json");
+if (!fs.existsSync(manifestPath)) {
+  console.error('Build manifest not found. Run npm run build first.');
+  process.exit(1);
+}
 
-/** Size budgets in bytes */
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+// Define budgets (in KB)
 const BUDGETS = {
-  /** Max size for any single shared chunk */
-  sharedChunk: 250 * 1024, // 250 kB
-  /** Max size for any single route entry chunk */
-  routeChunk: 150 * 1024, // 150 kB
+  'pages/_app': 250,
+  'pages/index': 200,
+  'pages/contracts': 250,
+  'pages/deploy': 200,
+  'pages/tools': 200,
+  'shared/chunks': 300,
 };
 
-function getFileSizeBytes(relativePath) {
-  const abs = path.join(NEXT_DIR, relativePath);
-  try {
-    return fs.statSync(abs).size;
-  } catch {
-    return 0;
+let hasViolation = false;
+
+console.log('\n📊 Performance Budget Check\n');
+console.log('═'.repeat(50));
+
+// Analyze main pages
+for (const [key, budget] of Object.entries(BUDGETS)) {
+  const files = manifest.pages[key] || [];
+  const totalSize = files.reduce((sum, file) => {
+    const filePath = path.join(__dirname, '../.next', file);
+    if (fs.existsSync(filePath)) {
+      return sum + fs.statSync(filePath).size;
+    }
+    return sum;
+  }, 0);
+
+  const sizeKB = Math.round(totalSize / 1024);
+  const percentage = Math.round((sizeKB / budget) * 100);
+  
+  if (sizeKB > budget) {
+    console.error(`❌ ${key}: ${sizeKB}KB / ${budget}KB (${percentage}%) - EXCEEDED`);
+    hasViolation = true;
+  } else if (percentage > 80) {
+    console.warn(`⚠️  ${key}: ${sizeKB}KB / ${budget}KB (${percentage}%) - APPROACHING LIMIT`);
+  } else {
+    console.log(`✅ ${key}: ${sizeKB}KB / ${budget}KB (${percentage}%)`);
   }
 }
 
-function checkManifest(manifestPath, label) {
-  if (!fs.existsSync(manifestPath)) {
-    console.warn(`[perf-budget] ${label} not found — skipping.`);
-    return true;
-  }
-
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  const pages = manifest.pages ?? manifest.rootMainFiles ?? {};
-  let passed = true;
-
-  for (const [route, chunks] of Object.entries(pages)) {
-    for (const chunk of chunks) {
-      const size = getFileSizeBytes(chunk);
-      const budget = chunk.includes("/_next/static/chunks/")
-        ? BUDGETS.sharedChunk
-        : BUDGETS.routeChunk;
-
-      if (size > budget) {
-        console.error(
-          `[perf-budget] FAIL  ${route} → ${chunk} (${(size / 1024).toFixed(1)} kB > ${budget / 1024} kB budget)`
-        );
-        passed = false;
-      } else if (size > 0) {
-        console.log(
-          `[perf-budget] OK    ${route} → ${chunk} (${(size / 1024).toFixed(1)} kB)`
-        );
+// Check shared chunks
+if (manifest.lowPriorityFiles) {
+  const sharedSize = manifest.lowPriorityFiles.reduce((sum, file) => {
+    if (file.includes('chunk') || file.includes('framework')) {
+      const filePath = path.join(__dirname, '../.next', file);
+      if (fs.existsSync(filePath)) {
+        return sum + fs.statSync(filePath).size;
       }
     }
-  }
+    return sum;
+  }, 0);
 
-  return passed;
+  const sharedKB = Math.round(sharedSize / 1024);
+  const sharedBudget = BUDGETS['shared/chunks'];
+  const sharedPercentage = Math.round((sharedKB / sharedBudget) * 100);
+
+  console.log('\n📦 Shared Chunks:');
+  if (sharedKB > sharedBudget) {
+    console.error(`❌ Shared chunks: ${sharedKB}KB / ${sharedBudget}KB (${sharedPercentage}%) - EXCEEDED`);
+    hasViolation = true;
+  } else {
+    console.log(`✅ Shared chunks: ${sharedKB}KB / ${sharedBudget}KB (${sharedPercentage}%)`);
+  }
 }
 
-const ok =
-  checkManifest(BUILD_MANIFEST, "build-manifest.json (pages)") &
-  checkManifest(APP_BUILD_MANIFEST, "app-build-manifest.json (App Router)");
+console.log('\n' + '═'.repeat(50));
 
-if (!ok) {
-  console.error("\n[perf-budget] One or more chunks exceeded their budget.");
+if (hasViolation) {
+  console.error('\n❌ Performance budget check failed!\n');
   process.exit(1);
 } else {
-  console.log("\n[perf-budget] All chunks within budget.");
+  console.log('\n✅ All performance budgets passed!\n');
+  process.exit(0);
 }

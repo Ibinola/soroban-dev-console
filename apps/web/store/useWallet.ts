@@ -1,103 +1,139 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import * as freighter from "@stellar/freighter-api";
-import albedo from "@albedo-link/intent";
+import {
+  walletProviders,
+  assertCapability,
+  type WalletCapabilities,
+  type WalletProviderId,
+} from "@/lib/wallet/provider";
+import { useNetworkStore } from "@/store/useNetworkStore";
+
+// FE-042: Session revalidation state
+export type SessionStatus = "valid" | "stale" | "mismatch" | "disconnected";
 
 interface WalletState {
   isConnected: boolean;
   address: string | null;
-  walletType: "freighter" | "albedo" | null;
-  connectFreighter: () => Promise<void>;
-  connectAlbedo: () => Promise<void>;
+  walletType: WalletProviderId | null;
+  // FE-042: track session health
+  sessionStatus: SessionStatus;
+  networkAtConnect: string | null;
+  // FE-043: sandbox mode
+  isSandboxMode: boolean;
+
+  connect: (provider: WalletProviderId) => Promise<void>;
   disconnect: () => void;
+  // FE-041: capability-aware sign abstraction
+  signTransaction: (xdr: string, networkPassphrase: string) => Promise<string>;
+  getCapabilities: () => WalletCapabilities | null;
+  // FE-042: revalidation
+  revalidateSession: () => Promise<SessionStatus>;
+  // FE-043: sandbox helpers
+  enterSandbox: () => void;
+  exitSandbox: () => void;
 }
 
 export const useWallet = create<WalletState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       isConnected: false,
       address: null,
       walletType: null,
+      sessionStatus: "disconnected",
+      networkAtConnect: null,
+      isSandboxMode: false,
 
-      connectFreighter: async () => {
+      connect: async (provider) => {
         try {
-          // 1. Check if the extension is installed
-          if (freighter.isConnected) {
-            const installed = await freighter.isConnected();
-            if (!installed) {
-              throw new Error(
-                "Freighter is not installed. Please install the browser extension.",
-              );
-            }
-          }
-
-          // 2. Request connection access
-          if (freighter.isAllowed) {
-            const allowedRes = await freighter.isAllowed();
-            const hasAccess =
-              typeof allowedRes === "object"
-                ? (allowedRes as any).isAllowed
-                : allowedRes;
-            if (!hasAccess && freighter.setAllowed) {
-              await freighter.setAllowed();
-            }
-          }
-
-          // 3. Retrieve the address (Handling different API version signatures safely)
-          let finalAddress = "";
-
-          if (freighter.getAddress) {
-            const addrRes = await freighter.getAddress();
-            finalAddress =
-              typeof addrRes === "object" ? (addrRes as any).address : addrRes;
-          }
-
-          // Fallback for some versions of Freighter
-          if (!finalAddress && (freighter as any).getPublicKey) {
-            const pubKeyRes = await (freighter as any).getPublicKey();
-            finalAddress =
-              typeof pubKeyRes === "object"
-                ? (pubKeyRes as any).publicKey
-                : pubKeyRes;
-          }
-
-          if (!finalAddress) {
-            throw new Error(
-              "Could not retrieve address. Make sure your Freighter wallet is unlocked.",
-            );
-          }
-
+          const session = await walletProviders[provider].connect();
+          const currentNetwork = useNetworkStore.getState().currentNetwork;
           set({
             isConnected: true,
-            address: finalAddress,
-            walletType: "freighter",
+            address: session.address,
+            walletType: session.provider,
+            sessionStatus: "valid",
+            networkAtConnect: currentNetwork,
+            isSandboxMode: false,
           });
         } catch (e: any) {
-          console.error("Freighter connection failed", e);
-          throw e;
-        }
-      },
-
-      connectAlbedo: async () => {
-        try {
-          const result = await albedo.publicKey({});
-          set({
-            isConnected: true,
-            address: result.pubkey,
-            walletType: "albedo",
-          });
-        } catch (e) {
-          console.error("Albedo connection failed", e);
+          console.error(`${provider} connection failed`, e);
           throw e;
         }
       },
 
       disconnect: () => {
-        set({ isConnected: false, address: null, walletType: null });
+        set({
+          isConnected: false,
+          address: null,
+          walletType: null,
+          sessionStatus: "disconnected",
+          networkAtConnect: null,
+          isSandboxMode: false,
+        });
+      },
+
+      // FE-041: unified signing abstraction with capability guard
+      signTransaction: async (xdr, networkPassphrase) => {
+        const { walletType, isConnected } = get();
+        if (!isConnected || !walletType) {
+          throw new Error("No wallet connected.");
+        }
+        assertCapability(walletType, "canSign");
+        return walletProviders[walletType].signTransaction(xdr, networkPassphrase);
+      },
+
+      // FE-041: expose capability metadata
+      getCapabilities: () => {
+        const { walletType } = get();
+        if (!walletType) return null;
+        return walletProviders[walletType].capabilities;
+      },
+
+      // FE-042: revalidate persisted session against live provider state
+      revalidateSession: async () => {
+        const { walletType, isConnected, networkAtConnect } = get();
+
+        if (!isConnected || !walletType) {
+          set({ sessionStatus: "disconnected" });
+          return "disconnected";
+        }
+
+        const stillLive = await walletProviders[walletType].revalidate();
+        if (!stillLive) {
+          set({ sessionStatus: "stale", isConnected: false });
+          return "stale";
+        }
+
+        // FE-042: detect network mismatch
+        const currentNetwork = useNetworkStore.getState().currentNetwork;
+        if (networkAtConnect && networkAtConnect !== currentNetwork) {
+          set({ sessionStatus: "mismatch" });
+          return "mismatch";
+        }
+
+        set({ sessionStatus: "valid" });
+        return "valid";
+      },
+
+      // FE-043: enter wallet-less sandbox mode
+      enterSandbox: () => {
+        set({ isSandboxMode: true });
+      },
+
+      // FE-043: exit sandbox, preserving any in-progress state
+      exitSandbox: () => {
+        set({ isSandboxMode: false });
       },
     }),
     {
       name: "soroban-wallet-storage",
+      // FE-042: don't persist transient session status
+      partialize: (state) => ({
+        isConnected: state.isConnected,
+        address: state.address,
+        walletType: state.walletType,
+        networkAtConnect: state.networkAtConnect,
+      }),
     },
   ),
 );

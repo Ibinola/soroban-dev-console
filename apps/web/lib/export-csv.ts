@@ -1,6 +1,6 @@
-import { HistoryRecord } from "./history-utils";
+import { NormalizedTx } from "./history-utils";
 
-export function exportToCSV(data: HistoryRecord[], filename: string) {
+export function exportToCSV(data: NormalizedTx[], filename: string) {
   const headers = [
     "Timestamp",
     "Transaction Hash",
@@ -9,11 +9,11 @@ export function exportToCSV(data: HistoryRecord[], filename: string) {
     "Status",
   ];
   const rows = data.map((r) => [
-    r.timestamp,
+    r.createdAt,
     r.hash,
-    r.opType,
+    r.operationSummary,
     r.feePaid.toString(),
-    r.result,
+    r.successful ? "success" : "failed",
   ]);
 
   const csvContent = [

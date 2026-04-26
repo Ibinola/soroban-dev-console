@@ -30,7 +30,9 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { DataManagement } from "@/components/data-management";
+import { RuntimeConfigStatus } from "@/components/runtime-config-status";
 import { toast } from "sonner";
+import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
 export default function SettingsPage() {
   const { customNetworks, addCustomNetwork, removeCustomNetwork } =
@@ -98,6 +100,9 @@ export default function SettingsPage() {
           Manage your custom RPC connections and configurations.
         </p>
       </div>
+
+      {/* FE-063: Fallback state indicator for fixture manifest */}
+      <FixtureFallbackIndicator />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         {/* Form Section */}
@@ -223,6 +228,21 @@ export default function SettingsPage() {
                 </Table>
               </div>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Runtime Configuration</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>Configuration Status</CardTitle>
+            <CardDescription>
+              Monitor and manage the application's runtime configuration and fallback behavior.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RuntimeConfigStatus showDetails={true} />
           </CardContent>
         </Card>
       </div>

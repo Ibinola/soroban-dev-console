@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { rpc as SorobanRpc, xdr } from "@stellar/stellar-sdk";
 import {
-  rpc as SorobanRpc,
-  xdr,
-  Address,
-  scValToNative,
-} from "@stellar/stellar-sdk";
+  buildStorageQuery,
+  decodeStorageQueryResult,
+  type StorageKeyType,
+} from "@/lib/storage-query";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
@@ -32,8 +32,10 @@ import {
   CardTitle,
   CardDescription,
 } from "@devconsole/ui";
-import { Plus, Trash2, RefreshCw, Database, Search } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Database, Camera, GitCompare } from "lucide-react";
 import { toast } from "sonner";
+import { StateDiffViewer } from "./state-diff-viewer";
+import { StorageSnapshot, takeSnapshot, diffSnapshots } from "@/lib/diff-utils";
 
 interface ContractStorageProps {
   contractId: string;
@@ -41,60 +43,27 @@ interface ContractStorageProps {
 
 interface StorageEntry {
   id: string; // unique internal id
-  keyType: "symbol" | "address" | "i32" | "string";
+  keyType: StorageKeyType;
   keyValue: string;
+  ledgerKeyXdr: string;
   decodedValue?: string;
   lastModified?: number;
   found: boolean;
+  error?: string;
 }
 
 export function ContractStorage({ contractId }: ContractStorageProps) {
   const { getActiveNetworkConfig } = useNetworkStore();
 
   // Local state for the "Add Key" form
-  const [newKeyType, setNewKeyType] = useState<
-    "symbol" | "address" | "i32" | "string"
-  >("symbol");
+  const [newKeyType, setNewKeyType] = useState<StorageKeyType>("symbol");
   const [newKeyValue, setNewKeyValue] = useState("");
 
   // The list of keys we are watching
   const [entries, setEntries] = useState<StorageEntry[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Helper: Convert User Input -> XDR Ledger Key
-  const getLedgerKey = (type: string, value: string) => {
-    let scValKey: xdr.ScVal;
-
-    try {
-      switch (type) {
-        case "symbol":
-          scValKey = xdr.ScVal.scvSymbol(value);
-          break;
-        case "string":
-          scValKey = xdr.ScVal.scvString(value);
-          break;
-        case "i32":
-          scValKey = xdr.ScVal.scvI32(Number(value));
-          break;
-        case "address":
-          scValKey = new Address(value).toScVal();
-          break;
-        default:
-          throw new Error("Unknown type");
-      }
-
-      return xdr.LedgerKey.contractData(
-        new xdr.LedgerKeyContractData({
-          contract: new Address(contractId).toScAddress(),
-          key: scValKey,
-          durability: xdr.ContractDataDurability.persistent(),
-        }),
-      );
-    } catch (e) {
-      console.error(e);
-      return null;
-    }
-  };
+  const [snapshots, setSnapshots] = useState<StorageSnapshot[]>([]);
+  const [snapshotDiffs, setSnapshotDiffs] = useState<ReturnType<typeof diffSnapshots>>([]);
 
   const fetchData = async () => {
     if (entries.length === 0) return;
@@ -104,12 +73,8 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
       const network = getActiveNetworkConfig();
       const server = new SorobanRpc.Server(network.rpcUrl);
 
-      // 1. Prepare Keys
-      const validEntries = entries.filter((e) =>
-        getLedgerKey(e.keyType, e.keyValue),
-      );
-      const ledgerKeys = validEntries.map(
-        (e) => getLedgerKey(e.keyType, e.keyValue)!,
+      const ledgerKeys = entries.map((entry) =>
+        xdr.LedgerKey.fromXDR(entry.ledgerKeyXdr, "base64"),
       );
 
       if (ledgerKeys.length === 0) return;
@@ -119,30 +84,24 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
 
       // 3. Map results back to our entries
       const updatedEntries = entries.map((entry) => {
-        // Re-generate the key to find it in the response (base64 match)
-        const lKey = getLedgerKey(entry.keyType, entry.keyValue);
-        const lKeyB64 = lKey?.toXDR("base64");
-
         const match = response.entries.find(
-          (r) => r.key.toXDR("base64") === lKeyB64,
+          (r) => r.key.toXDR("base64") === entry.ledgerKeyXdr,
         );
 
         if (match) {
-          // Decode the value
-          const val = match.val; // This is xdr.LedgerEntryData
-          // We need to drill down: LedgerEntryData -> ContractData -> val -> scValToNative
-          const contractData = val.contractData();
-          const rawVal = contractData.val();
-          const decoded = JSON.stringify(scValToNative(rawVal), null, 2);
-
           return {
             ...entry,
-            found: true,
-            decodedValue: decoded,
-            lastModified: match.lastModifiedLedgerSeq,
+            ...decodeStorageQueryResult(match.val, match.lastModifiedLedgerSeq),
+            error: undefined,
           };
         } else {
-          return { ...entry, found: false, decodedValue: undefined };
+          return {
+            ...entry,
+            found: false,
+            decodedValue: undefined,
+            lastModified: undefined,
+            error: undefined,
+          };
         }
       });
 
@@ -159,21 +118,47 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
   const handleAddKey = () => {
     if (!newKeyValue) return;
 
-    // Add to list (optimistic)
-    const newEntry: StorageEntry = {
-      id: crypto.randomUUID(),
-      keyType: newKeyType,
-      keyValue: newKeyValue,
-      found: false,
-    };
+    try {
+      const query = buildStorageQuery({
+        contractId,
+        keyType: newKeyType,
+        keyValue: newKeyValue,
+      });
 
-    setEntries([...entries, newEntry]);
-    setNewKeyValue("");
-    // Trigger fetch immediately would be nice, but effect deps handle it or user clicks refresh
+      const newEntry: StorageEntry = {
+        id: crypto.randomUUID(),
+        keyType: query.keyType,
+        keyValue: query.keyValue,
+        ledgerKeyXdr: query.ledgerKeyXdr,
+        found: false,
+      };
+
+      setEntries([...entries, newEntry]);
+      setNewKeyValue("");
+    } catch (error: any) {
+      toast.error(error.message || "Invalid storage query");
+    }
   };
 
   const handleRemove = (id: string) => {
     setEntries(entries.filter((e) => e.id !== id));
+  };
+
+  const handleTakeSnapshot = () => {
+    const current: Record<string, string> = {};
+    entries.filter((e) => e.found && e.decodedValue).forEach((e) => {
+      current[e.keyValue] = e.decodedValue!;
+    });
+    const label = `Snapshot ${snapshots.length + 1}`;
+    const snap = takeSnapshot(label, current);
+    const next = [...snapshots.slice(-1), snap];
+    setSnapshots(next);
+    if (next.length === 2) {
+      setSnapshotDiffs(diffSnapshots(next[0], next[1]));
+    } else {
+      setSnapshotDiffs([]);
+    }
+    toast.success(`${label} taken`);
   };
 
   return (
@@ -297,6 +282,39 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Snapshot comparison panel */}
+      <div className="mt-4 flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={handleTakeSnapshot}>
+          <Camera className="mr-1 h-3 w-3" /> Take Snapshot
+        </Button>
+        {snapshots.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {snapshots.length} snapshot{snapshots.length > 1 ? "s" : ""} taken
+          </span>
+        )}
+        {snapshots.length >= 2 && (
+          <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setSnapshots([]); setSnapshotDiffs([]); }}>
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {snapshotDiffs.length > 0 && (
+        <Card className="mt-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <GitCompare className="h-4 w-4" /> Storage Diff
+              <span className="text-xs font-normal text-muted-foreground">
+                {snapshots[0].label} → {snapshots[1].label}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StateDiffViewer diffs={snapshotDiffs} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

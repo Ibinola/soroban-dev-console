@@ -25,6 +25,8 @@ import { Separator } from "@devconsole/ui";
 import { toast } from "sonner";
 import Link from "next/link";
 
+import { DEFAULT_LOCAL_HORIZON_URL } from "@devconsole/api-contracts";
+
 const getHorizonUrl = (networkId: string) => {
   switch (networkId) {
     case "mainnet":
@@ -34,7 +36,7 @@ const getHorizonUrl = (networkId: string) => {
     case "futurenet":
       return "https://horizon-futurenet.stellar.org";
     case "local":
-      return "http://localhost:8000";
+      return DEFAULT_LOCAL_HORIZON_URL;
     default:
       return "https://horizon-testnet.stellar.org";
   }

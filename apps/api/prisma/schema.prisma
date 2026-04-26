@@ -3,27 +3,39 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
+/// A mutable developer workspace that can later be shared as a read-only snapshot.
 model Workspace {
-  id                String             @id @default(cuid())
+  id                String              @id @default(cuid())
+  ownerKey          String              @map("owner_key")
   name              String
-  createdAt         DateTime           @default(now()) @map("created_at")
+  description       String?
+  selectedNetwork   String              @default("testnet") @map("selected_network")
+  /// BE-006: Monotonically increasing revision counter for optimistic concurrency control.
+  revision          Int                 @default(0)
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
   savedContracts    SavedContract[]
   savedInteractions SavedInteraction[]
+  artifacts         WorkspaceArtifact[]
+  shares            ShareLink[]
 
+  @@index([ownerKey])
+  @@index([updatedAt])
   @@map("workspaces")
 }
 
 model SavedContract {
-  id          String    @id @default(cuid())
-  workspaceId String    @map("workspace_id")
-  contractId  String    @map("contract_id")
+  id          String     @id @default(cuid())
+  workspaceId String     @map("workspace_id")
+  contractId  String     @map("contract_id")
   network     String
-  createdAt   DateTime  @default(now()) @map("created_at")
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  label       String?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
   @@index([contractId, network])
@@ -31,14 +43,68 @@ model SavedContract {
 }
 
 model SavedInteraction {
-  id            String    @id @default(cuid())
-  workspaceId   String    @map("workspace_id")
-  functionName  String    @map("function_name")
-  argumentsJson Json      @map("arguments_json")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id            String     @id @default(cuid())
+  workspaceId   String     @map("workspace_id")
+  contractId    String?    @map("contract_id")
+  functionName  String     @map("function_name")
+  name          String?
+  network       String
+  argumentsJson Json       @map("arguments_json")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId])
-  @@index([functionName])
+  @@index([contractId, network])
+  @@index([functionName, network])
   @@map("saved_interactions")
+}
+
+/// File and derived metadata captured inside a workspace, including WASM uploads.
+model WorkspaceArtifact {
+  id          String     @id @default(cuid())
+  workspaceId String     @map("workspace_id")
+  kind        String
+  name        String
+  network     String?
+  hash        String?
+  metadata    Json?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, kind])
+  @@index([hash])
+  @@map("workspace_artifacts")
+}
+
+/// BE-011: Durable audit record for workspace and share mutations.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actor       String
+  action      String
+  resourceType String  @map("resource_type")
+  resourceId  String   @map("resource_id")
+  summary     String?
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([actor])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Immutable, read-only links that capture a point-in-time workspace snapshot.
+model ShareLink {
+  id            String     @id @default(cuid())
+  workspaceId    String     @map("workspace_id")
+  token         String     @unique
+  label         String?
+  snapshotJson  Json       @map("snapshot_json")
+  expiresAt     DateTime?  @map("expires_at")
+  revokedAt     DateTime?  @map("revoked_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@map("share_links")
 }

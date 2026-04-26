@@ -1,132 +1,159 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Horizon } from "@stellar/stellar-sdk";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
+import { fetchRecentTransactions, NormalizedTx } from "@/lib/history-utils";
+import Link from "next/link";
 import {
   Activity,
-  CheckCircle2,
-  XCircle,
-  ExternalLink,
-  Clock,
-  ArrowRightLeft,
-  Box,
   AlertCircle,
+  Box,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Info,
+  RefreshCw,
+  WifiOff,
+  XCircle,
 } from "lucide-react";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@devconsole/ui";
+import { Alert, AlertDescription, AlertTitle } from "@devconsole/ui";
+import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
 import { ScrollArea } from "@devconsole/ui";
-import { Badge } from "@devconsole/ui";
 
-const getHorizonUrl = (networkId: string) => {
-  switch (networkId) {
-    case "mainnet":
-      return "https://horizon.stellar.org";
-    case "testnet":
-      return "https://horizon-testnet.stellar.org";
-    case "futurenet":
-      return "https://horizon-futurenet.stellar.org";
-    case "local":
-      return "http://localhost:8000";
-    default:
-      return "https://horizon-testnet.stellar.org";
-  }
+const POLL_INTERVAL_MS = 10_000;
+const MAX_ITEMS = 20;
+
+const HORIZON_URL: Record<string, string> = {
+  mainnet: "https://horizon.stellar.org",
+  testnet: "https://horizon-testnet.stellar.org",
+  futurenet: "https://horizon-futurenet.stellar.org",
+  local: "http://localhost:8000",
 };
 
-interface TxRecord {
-  id: string;
-  hash: string;
-  successful: boolean;
-  created_at: string;
-  operation_count: number;
-  memo?: string;
-}
+type FeedState = "idle" | "loading" | "ok" | "empty" | "account-missing" | "error" | "degraded";
 
 export function TransactionFeed() {
   const { address, isConnected } = useWallet();
   const { currentNetwork } = useNetworkStore();
 
-  const [transactions, setTransactions] = useState<TxRecord[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [txs, setTxs] = useState<NormalizedTx[]>([]);
+  const [feedState, setFeedState] = useState<FeedState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [isAccountMissing, setIsAccountMissing] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
-    let timeoutId: NodeJS.Timeout;
+  const seenIds = useRef(new Set<string>());
+  const cursorRef = useRef<string | undefined>(undefined);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
 
-    async function fetchTransactions() {
-      if (!address || !isConnected) return;
+  const horizonUrl = HORIZON_URL[currentNetwork] ?? HORIZON_URL.testnet;
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const reset = useCallback(() => {
+    stopPolling();
+    setTxs([]);
+    setFeedState("idle");
+    setErrorMsg(null);
+    setLastUpdated(null);
+    seenIds.current = new Set();
+    cursorRef.current = undefined;
+  }, []);
+
+  const mergeTxs = (incoming: NormalizedTx[]) => {
+    const fresh = incoming.filter((tx) => !seenIds.current.has(tx.id));
+    fresh.forEach((tx) => seenIds.current.add(tx.id));
+    if (fresh.length === 0) return;
+    setTxs((prev) => [...fresh, ...prev].slice(0, MAX_ITEMS));
+    setLastUpdated(new Date());
+  };
+
+  const poll = useCallback(
+    async (isInitial = false) => {
+      if (!mountedRef.current || !address) return;
+
+      if (isInitial) setFeedState("loading");
 
       try {
-        const serverUrl = getHorizonUrl(currentNetwork);
-        const server = new Horizon.Server(serverUrl);
+        const { records } = await fetchRecentTransactions(
+          address,
+          horizonUrl,
+          cursorRef.current,
+        );
 
-        const response = await server
-          .transactions()
-          .forAccount(address)
-          .limit(15)
-          .order("desc")
-          .call();
+        if (!mountedRef.current) return;
 
-        if (isMounted) {
-          setTransactions(
-            response.records.map((rec) => ({
-              id: rec.id,
-              hash: rec.hash,
-              successful: rec.successful,
-              created_at: rec.created_at,
-              operation_count: rec.operation_count,
-              memo: rec.memo,
-            })),
-          );
-          setLastUpdated(new Date());
-          setIsAccountMissing(false);
-          timeoutId = setTimeout(fetchTransactions, 5000);
+        if (records.length > 0) {
+          cursorRef.current = records[0].id; // track latest for next poll
+          mergeTxs(records);
+          setFeedState("ok");
+        } else if (isInitial) {
+          setFeedState("empty");
         }
-      } catch (error: any) {
-        if (error.response && error.response.status === 404) {
-          if (isMounted) {
-            setIsAccountMissing(true);
-            setTransactions([]);
-            timeoutId = setTimeout(fetchTransactions, 10000);
-          }
+
+        setErrorMsg(null);
+      } catch (err: any) {
+        if (!mountedRef.current) return;
+        const status = err?.response?.status;
+        if (status === 404) {
+          setFeedState("account-missing");
+        } else if (feedState === "ok") {
+          // Already had data — mark degraded instead of full error
+          setFeedState("degraded");
+          setErrorMsg("Network issue — showing last known data.");
         } else {
-          console.error("Failed to fetch transactions:", error);
-          if (isMounted) {
-            timeoutId = setTimeout(fetchTransactions, 5000);
-          }
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
+          setFeedState("error");
+          setErrorMsg(err?.message ?? "Failed to load transactions.");
         }
       }
-    }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [address, horizonUrl],
+  );
 
-    setLoading(true);
-    setIsAccountMissing(false);
-    fetchTransactions();
+  // Reset on account/network change
+  useEffect(() => {
+    reset();
+  }, [address, currentNetwork, reset]);
 
+  // Start polling when connected
+  useEffect(() => {
+    if (!isConnected || !address) return;
+
+    poll(true);
+    pollRef.current = setInterval(() => poll(false), POLL_INTERVAL_MS);
+
+    return stopPolling;
+  }, [isConnected, address, poll]);
+
+  useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      isMounted = false;
-      clearTimeout(timeoutId);
+      mountedRef.current = false;
+      stopPolling();
     };
-  }, [address, isConnected, currentNetwork]);
+  }, []);
 
-  const formatTime = (dateStr: string) => {
-    return new Intl.DateTimeFormat("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(new Date(dateStr));
+  const handleRefresh = () => {
+    reset();
+    if (isConnected && address) {
+      poll(true);
+      pollRef.current = setInterval(() => poll(false), POLL_INTERVAL_MS);
+    }
   };
 
   if (!isConnected) {
@@ -147,100 +174,157 @@ export function TransactionFeed() {
           <div className="space-y-1">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Activity className="h-4 w-4 text-blue-500" />
-              Live Activity
+              Transaction Feed
             </CardTitle>
             <CardDescription className="text-xs">
-              Auto-updating • {currentNetwork}
+              Polling Horizon every {POLL_INTERVAL_MS / 1000}s • {currentNetwork}
             </CardDescription>
           </div>
-          {lastUpdated && !isAccountMissing && (
-            <Badge
-              variant="outline"
-              className="font-mono text-[10px] opacity-70"
+          <div className="flex items-center gap-2">
+            {lastUpdated && (
+              <Badge variant="outline" className="font-mono text-[10px] opacity-70">
+                Updated {lastUpdated.toLocaleTimeString()}
+              </Badge>
+            )}
+            {feedState === "degraded" && (
+              <Badge variant="outline" className="border-yellow-400 text-yellow-600 text-[10px]">
+                <WifiOff className="mr-1 h-3 w-3" /> Degraded
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              title="Refresh"
+              disabled={feedState === "loading"}
+              aria-label="Refresh transaction feed"
             >
-              Updated {lastUpdated.toLocaleTimeString()}
-            </Badge>
-          )}
+              <RefreshCw className={`h-4 w-4 ${feedState === "loading" ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
       <CardContent className="flex-1 overflow-hidden p-0">
         <ScrollArea className="h-[400px]">
-          <div className="flex flex-col divide-y">
-            {isAccountMissing ? (
-              <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+          <div className="flex flex-col divide-y" role="list" aria-label="Transaction feed">
+            {feedState === "account-missing" && (
+              <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground" role="status" aria-live="polite">
                 <AlertCircle className="h-8 w-8 text-orange-400 opacity-50" />
                 <div>
-                  <p className="font-semibold text-foreground">
-                    Account Not Found
-                  </p>
+                  <p className="font-semibold text-foreground">Account Not Found</p>
                   <p className="mt-1">
-                    This wallet has not been funded on {currentNetwork} yet. Use
-                    the Friendbot button on the dashboard to get started.
+                    This account has not been funded on {currentNetwork} yet.
                   </p>
                 </div>
               </div>
-            ) : transactions.length === 0 && !loading ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                No recent transactions found on this network.
+            )}
+
+            {feedState === "error" && (
+              <Alert variant="destructive" className="m-4" role="alert">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{errorMsg}</AlertDescription>
+              </Alert>
+            )}
+
+            {feedState === "empty" && (
+              <div className="p-8 text-center text-sm text-muted-foreground" role="status">
+                No transactions found for this account on {currentNetwork}.
               </div>
-            ) : (
-              transactions.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="flex items-center gap-3 p-4 transition-colors hover:bg-muted/50"
-                >
-                  <div className="shrink-0">
-                    {tx.successful ? (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/15">
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                      </div>
-                    ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/15">
-                        <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                      </div>
+            )}
+
+            {feedState === "loading" && txs.length === 0 && (
+              <div className="p-8 text-center text-sm text-muted-foreground" role="status" aria-live="polite">
+                Loading transactions…
+              </div>
+            )}
+
+            {feedState === "degraded" && errorMsg && (
+              <Alert className="m-4 border-yellow-400/50 bg-yellow-500/10" role="alert">
+                <WifiOff className="h-4 w-4 text-yellow-600" />
+                <AlertDescription className="text-yellow-700">{errorMsg}</AlertDescription>
+              </Alert>
+            )}
+
+            {txs.map((tx) => (
+              <div
+                key={tx.id}
+                className="flex items-center gap-3 p-4 transition-colors hover:bg-muted/50 focus-within:bg-muted/50"
+                role="listitem"
+                tabIndex={0}
+                aria-label={`Transaction ${tx.hash.slice(0, 6)}…${tx.hash.slice(-6)}, ${tx.successful ? 'successful' : 'failed'}, ${tx.operationSummary}`}
+              >
+                <div className="shrink-0">
+                  {tx.successful ? (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/15">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    </div>
+                  ) : (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/15">
+                      <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="truncate text-sm font-medium">
+                      {tx.operationSummary}
+                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {tx.hash.slice(0, 6)}…{tx.hash.slice(-6)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {new Date(tx.createdAt).toLocaleTimeString()}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Box className="h-3 w-3" />
+                      {tx.operationCount} Op{tx.operationCount !== 1 ? "s" : ""}
+                    </span>
+                    {tx.sourceAccount && (
+                      <span className="font-mono truncate max-w-[120px]">
+                        {tx.sourceAccount.slice(0, 6)}…
+                      </span>
                     )}
                   </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        Transaction
-                      </span>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {tx.hash.slice(0, 4)}...{tx.hash.slice(-4)}
-                      </span>
+                  {!tx.successful && (
+                    <div className="mt-2 text-xs text-red-600 dark:text-red-400">
+                      Transaction failed. Check network status or try increasing fee for retry.
                     </div>
-
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatTime(tx.created_at)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Box className="h-3 w-3" />
-                        {tx.operation_count} Ops
-                      </span>
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    asChild
-                    className="h-8 w-8 text-muted-foreground"
-                  >
-                    <a
-                      href={`https://stellar.expert/explorer/${currentNetwork}/tx/${tx.hash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
+                  )}
                 </div>
-              ))
-            )}
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`View details for transaction ${tx.hash.slice(0, 6)}…${tx.hash.slice(-6)}`}
+                >
+                  <Link href={`/tx/${tx.hash}`}>
+                    <Info className="h-4 w-4" />
+                  </Link>
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  asChild
+                  className="h-8 w-8 text-muted-foreground"
+                  aria-label={`View on Stellar Explorer for transaction ${tx.hash.slice(0, 6)}…${tx.hash.slice(-6)}`}
+                >
+                  <a
+                    href={`https://stellar.expert/explorer/${currentNetwork}/tx/${tx.hash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
+            ))}
           </div>
         </ScrollArea>
       </CardContent>

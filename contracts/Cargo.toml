@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+  "auth-tester",
+  "event-fixture",
+  "counter-fixture",
+  "error-trigger",
+  "failure-fixture",
+  "source-registry",
+  "token-fixture",
+  "types-tester",
+]
+default-members = [
+  "auth-tester",
+  "event-fixture",
+  "counter-fixture",
+  "error-trigger",
+  "failure-fixture",
+  "source-registry",
+  "token-fixture",
+  "types-tester",
+]
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

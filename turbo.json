@@ -5,7 +5,24 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
-    "lint": {},
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "**/*.test.{ts,tsx}"]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "outputs": ["playwright-report/**", "test-results/**"],
+      "cache": false
+    },
     "dev": {
       "dependsOn": ["^dev"],
       "cache": false,

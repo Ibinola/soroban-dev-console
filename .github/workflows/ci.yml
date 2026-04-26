@@ -7,24 +7,256 @@ on:
     branches: ["main"]
 
 jobs:
-  build:
-    name: Build and Test
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
-
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      packages: ${{ steps.filter.outputs.packages }}
+      api: ${{ steps.filter.outputs.api }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+      devops: ${{ steps.filter.outputs.devops }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          fetch-depth: 2
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/ui/**'
+              - 'packages/soroban-utils/**'
+            packages:
+              - 'packages/**'
+            api:
+              - 'apps/api/**'
+              - 'packages/api-contracts/**'
+            contracts:
+              - 'contracts/**'
+            e2e:
+              - 'apps/web/e2e/**'
+              - 'apps/web/playwright.config.ts'
+            devops:
+              - 'scripts/**'
+              - 'packages/api-contracts/src/runtime-defaults.ts'
+              - 'README.md'
+              - 'docs/architecture.md'
+              - 'apps/api/.env.example'
+              - 'apps/web/.env.example'
+              - 'package.json'
+              - 'package-lock.json'
+              - '**/package.json'
 
-      - name: Setup Node.js
+  web:
+    name: Web
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-web-${{ hashFiles('package-lock.json', 'turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-web-
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build Monorepo
-        run: npm run build
+      - name: Lint web
+        run: npm run lint -w web
+
+      - name: Build web
+        run: npm run build -w web -- --webpack
+
+      - name: Typecheck web
+        run: npm run typecheck -w web
+
+      - name: Run unit tests
+        run: npm run test:run -w web
+
+      - name: Analyze bundle size
+        run: npm run analyze -w web
+        env:
+          ANALYZE: 'true'
+
+      - name: Check performance budgets
+        run: npm run check-budget -w web
+
+      - name: Upload bundle analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: apps/web/.next/analyze/
+          retention-days: 30
+
+  packages:
+    name: Package Validation (${{ matrix.workspace }})
+    needs: changes
+    if: needs.changes.outputs.packages == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ["@devconsole/ui", "@devconsole/soroban-utils"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-packages-${{ matrix.workspace }}-${{ hashFiles('package-lock.json', 'turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-packages-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate package
+        run: npx turbo run lint typecheck build --filter=${{ matrix.workspace }}
+
+  api:
+    name: API
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-api-${{ hashFiles('package-lock.json', 'turbo.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-api-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w api
+
+      - name: Lint API
+        run: npm run lint -w api
+
+      - name: Build API
+        run: npm run build -w api
+
+      - name: Test API
+        run: npm run test -w api
+
+  contracts:
+    name: Contracts (${{ matrix.contract }})
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        contract: ["auth-tester", "counter-fixture", "error-trigger", "event-fixture", "failure-fixture", "source-registry", "token-fixture", "types-tester"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/${{ matrix.contract }}
+
+      - name: Test contract
+        run: cargo test --manifest-path contracts/${{ matrix.contract }}/Cargo.toml
+
+      - name: Build contract
+        run: cargo build --release --manifest-path contracts/${{ matrix.contract }}/Cargo.toml
+
+  e2e:
+    name: E2E Tests
+    needs: [changes, web]
+    if: (needs.changes.outputs.e2e == 'true' || needs.changes.outputs.web == 'true') || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: npm run test:e2e -w web
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 30
+
+  devops:
+    name: DevOps
+    needs: changes
+    if: needs.changes.outputs.devops == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check runtime drift
+        run: npm run check-drift
+
+      - name: Check dependency integrity
+        run: npm run check-integrity

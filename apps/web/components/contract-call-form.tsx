@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Contract,
   TransactionBuilder,
@@ -16,20 +16,32 @@ import {
   Terminal,
   Save,
   Bookmark,
+  FlaskConical,
+  SlidersHorizontal,
+  Eye,
+  AlertCircle,
+  Download,
 } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useSavedCallsStore, SavedCall } from "@/store/useSavedCallsStore";
 import {
+  SimulationVariant,
+  createVariant,
   ArgType,
   ContractArg,
   convertToScVal,
+  normalizeSimulationResult,
+  type NormalizedSimulationResult,
+  type NormalizedContractSpec,
 } from "@devconsole/soroban-utils";
 import { signTransaction } from "@stellar/freighter-api";
 import { SavedCallsSheet } from "./saved-calls-sheet";
 import { AbiInputField } from "./abi-input-field";
 import { useAbiStore } from "@/store/useAbiStore";
-import { useEffect } from "react";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
+import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import {
@@ -55,26 +67,143 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@devconsole/ui";
+import { ActionGuard } from "./action-guard";
 import { toast } from "sonner";
+import { useResultBundlesStore } from "@/store/useResultBundlesStore";
+import { exportResultBundle } from "@/lib/result-bundles";
 
 interface ContractCallFormProps {
   contractId: string;
 }
 
+const DEFAULT_TOKEN_SPEC: NormalizedContractSpec = {
+  contractId: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  source: "workspace",
+  rawSpec: "",
+  ingestedAt: Date.now(),
+  functions: [
+    {
+      name: "balance",
+      inputs: [{ name: "id", type: "address", required: true }],
+      outputs: [{ name: "balance", type: "i128", required: true }],
+    },
+    {
+      name: "decimals",
+      inputs: [],
+      outputs: [{ name: "decimals", type: "u32", required: true }],
+    },
+    {
+      name: "name",
+      inputs: [],
+      outputs: [{ name: "name", type: "string", required: true }],
+    },
+    {
+      name: "symbol",
+      inputs: [],
+      outputs: [{ name: "symbol", type: "symbol", required: true }],
+    },
+    {
+      name: "transfer",
+      inputs: [
+        { name: "from", type: "address", required: true },
+        { name: "to", type: "address", required: true },
+        { name: "amount", type: "i128", required: true },
+      ],
+      outputs: [],
+    },
+    {
+      name: "mint",
+      inputs: [
+        { name: "to", type: "address", required: true },
+        { name: "amount", type: "i128", required: true },
+      ],
+      outputs: [],
+    },
+    {
+      name: "burn",
+      inputs: [
+        { name: "from", type: "address", required: true },
+        { name: "amount", type: "i128", required: true },
+      ],
+      outputs: [],
+    },
+  ],
+};
+
+function toContractArg(field: NonNullable<NormalizedContractSpec["functions"][number]>["inputs"][number]): ContractArg {
+  return {
+    id: crypto.randomUUID(),
+    name: field.name,
+    type:
+      field.type === "unknown" || field.type === "bytes"
+        ? "string"
+        : field.type,
+    value: "",
+  };
+}
+
 export function ContractCallForm({ contractId }: ContractCallFormProps) {
+  const pathname = usePathname();
   const genId = () => Math.random().toString(36).substring(2, 9);
-  const { isConnected, address } = useWallet();
+  const { isConnected, address, isSandboxMode, enterSandbox, exitSandbox } = useWallet();
   const { getActiveNetworkConfig } = useNetworkStore();
 
   const [fnName, setFnName] = useState("");
   const [args, setArgs] = useState<ContractArg[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const { saveCall } = useSavedCallsStore();
+  const [simulation, setSimulation] =
+    useState<NormalizedSimulationResult | null>(null);
+  const { saveCall, savePreset } = useSavedCallsStore();
+  const { addBundle } = useResultBundlesStore();
+  const { activeWorkspaceId, linkSavedCall } = useWorkspaceStore();
   const [isSaveOpen, setIsSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [pinnedVariants, setPinnedVariants] = useState<SimulationVariant[]>([]);
   const { getSpec, setSpec } = useAbiStore();
   const spec = getSpec(contractId);
+  const selectedFunction = spec?.functions.find((entry) => entry.name === fnName);
+  const usesAbiInputs = Boolean(selectedFunction && selectedFunction.inputs.length > 0);
+
+  // FE-044: advanced fee/resource tuning state
+  const [showFeeControls, setShowFeeControls] = useState(false);
+  const [customFee, setCustomFee] = useState("100");
+  const [customCpuLimit, setCustomCpuLimit] = useState("");
+  const [customMemLimit, setCustomMemLimit] = useState("");
+
+  // FE-044: validate overrides before use
+  const feeOverride = (() => {
+    const n = Number(customFee);
+    return Number.isFinite(n) && n >= 100 ? String(n) : "100";
+  })();
+
+  const formatInt = (value: number) =>
+    new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+
+  const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes < 0) return "N/A";
+    if (bytes < 1024) return `${formatInt(bytes)} B`;
+
+    const units = ["KB", "MB", "GB", "TB"];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+
+    return `${new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
+    }).format(value)} ${units[unitIndex]}`;
+  };
+
+  const normalizedConnectedAddress = address?.trim().toUpperCase() ?? null;
+  const isConnectedWalletAuthorized =
+    normalizedConnectedAddress !== null &&
+    (simulation?.requiredAuthKeys ?? []).some(
+      (key) => key.toUpperCase() === normalizedConnectedAddress,
+    );
 
   useEffect(() => {
     if (
@@ -82,51 +211,37 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" &&
       !spec
     ) {
-      setSpec(contractId, {
-        rawSpec: "",
-        functions: [
-          "balance",
-          "decimals",
-          "name",
-          "symbol",
-          "transfer",
-          "mint",
-          "burn",
-        ],
-      });
+      setSpec(contractId, DEFAULT_TOKEN_SPEC);
     }
   }, [contractId, spec, setSpec]);
 
   const handleFnChange = (name: string) => {
     setFnName(name);
-    if (name === "transfer") {
-      setArgs([
-        { id: genId(), name: "from", type: "address", value: "" },
-        { id: genId(), name: "to", type: "address", value: "" },
-        { id: genId(), name: "amount", type: "i128", value: "" },
-      ]);
-    } else if (name === "balance") {
-      setArgs([{ id: genId(), name: "id", type: "address", value: "" }]);
-    } else {
-      setArgs([]);
-    }
+    setSimulation(null);
+    const nextFunction = spec?.functions.find((entry) => entry.name === name);
+
+    setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
   };
 
   const addArg = () => {
+    setSimulation(null);
     setArgs([...args, { id: genId(), type: "symbol", value: "" }]);
   };
 
   const removeArg = (id: string) => {
+    setSimulation(null);
     setArgs(args.filter((a) => a.id !== id));
   };
 
   const updateArg = (id: string, field: keyof ContractArg, val: string) => {
+    setSimulation(null);
     setArgs(args.map((a) => (a.id === id ? { ...a, [field]: val } : a)));
   };
 
   const handleSimulate = async () => {
     setIsLoading(true);
     setResult(null);
+    setSimulation(null);
     try {
       const network = getActiveNetworkConfig();
       const server = new SorobanRpc.Server(network.rpcUrl);
@@ -136,6 +251,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       const operation = contract.call(fnName, ...scArgs);
 
+      // FE-043: sandbox uses a well-known public key when no wallet is connected
       const source =
         address || "GBZXN7PIRZGNMHGA7MUUUFFAUYVSF74BWXME4R37P2N6F5N4AUM5546F";
 
@@ -149,23 +265,48 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           sequenceNumber: () => sequence,
           incrementSequenceNumber: () => {},
         },
-        { fee: "100", networkPassphrase: network.networkPassphrase },
+        // FE-044: apply fee override
+        { fee: feeOverride, networkPassphrase: network.networkPassphrase },
       )
         .addOperation(operation)
         .setTimeout(TimeoutInfinite)
         .build();
 
       const sim = await server.simulateTransaction(tx);
+      const normalized = normalizeSimulationResult(sim);
+      setSimulation(normalized);
 
-      if (SorobanRpc.Api.isSimulationSuccess(sim)) {
-        setResult(`Simulation Success! Result XDR available.`);
+      addBundle({
+        kind: "single-call",
+        title: `Simulation · ${fnName || "unknown"}`,
+        networkId: network.id,
+        workspaceId: activeWorkspaceId,
+        contractId,
+        payload: {
+          mode: "simulate",
+          fnName,
+          args,
+          simulation: normalized,
+        },
+      });
+
+      if (normalized.ok) {
+        setResult("Simulation succeeded.");
         toast.success(`Simulation Success!`);
       } else {
-        setResult(`Simulation Failed: ${sim.error || "Unknown error"}`);
-        toast.error(`Simulation Failed: ${sim.error || "Unknown error"}`);
+        setResult(`Simulation failed: ${normalized.error || "Unknown error"}`);
+        toast.error(`Simulation Failed: ${normalized.error || "Unknown error"}`);
       }
     } catch (e: any) {
       console.error(e);
+      setSimulation({
+        ok: false,
+        error: e.message,
+        auth: [],
+        requiredAuthKeys: [],
+        stateChangesCount: 0,
+        stateChanges: [],
+      });
       setResult(`Error: ${e.message}`);
       toast.error(`Simulation Error: ${e.message}`);
     } finally {
@@ -192,7 +333,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       const sourceAccount = await server.getAccount(address);
 
       const tx = new TransactionBuilder(sourceAccount, {
-        fee: "100",
+        // FE-044: apply fee override
+        fee: feeOverride,
         networkPassphrase: network.networkPassphrase,
       })
         .addOperation(contract.call(fnName, ...scArgs))
@@ -217,6 +359,22 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         ),
       );
 
+      addBundle({
+        kind: "single-call",
+        title: `Transaction · ${fnName || "unknown"}`,
+        networkId: network.id,
+        workspaceId: activeWorkspaceId,
+        contractId,
+        txHash: sendRes.hash,
+        payload: {
+          mode: "submit",
+          fnName,
+          args,
+          sendStatus: sendRes.status,
+          simulation: normalizeSimulationResult(sim),
+        },
+      });
+
       if (sendRes.status !== "PENDING") {
         throw new Error(`Submission failed: ${sendRes.status}`);
       }
@@ -235,25 +393,77 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const handleSave = () => {
     if (!saveName.trim()) return;
 
-    saveCall({
+    const savedCall = saveCall({
       name: saveName,
       contractId,
       fnName,
       args,
       network: getActiveNetworkConfig().id,
     });
+    linkSavedCall(activeWorkspaceId, savedCall.id);
 
     setIsSaveOpen(false);
     setSaveName("");
     toast.success("Interaction saved!");
   };
 
+  const handlePin = () => {
+    if (!result) return;
+    const label = `Variant ${pinnedVariants.length + 1}`;
+    const v = createVariant(
+      label,
+      fnName,
+      args.map((a) => a.value),
+      result,
+      null,
+      simulation?.cpuInsns,
+      simulation?.memBytes,
+    );
+    setPinnedVariants((prev) => [...prev.slice(-1), v]);
+    toast.success(`Pinned as ${label}`);
+  };
+
   const handleLoad = (call: SavedCall) => {
     setFnName(call.fnName);
+    setSimulation(null);
 
     const newArgs = call.args.map((a) => ({ ...a, id: crypto.randomUUID() }));
     setArgs(newArgs);
     toast.info(`Loaded: ${call.name}`);
+  };
+
+  const handleSavePreset = () => {
+    if (!fnName) return;
+    const network = getActiveNetworkConfig();
+    savePreset({
+      name: saveName.trim() || `${fnName} preset`,
+      contractId,
+      fnName,
+      args,
+      network: network.id,
+      source: "custom",
+    });
+    toast.success("Operation preset saved");
+  };
+
+  const handleExportBundle = () => {
+    const network = getActiveNetworkConfig();
+    const bundle = addBundle({
+      kind: "single-call",
+      title: `Export · ${fnName || "contract-call"}`,
+      networkId: network.id,
+      workspaceId: activeWorkspaceId,
+      contractId,
+      payload: {
+        mode: "manual-export",
+        fnName,
+        args,
+        result,
+        simulation,
+      },
+    });
+    exportResultBundle(bundle);
+    toast.success("Result bundle exported");
   };
 
   return (
@@ -264,6 +474,41 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         <SavedCallsSheet contractId={contractId} onSelect={handleLoad} />
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* FE-064: Action context banners */}
+        {pathname?.startsWith("/share/") && (
+          <div className="flex items-center gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm text-blue-700">
+            <Eye className="h-4 w-4" />
+            <span>Read-only shared workspace — execution and editing are disabled.</span>
+          </div>
+        )}
+        {isSandboxMode && (
+          <div className="flex items-center justify-between rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm">
+            <div className="flex items-center gap-2 text-amber-700">
+              <FlaskConical className="h-4 w-4" />
+              <span>Sandbox mode — simulation only, no wallet required</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-amber-700 hover:text-amber-900"
+              onClick={exitSandbox}
+            >
+              Exit
+            </Button>
+          </div>
+        )}
+        {!isConnected && !isSandboxMode && !pathname?.startsWith("/share/") && (
+          <div className="flex items-center justify-between rounded-md border border-dashed px-4 py-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              <span>No wallet connected — connect or enter sandbox to enable interactions</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={enterSandbox}>
+              <FlaskConical className="mr-1 h-3 w-3" />
+              Enter Sandbox
+            </Button>
+          </div>
+        )}
         <div className="space-y-2">
           <Label>Function Name</Label>
           {spec ? (
@@ -273,8 +518,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               </SelectTrigger>
               <SelectContent>
                 {spec.functions.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
+                  <SelectItem key={f.name} value={f.name}>
+                    {f.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -289,16 +534,29 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         </div>
 
         <Dialog open={isSaveOpen} onOpenChange={setIsSaveOpen}>
-          <DialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              title="Save Interaction"
-              disabled={!fnName}
-            >
-              <Save className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
+          <ActionGuard action="submit">
+            <div className="flex gap-2">
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Save Interaction"
+                  disabled={!fnName}
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+              </DialogTrigger>
+              <Button
+                variant="outline"
+                size="sm"
+                title="Save reusable operation preset"
+                disabled={!fnName}
+                onClick={handleSavePreset}
+              >
+                Save Preset
+              </Button>
+            </div>
+          </ActionGuard>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Save Interaction</DialogTitle>
@@ -321,44 +579,62 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label>Arguments ({args.length})</Label>
-            <Button size="sm" variant="outline" onClick={addArg}>
-              <Plus className="mr-1 h-3 w-3" /> Add Arg
-            </Button>
+            {!usesAbiInputs && (
+              <Button size="sm" variant="outline" onClick={addArg}>
+                <Plus className="mr-1 h-3 w-3" /> Add Arg
+              </Button>
+            )}
           </div>
+
+          {selectedFunction?.doc && (
+            <p className="text-sm text-muted-foreground">{selectedFunction.doc}</p>
+          )}
+
+          {args.length === 0 && selectedFunction && (
+            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+              {usesAbiInputs
+                ? "This function does not require any arguments."
+                : "No ABI-defined inputs were found for this function. Add manual arguments only if the contract expects them."}
+            </div>
+          )}
 
           {args.map((arg) => (
             <div key={arg.id} className="flex items-start gap-2">
-              <div className="w-[120px]">
-                <Select
-                  value={arg.type}
-                  onValueChange={(v: ArgType) => updateArg(arg.id, "type", v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="symbol">Symbol</SelectItem>
-                    <SelectItem value="address">Address</SelectItem>
-                    <SelectItem value="i32">i32 (Int)</SelectItem>
-                    <SelectItem value="string">String</SelectItem>
-                    <SelectItem value="bool">Bool</SelectItem>
-                    <SelectItem value="vec">Vec (JSON)</SelectItem>
-                    <SelectItem value="map">Map (JSON)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!usesAbiInputs && (
+                <div className="w-[120px]">
+                  <Select
+                    value={arg.type}
+                    onValueChange={(v: ArgType) => updateArg(arg.id, "type", v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="symbol">Symbol</SelectItem>
+                      <SelectItem value="address">Address</SelectItem>
+                      <SelectItem value="i32">i32 (Int)</SelectItem>
+                      <SelectItem value="string">String</SelectItem>
+                      <SelectItem value="bool">Bool</SelectItem>
+                      <SelectItem value="vec">Vec (JSON)</SelectItem>
+                      <SelectItem value="map">Map (JSON)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <AbiInputField
                 arg={arg}
                 onChange={(id, val) => updateArg(id, "value", val)}
               />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="text-destructive"
-                onClick={() => removeArg(arg.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {!usesAbiInputs && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={() => removeArg(arg.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
@@ -369,34 +645,269 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           </div>
         )}
 
-        <div className="flex gap-3 pt-2">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={handleSimulate}
-            disabled={isLoading || !fnName}
-          >
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Terminal className="mr-2 h-4 w-4" />
-            )}
-            Simulate
-          </Button>
+        {simulation && (
+          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={simulation.ok ? "default" : "destructive"}>
+                {simulation.ok ? "Simulation Succeeded" : "Simulation Failed"}
+              </Badge>
+              {simulation.minResourceFee && (
+                <Badge variant="secondary">
+                  Min Fee: {formatInt(Number(simulation.minResourceFee))} stroops
+                </Badge>
+              )}
+              <Badge variant="secondary">
+                {simulation.stateChangesCount} state change
+                {simulation.stateChangesCount === 1 ? "" : "s"}
+              </Badge>
+              <Badge variant="secondary">
+                {simulation.auth.length} auth entr
+                {simulation.auth.length === 1 ? "y" : "ies"}
+              </Badge>
+            </div>
 
-          <Button
-            className="flex-1"
-            onClick={handleSend}
-            disabled={isLoading || !fnName || !isConnected}
-          >
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="mr-2 h-4 w-4" />
+            {!simulation.ok && simulation.error && (
+              <div className="mt-3 rounded-md border border-destructive/30 bg-background/70 p-3 text-sm">
+                <p className="font-semibold text-destructive">Simulation Error</p>
+                <p className="mt-1 font-mono text-xs">{simulation.error}</p>
+              </div>
             )}
-            Send Transaction
+
+            {simulation.ok && (
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-md border bg-background/70 p-3">
+                  <p className="text-muted-foreground text-xs">CPU Instructions</p>
+                  <p className="font-mono text-sm font-semibold">
+                    {simulation.cpuInsns !== undefined
+                      ? formatInt(simulation.cpuInsns)
+                      : "N/A"}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-background/70 p-3">
+                  <p className="text-muted-foreground text-xs">Memory Bytes</p>
+                  <p className="font-mono text-sm font-semibold">
+                    {simulation.memBytes !== undefined
+                      ? `${formatInt(simulation.memBytes)} B (${formatBytes(simulation.memBytes)})`
+                      : "N/A"}
+                  </p>
+                </div>
+                <div className="rounded-md border bg-background/70 p-3 sm:col-span-2">
+                  <p className="text-muted-foreground text-xs">Return Value XDR</p>
+                  <p className="mt-1 break-all font-mono text-xs">
+                    {simulation.resultXdr ?? "No return value provided by simulation."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {simulation && simulation.auth.length > 0 && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                Required Authorization Keys
+              </p>
+              <Badge className="border-amber-300 bg-amber-200/40 text-amber-800">
+                {simulation.requiredAuthKeys.length} key
+                {simulation.requiredAuthKeys.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+            <div className="mt-3 space-y-2">
+              {simulation.auth.map((entry) => {
+                const isConnectedWallet =
+                  normalizedConnectedAddress === entry.address.toUpperCase();
+                const isSigningKey = entry.kind === "account";
+
+                return (
+                  <div
+                    key={`${entry.kind}-${entry.address}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background/70 p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="break-all font-mono text-xs font-medium">
+                        {entry.address}
+                      </p>
+                      <p className="text-muted-foreground text-[11px]">
+                        {entry.kind === "account"
+                          ? isConnectedWallet
+                            ? "Matches connected wallet"
+                            : "Required signer"
+                          : "Contract authorization entry"}
+                      </p>
+                    </div>
+                    {isConnectedWallet ? (
+                      <Badge className="bg-green-600 hover:bg-green-700">
+                        Connected
+                      </Badge>
+                    ) : isSigningKey ? (
+                      <Badge variant="secondary">Missing</Badge>
+                    ) : (
+                      <Badge variant="secondary">Contract</Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {simulation.requiredAuthKeys.length > 0 &&
+              isConnected &&
+              address &&
+              !isConnectedWalletAuthorized && (
+              <p className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-700">
+                Connected wallet is not authorized for this invocation.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          {/* FE-044: fee/resource tuning toggle */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-xs text-muted-foreground"
+            onClick={() => setShowFeeControls((v) => !v)}
+            title="Advanced fee and resource controls"
+          >
+            <SlidersHorizontal className="h-3 w-3" />
+            {showFeeControls ? "Hide" : "Fee & Resources"}
           </Button>
         </div>
+
+        {/* FE-044: advanced fee and resource controls */}
+        {showFeeControls && (
+          <div className="rounded-md border border-dashed p-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Advanced Fee &amp; Resource Overrides
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Base Fee (stroops, min 100)</Label>
+                <Input
+                  type="number"
+                  min={100}
+                  value={customFee}
+                  onChange={(e) => setCustomFee(e.target.value)}
+                  placeholder="100"
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">CPU Limit (instructions)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={customCpuLimit}
+                  onChange={(e) => setCustomCpuLimit(e.target.value)}
+                  placeholder="auto"
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Memory Limit (bytes)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={customMemLimit}
+                  onChange={(e) => setCustomMemLimit(e.target.value)}
+                  placeholder="auto"
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              CPU and memory limits are advisory — the network enforces protocol maximums.
+              Unsafe values are validated before signing.
+            </p>
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <ActionGuard action="simulate" className="flex-1">
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={handleSimulate}
+              disabled={isLoading || !fnName}
+            >
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Terminal className="mr-2 h-4 w-4" />
+              )}
+              {isSandboxMode ? "Simulate (Sandbox)" : "Simulate"}
+            </Button>
+          </ActionGuard>
+
+          <ActionGuard action="submit" className="flex-1">
+            <Button
+              className="w-full"
+              onClick={handleSend}
+              disabled={isLoading || !fnName}
+            >
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Send Transaction
+            </Button>
+          </ActionGuard>
+        </div>
+        {result && (
+          <ActionGuard action="submit">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePin}
+                title="Pin this result for comparison"
+              >
+                <Bookmark className="mr-1 h-3 w-3" /> Pin Result
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportBundle}
+                title="Export structured result bundle"
+              >
+                <Download className="mr-1 h-3 w-3" /> Export Bundle
+              </Button>
+            </div>
+          </ActionGuard>
+        )}
+
+        {pinnedVariants.length >= 2 && (
+          <div className="rounded-md border border-purple-500/40 bg-purple-500/5 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-purple-700">
+              Simulation Comparison
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {pinnedVariants.map((v) => (
+                <div key={v.capturedAt} className="space-y-1 rounded-md border bg-background/70 p-3">
+                  <p className="text-xs font-semibold">{v.label}</p>
+                  <p className="break-all font-mono text-[10px] text-muted-foreground">
+                    {v.result ?? v.error}
+                  </p>
+                  {v.cpuInsns !== undefined && (
+                    <p className="font-mono text-[10px]">
+                      CPU: {formatInt(v.cpuInsns)} | Mem: {formatBytes(v.memBytes ?? 0)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2 text-xs text-muted-foreground"
+              onClick={() => setPinnedVariants([])}
+            >
+              Clear comparison
+            </Button>
+          </div>
+        )}
+
       </CardContent>
     </Card>
   );

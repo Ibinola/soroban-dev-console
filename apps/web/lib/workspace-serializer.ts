@@ -79,29 +79,55 @@ export function importWorkspace(raw: unknown): ImportResult {
 
   const payload = raw as SerializedWorkspace;
 
-  // Validate that every referenced contract has an artifact entry.
-  const artifactIndex = new Set(
-    (payload.artifacts ?? []).map((a) => a.contractId)
-  );
+  // Validate version — throws with recovery guidance for unsupported versions.
+  assertSupportedVersion(payload.version, "workspace-serializer");
 
-  for (const contractId of payload.contracts ?? []) {
-    if (!artifactIndex.has(contractId)) {
-      warnings.push(
-        `Artifact data missing for contract ${contractId}. ` +
-          `The contract is listed in the workspace but its ABI/spec was not included in the export. ` +
-          `Re-fetch the contract to restore full functionality.`
-      );
-    }
+  if (!payload.workspace?.id || !payload.workspace?.name) {
+    throw new Error("Malformed workspace payload: missing id or name");
   }
 
-  return {
-    workspace: {
-      version: 2,
-      contracts: payload.contracts ?? [],
-      savedCalls: payload.savedCalls ?? [],
-      notes: payload.notes ?? [],
-      artifacts: payload.artifacts ?? [],
-    },
-    warnings,
-  };
+  return payload;
+}
+
+/**
+ * Serialize a checkpoint to a portable JSON-safe object.
+ * The checkpoint embeds a full WorkspaceSnapshot so it is self-contained.
+ */
+export function serializeCheckpoint(checkpoint: WorkspaceCheckpoint): string {
+  return JSON.stringify(checkpoint);
+}
+
+/**
+ * Deserialize and validate a checkpoint from a JSON string.
+ * Throws if the payload is malformed.
+ */
+export function deserializeCheckpoint(raw: string): WorkspaceCheckpoint {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Malformed checkpoint: invalid JSON");
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Malformed checkpoint: not an object");
+  }
+  const cp = parsed as WorkspaceCheckpoint;
+  if (!cp.id || !cp.workspaceId || !cp.label || !cp.snapshot) {
+    throw new Error("Malformed checkpoint: missing required fields");
+  }
+  return cp;
+}
+
+/**
+ * FE-025: Parse, validate, and repair a raw import payload.
+ * Returns the repaired payload and the validation result.
+ * Throws only for truly unrecoverable errors (bad JSON structure, unsupported version).
+ */
+export function importWorkspace(raw: unknown): {
+  payload: SerializedWorkspace;
+  validation: ValidationResult;
+} {
+  const payload = deserializeWorkspace(raw);
+  const validation = validateAndRepair(payload);
+  return { payload, validation };
 }

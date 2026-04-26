@@ -7,6 +7,7 @@ import {
   HardDrive,
   Calculator,
   UploadCloud,
+  Rows3,
 } from "lucide-react";
 
 import {
@@ -53,6 +54,11 @@ const items = [
     title: "Transaction Lookup",
     url: "/tx",
     icon: Search,
+  },
+  {
+    title: "TX Builder",
+    url: "/tx-builder",
+    icon: Rows3,
   },
   {
     title: "Key Calculator",

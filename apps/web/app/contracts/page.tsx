@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useContractStore } from "@/store/useContractStore";
-import { Trash2, Plus, Search, FileCode } from "lucide-react";
+import {
+  Trash2,
+  Plus,
+  Search,
+  FileCode,
+  FlaskConical,
+  BookmarkPlus,
+  Star,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import Link from "next/link";
@@ -22,12 +31,27 @@ import {
   TableRow,
 } from "@devconsole/ui";
 import { toast } from "sonner";
+import { getDeployedFixtures } from "@/lib/fixture-manifest";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
+import { useNetworkStore } from "@/store/useNetworkStore";
+import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
 export default function ContractsPage() {
   const { contracts, addContract, removeContract } = useContractStore();
+  const { currentNetwork } = useNetworkStore();
+  const {
+    activeWorkspaceId,
+    bookmarkContract,
+    getContractBookmarks,
+    toggleBookmarkFavorite,
+    removeContractBookmark,
+    repairBookmarkNetwork,
+  } = useWorkspaceStore();
   const [inputVal, setInputVal] = useState("");
   const [error, setError] = useState("");
   const [isMounted, setIsMounted] = useState(false);
+  const fixtures = getDeployedFixtures();
+  const bookmarks = getContractBookmarks(activeWorkspaceId);
 
   useEffect(() => {
     setIsMounted(true);
@@ -46,10 +70,11 @@ export default function ContractsPage() {
       return;
     }
 
-    addContract(id, "testnet");
+    addContract(id, currentNetwork);
+    bookmarkContract(activeWorkspaceId, id, currentNetwork, "manual");
     setInputVal("");
     setError("");
-    toast.success("Contract added successfully!");
+    toast.success("Contract added and bookmarked.");
   };
 
   if (!isMounted) return null;
@@ -140,17 +165,35 @@ export default function ContractsPage() {
                     {new Date(contract.addedAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        removeContract(contract.id);
-                        toast.success("Contract removed");
-                      }}
-                      className="text-muted-foreground hover:text-red-500"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          bookmarkContract(
+                            activeWorkspaceId,
+                            contract.id,
+                            contract.network,
+                            "contracts-page",
+                          );
+                          toast.success("Contract bookmarked");
+                        }}
+                        className="text-muted-foreground hover:text-blue-500"
+                      >
+                        <BookmarkPlus className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          removeContract(contract.id);
+                          toast.success("Contract removed");
+                        }}
+                        className="text-muted-foreground hover:text-red-500"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -158,6 +201,155 @@ export default function ContractsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* FE-063: Fallback state indicator for fixture manifest */}
+      <FixtureFallbackIndicator />
+
+      {/* FE-015: Fixture contracts from manifest */}
+      {fixtures.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FlaskConical className="h-4 w-4" />
+              Demo Fixture Contracts
+              <FixtureFallbackIndicator compact />
+            </CardTitle>
+            <CardDescription>
+              Pre-deployed contracts for testing and demos. Add one to your
+              watchlist with a single click.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fixtures.map((f) => (
+                <div
+                  key={f.key}
+                  className="flex items-start justify-between gap-3 rounded-md border p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium">{f.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {f.description}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                      {f.contractId}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => {
+                      addContract(f.contractId!, f.network);
+                      bookmarkContract(
+                        activeWorkspaceId,
+                        f.contractId!,
+                        f.network,
+                        "fixture",
+                      );
+                      toast.success(`${f.label} added`);
+                    }}
+                    disabled={contracts.some((c) => c.id === f.contractId)}
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bookmarked Contracts</CardTitle>
+          <CardDescription>
+            Favorites stay pinned at the top. Stale bookmarks can be repaired.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {bookmarks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No bookmarks yet. Bookmark a contract from this page.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {bookmarks.map((bookmark) => {
+                const isStale = !contracts.some(
+                  (contract) =>
+                    contract.id === bookmark.contractId &&
+                    contract.network === bookmark.networkId,
+                );
+
+                return (
+                  <div
+                    key={bookmark.id}
+                    className="flex items-center justify-between rounded-md border p-3"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        href={`/contracts/${bookmark.contractId}`}
+                        className="truncate font-mono text-xs hover:text-blue-500 hover:underline"
+                      >
+                        {bookmark.contractId}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">
+                        {bookmark.networkId} · source: {bookmark.source}
+                        {isStale ? " · stale" : ""}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() =>
+                          toggleBookmarkFavorite(activeWorkspaceId, bookmark.id)
+                        }
+                        className={
+                          bookmark.favorite
+                            ? "text-amber-500"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        <Star className="h-4 w-4" />
+                      </Button>
+                      {isStale && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            addContract(bookmark.contractId, bookmark.networkId);
+                            repairBookmarkNetwork(
+                              activeWorkspaceId,
+                              bookmark.id,
+                              bookmark.networkId,
+                            );
+                            toast.success("Bookmark repaired");
+                          }}
+                          className="text-blue-600"
+                        >
+                          <Wrench className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() =>
+                          removeContractBookmark(activeWorkspaceId, bookmark.id)
+                        }
+                        className="text-red-500"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

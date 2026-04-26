@@ -74,7 +74,10 @@ export async function parseWasmMetadata(buffer: Uint8Array | ArrayBuffer): Promi
   try {
     // Try to read Soroban's contract spec custom section (contractspecv0)
     if (typeof WebAssembly !== "undefined") {
-      const module = await WebAssembly.compile(buffer);
+      const wasmBytes =
+        buffer instanceof Uint8Array ? Uint8Array.from(buffer) : new Uint8Array(buffer);
+
+      const module = await WebAssembly.compile(wasmBytes);
       const sections = WebAssembly.Module.customSections(
         module,
         "contractspecv0",

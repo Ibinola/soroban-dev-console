@@ -1,0 +1,3 @@
+[alias]
+test-workspace = "test --workspace"
+build-workspace = "build --workspace --release"
