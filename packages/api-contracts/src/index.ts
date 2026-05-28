@@ -234,6 +234,8 @@ export interface MaintainerDashboardSummary {
   appealList: AppealListView;
   verificationBottlenecks: VerificationBottlenecksView;
   budgetView: BudgetView;
+}
+
 // ── Contributor Verification (BE-206) ────────────────────────────────────────
 
 export type VerificationStatus = "pending" | "verified" | "failed" | "expired";
@@ -398,4 +400,104 @@ export interface AppealTimingResult {
   withinWindow: boolean;
   reason?: string;
   appealDeadline: string;
+}
+
+// ── Budget Accounting (BE-201, BE-202, BE-203, BE-204) ───────────────────────────
+
+export type BudgetEventType = 
+  | "cap_set" 
+  | "reservation_created" 
+  | "reservation_released" 
+  | "points_used" 
+  | "points_released" 
+  | "reconciliation_drift";
+
+export type ReservationStatus = "pending" | "active" | "released" | "cancelled";
+
+export type ReservationType = "labeling" | "assignment" | "approval" | "merge" | "rollback";
+
+export interface OrganizationBudgetSummary {
+  organizationId: string;
+  capPoints: number;
+  usedPoints: number;
+  reservedPoints: number;
+  releasedPoints: number;
+  headroomPoints: number;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface PointReservationSummary {
+  id: string;
+  organizationId: string;
+  contributorId: string;
+  issueRef: string;
+  reservationType: ReservationType;
+  points: number;
+  status: ReservationStatus;
+  createdAt: string;
+  releasedAt: string | null;
+}
+
+export interface BudgetEventSummary {
+  id: string;
+  organizationId: string;
+  contributorId: string;
+  eventType: BudgetEventType;
+  points: number;
+  referenceId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface BudgetMetrics {
+  caps: OrganizationBudgetSummary[];
+  consumption: {
+    organizationId: string;
+    totalUsed: number;
+    byContributor: Array<{
+      contributorId: string;
+      usedPoints: number;
+      reservations: PointReservationSummary[];
+    }>;
+  }[];
+  headroom: {
+    organizationId: string;
+    availablePoints: number;
+    reservedPoints: number;
+    usedPoints: number;
+  }[];
+  reservations: PointReservationSummary[];
+  recentEvents: BudgetEventSummary[];
+}
+
+export interface GetBudgetMetricsQuery {
+  organizationId?: string;
+  contributorId?: string;
+  limit?: number;
+  offset?: number;
+  includeReservations?: boolean;
+  includeEvents?: boolean;
+}
+
+export interface SetOrganizationBudgetPayload {
+  organizationId: string;
+  capPoints: number;
+}
+
+export interface ReservePointsPayload {
+  organizationId: string;
+  contributorId: string;
+  issueRef: string;
+  reservationType: ReservationType;
+  points: number;
+}
+
+export interface ReleaseReservationPayload {
+  reservationId: string;
+}
+
+export interface ReconcileBudgetPayload {
+  organizationId: string;
+  dryRun?: boolean;
 }

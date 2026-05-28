@@ -16,6 +16,7 @@ import { VerificationModule } from "./modules/verification/verification.module.j
 import { ReviewContextModule } from "./modules/review-context/review-context.module.js";
 import { BackgroundJobModule } from "./modules/jobs/background-job.module.js";
 import { WaveModule } from "./modules/wave/wave.module.js";
+import { BudgetModule } from "./modules/budget/budget.module.js";
 
 @Module({
   imports: [

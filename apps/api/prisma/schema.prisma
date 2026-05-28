@@ -278,3 +278,69 @@ model PointLedgerSnapshot {
 
   @@map("point_ledger_snapshots")
 }
+
+/// BE-201: Organization-scoped budget accounting model for Wave 5 multi-repo fairness.
+model OrganizationBudget {
+  id              String    @id @default(cuid())
+  organizationId  String    @unique @map("organization_id")
+  /// Total points allocated to this organization
+  capPoints       Int       @default(0) @map("cap_points")
+  /// Points currently consumed by approved work
+  usedPoints      Int       @default(0) @map("used_points")
+  /// Points reserved for pending work (labeling, assignment, etc.)
+  reservedPoints  Int       @default(0) @map("reserved_points")
+  /// Points released from withdrawn/rejected work
+  releasedPoints  Int       @default(0) @map("released_points")
+  /// Last updated timestamp
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  /// Created timestamp
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("organization_budgets")
+}
+
+/// BE-202: Point reservation record for issue lifecycle transitions.
+model PointReservation {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  contributorId   String    @map("contributor_id")
+  /// Issue reference (e.g., "repo#123")
+  issueRef        String    @map("issue_ref")
+  /// Reservation type: labeling | assignment | approval | merge | rollback
+  reservationType String    @map("reservation_type")
+  /// Number of points reserved
+  points          Int       @map("points")
+  /// Status: pending | active | released | cancelled
+  status          String    @default("pending") @map("status")
+  /// When reservation was created
+  createdAt       DateTime  @default(now()) @map("created_at")
+  /// When reservation was released/cancelled
+  releasedAt      DateTime? @map("released_at")
+
+  @@index([organizationId])
+  @@index([contributorId])
+  @@index([issueRef])
+  @@index([status])
+  @@map("point_reservations")
+}
+
+/// BE-204: Budget-impacting event log for analytics and dashboards.
+model BudgetEvent {
+  id              String    @id @default(cuid())
+  organizationId  String    @map("organization_id")
+  contributorId   String    @map("contributor_id")
+  /// Event type: cap_set | reservation_created | reservation_released | points_used | points_released | reconciliation_drift
+  eventType       String    @map("event_type")
+  /// Points affected by this event
+  points          Int       @map("points")
+  /// Reference to related resource (reservation ID, issue ref, etc.)
+  referenceId     String?   @map("reference_id")
+  /// Additional metadata about the event
+  metadata        Json?     @map("metadata")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId])
+  @@index([contributorId])
+  @@index([eventType])
+  @@map("budget_events")
+}
