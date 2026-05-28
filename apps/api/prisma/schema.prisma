@@ -93,6 +93,61 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// BE-206: Idempotent record of a contributor verification event from an external provider.
+model VerificationEvent {
+  id            String   @id @default(cuid())
+  eventId       String   @unique @map("event_id")
+  contributorId String   @map("contributor_id")
+  provider      String
+  status        String
+  verifiedAt    DateTime? @map("verified_at")
+  metadata      Json?
+  processedAt   DateTime @default(now()) @map("processed_at")
+
+  @@index([contributorId])
+  @@index([provider, status])
+  @@map("verification_events")
+}
+
+/// BE-209: Captured maintainer review context for appeal analysis.
+model ReviewContext {
+  id                    String   @id @default(cuid())
+  pullRequestId         String   @map("pull_request_id")
+  repositoryId          String   @map("repository_id")
+  reviewerId            String   @map("reviewer_id")
+  decision              String
+  commentCount          Int      @default(0) @map("comment_count")
+  requestedChangesCount Int      @default(0) @map("requested_changes_count")
+  mergeStatus           String   @map("merge_status")
+  reviewedAt            DateTime @map("reviewed_at")
+  metadata              Json?
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@index([pullRequestId])
+  @@index([repositoryId, reviewerId])
+  @@map("review_contexts")
+}
+
+/// BE-216: Durable background job record for retry-safe execution.
+model BackgroundJob {
+  id          String    @id @default(cuid())
+  type        String
+  status      String    @default("pending")
+  payload     Json
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3) @map("max_attempts")
+  lastError   String?   @map("last_error")
+  lockedUntil DateTime? @map("locked_until")
+  scheduledAt DateTime  @default(now()) @map("scheduled_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, scheduledAt])
+  @@index([type, status])
+  @@map("background_jobs")
+}
+
 /// Immutable, read-only links that capture a point-in-time workspace snapshot.
 model ShareLink {
   id            String     @id @default(cuid())
