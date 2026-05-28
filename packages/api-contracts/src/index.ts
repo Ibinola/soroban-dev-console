@@ -168,6 +168,68 @@ export interface CreateSharePayload {
   expiresInSeconds?: number;
 }
 
+// ── Contributor Verification (BE-206) ────────────────────────────────────────
+
+export type VerificationStatus = "pending" | "verified" | "failed" | "expired";
+
+export interface VerificationEventPayload {
+  /** Idempotency key — provider-assigned event ID */
+  eventId: string;
+  contributorId: string;
+  provider: string;
+  status: VerificationStatus;
+  verifiedAt?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VerificationEventResult {
+  id: string;
+  contributorId: string;
+  provider: string;
+  status: VerificationStatus;
+  eventId: string;
+  processedAt: string;
+}
+
+// ── Maintainer Review Context (BE-209) ───────────────────────────────────────
+
+export type ReviewDecision = "approved" | "changes_requested" | "commented" | "dismissed";
+
+export interface ReviewContextPayload {
+  pullRequestId: string;
+  repositoryId: string;
+  reviewerId: string;
+  decision: ReviewDecision;
+  commentCount: number;
+  requestedChangesCount: number;
+  mergeStatus: "open" | "merged" | "closed";
+  reviewedAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReviewContextSummary {
+  id: string;
+  pullRequestId: string;
+  repositoryId: string;
+  reviewerId: string;
+  decision: ReviewDecision;
+  commentCount: number;
+  requestedChangesCount: number;
+  mergeStatus: string;
+  reviewedAt: string;
+  createdAt: string;
+}
+
+export interface AppealContext {
+  pullRequestId: string;
+  repositoryId: string;
+  reviews: ReviewContextSummary[];
+  totalComments: number;
+  totalRequestedChanges: number;
+  approvalCount: number;
+  latestMergeStatus: string;
+}
+
 // ── Transaction Status ─────────────────────────────────────────────────────────
 
 export type NormalizedTransactionStatus = "pending" | "success" | "failed";
