@@ -181,3 +181,79 @@ model ShareLink {
   @@index([workspaceId, createdAt])
   @@map("share_links")
 }
+
+/// BE-205: Canonical verification state and eligibility record for a Wave contributor.
+model ContributorVerification {
+  id                   String   @id @default(cuid())
+  contributorId        String   @unique @map("contributor_id")
+  status               String   @default("pending")
+  manualReviewNote     String?  @map("manual_review_note")
+  priorCompletionCount Int      @default(0) @map("prior_completion_count")
+  restrictionReason    String?  @map("restriction_reason")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @map("updated_at")
+
+  @@index([status])
+  @@map("contributor_verifications")
+}
+
+/// BE-210: Immutable audit record of a final appeal outcome.
+model AppealDecision {
+  id               String   @id @default(cuid())
+  appealId         String   @map("appeal_id")
+  contributorId    String   @map("contributor_id")
+  outcome          String
+  modelVersion     String?  @map("model_version")
+  humanOverride    Boolean  @default(false) @map("human_override")
+  rationaleSummary String?  @map("rationale_summary")
+  reviewedBy       String?  @map("reviewed_by")
+  decidedAt        DateTime @default(now()) @map("decided_at")
+
+  @@index([appealId])
+  @@index([contributorId])
+  @@index([decidedAt])
+  @@map("appeal_decisions")
+}
+
+/// BE-212: Delivery tracking record for a Wave operational notification event.
+model NotificationEvent {
+  id             String    @id @default(cuid())
+  recipientId    String    @map("recipient_id")
+  eventType      String    @map("event_type")
+  channel        String
+  payload        Json
+  deliveryStatus String    @default("pending") @map("delivery_status")
+  failureReason  String?   @map("failure_reason")
+  deliveredAt    DateTime? @map("delivered_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([recipientId])
+  @@index([deliveryStatus])
+  @@index([eventType])
+  @@map("notification_events")
+}
+
+/// BE-214: Raw point-affecting event entry for ledger integrity verification.
+model PointLedgerEntry {
+  id            String   @id @default(cuid())
+  contributorId String   @map("contributor_id")
+  eventType     String   @map("event_type")
+  points        Int
+  referenceId   String?  @map("reference_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([contributorId])
+  @@index([eventType])
+  @@map("point_ledger_entries")
+}
+
+/// BE-214: Cached point total snapshot per contributor, repaired by the integrity verifier.
+model PointLedgerSnapshot {
+  id            String    @id @default(cuid())
+  contributorId String    @unique @map("contributor_id")
+  totalPoints   Int       @default(0) @map("total_points")
+  repairedAt    DateTime? @map("repaired_at")
+  updatedAt     DateTime  @default(now()) @map("updated_at")
+
+  @@map("point_ledger_snapshots")
+}
