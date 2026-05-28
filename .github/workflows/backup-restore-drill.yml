@@ -1,0 +1,69 @@
+name: Backup / Restore Drill
+
+on:
+  # Run weekly to verify backups are restorable
+  schedule:
+    - cron: "0 3 * * 0"  # Every Sunday at 03:00 UTC
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      db_path:
+        description: "Path to the SQLite database (relative to repo root)"
+        required: false
+        default: "apps/api/prisma/dev.db"
+
+jobs:
+  drill:
+    name: Backup and Restore Drill
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w api
+
+      - name: Seed a fresh database for drill
+        run: |
+          cd apps/api
+          npx prisma db push --force-reset
+          npx prisma db seed
+          cd ../..
+        env:
+          DATABASE_URL: "file:./prisma/dev.db"
+
+      - name: Run backup/restore drill
+        run: |
+          bash scripts/backup-restore-drill.sh drill \
+            --db "${DB_PATH:-apps/api/prisma/dev.db}" \
+            --out .backups
+        env:
+          DB_PATH: ${{ github.event.inputs.db_path || 'apps/api/prisma/dev.db' }}
+
+      - name: Upload backup artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drill-backup-${{ github.run_id }}
+          path: .backups/
+          retention-days: 30
+
+      - name: List available backups
+        if: always()
+        run: bash scripts/backup-restore-drill.sh list --out .backups
+
+      - name: Annotate failure
+        if: failure()
+        run: |
+          echo "::error::Backup/restore drill failed. The database may not be reliably restorable. Check the drill output above."

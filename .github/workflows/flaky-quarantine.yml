@@ -1,0 +1,79 @@
+name: Flaky Check Quarantine
+
+on:
+  # Run weekly to catch newly-flaky jobs and flag overdue quarantines
+  schedule:
+    - cron: "0 6 * * 1"  # Every Monday at 06:00 UTC
+
+  # Allow manual trigger with optional job name to detect
+  workflow_dispatch:
+    inputs:
+      job_name:
+        description: "Job name to run flaky detection on (leave blank for report only)"
+        required: false
+        default: ""
+      run_count:
+        description: "Number of times to re-run the job for detection"
+        required: false
+        default: "5"
+
+jobs:
+  quarantine-report:
+    name: Quarantine Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Report quarantine status
+        id: report
+        run: |
+          bash scripts/quarantine-flaky-check.sh report
+        continue-on-error: true
+
+      - name: Annotate overdue quarantines
+        if: steps.report.outcome == 'failure'
+        run: |
+          echo "::warning::One or more quarantined checks are overdue for review. See the report above."
+          bash scripts/quarantine-flaky-check.sh list
+
+      - name: Upload quarantine state
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-quarantine-state
+          path: .github/flaky-quarantine.json
+          retention-days: 90
+
+  detect-flaky:
+    name: Detect Flaky Job
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.job_name != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run flaky detection
+        id: detect
+        run: |
+          bash scripts/quarantine-flaky-check.sh detect \
+            "${{ github.event.inputs.job_name }}" \
+            "${{ github.event.inputs.run_count }}"
+        continue-on-error: true
+
+      - name: Commit updated quarantine state
+        if: steps.detect.outcome != 'success'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/flaky-quarantine.json
+          git diff --cached --quiet || git commit -m "chore(ci): quarantine flaky job ${{ github.event.inputs.job_name }} [skip ci]"
+          git push
