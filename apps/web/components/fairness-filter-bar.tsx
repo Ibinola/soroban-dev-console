@@ -16,7 +16,7 @@ export interface FairnessFilters {
   abuseQueueOnly: boolean;
 }
 
-const DEFAULT_FILTERS: FairnessFilters = {
+export const DEFAULT_FILTERS: FairnessFilters = {
   sort: "default",
   verificationReady: false,
   hasBudgetHeadroom: false,

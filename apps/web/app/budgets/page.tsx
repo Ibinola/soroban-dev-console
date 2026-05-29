@@ -1,31 +1,33 @@
 "use client";
 
-import { BudgetUsageDashboard, type BudgetScope } from "@/components/budget-usage-dashboard";
-import { BurnRateWidgets, type BurnRateData } from "@/components/burn-rate-widgets";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { BudgetUsageDashboard } from "@/components/budget-usage-dashboard";
+import { BurnRateWidgets } from "@/components/burn-rate-widgets";
+import {
+  FairnessFilterBar,
+  DEFAULT_FILTERS,
+  type FairnessFilters,
+} from "@/components/fairness-filter-bar";
+import { getBudgetFixture } from "@/lib/budget-fixtures";
 
-const MOCK_SCOPES: BudgetScope[] = [
-  { label: "Org: stellar-org", allocated: 50000, consumed: 32000, reserved: 5000 },
-  { label: "Repo: soroban-dev-console", allocated: 10000, consumed: 8500, reserved: 800 },
-];
+function BudgetDashboardContent() {
+  const searchParams = useSearchParams();
+  const fixture = searchParams.get("fixture");
+  const { scopes, burnRates } = getBudgetFixture(fixture);
+  const [filters, setFilters] = useState<FairnessFilters>({ ...DEFAULT_FILTERS });
 
-const MOCK_BURN: BurnRateData[] = [
-  {
-    scope: "stellar-org",
-    dailyBurnRate: 1200,
-    daysRemaining: 11,
-    trend: "up",
-    remainingPoints: 13000,
-    totalPoints: 50000,
-  },
-  {
-    scope: "soroban-dev-console",
-    dailyBurnRate: 300,
-    daysRemaining: 2,
-    trend: "up",
-    remainingPoints: 700,
-    totalPoints: 10000,
-  },
-];
+  return (
+    <>
+      <FairnessFilterBar filters={filters} onChange={setFilters} />
+      <BudgetUsageDashboard scopes={scopes} />
+      <div>
+        <h2 className="text-sm font-semibold mb-3">Burn rate</h2>
+        <BurnRateWidgets items={burnRates} />
+      </div>
+    </>
+  );
+}
 
 export default function BudgetsPage() {
   return (
@@ -36,11 +38,15 @@ export default function BudgetsPage() {
           Repo and org point budget usage for Wave 5.
         </p>
       </div>
-      <BudgetUsageDashboard scopes={MOCK_SCOPES} />
-      <div>
-        <h2 className="text-sm font-semibold mb-3">Burn rate</h2>
-        <BurnRateWidgets items={MOCK_BURN} />
-      </div>
+      <Suspense
+        fallback={
+          <div className="rounded-lg border bg-card p-5 text-sm text-muted-foreground">
+            Loading budget data…
+          </div>
+        }
+      >
+        <BudgetDashboardContent />
+      </Suspense>
     </div>
   );
 }
