@@ -1,6 +1,14 @@
 "use client";
 
 import { AppealWorkspace, type AppealSubmission } from "@/components/appeal-workspace";
+import {
+  VerificationBanner,
+  VerificationGate,
+  type VerificationGateStatus,
+} from "@/components/verification-banner";
+
+// Placeholder — in production fetched from contributor verification API
+const VERIFICATION_STATUS: VerificationGateStatus = "unverified";
 
 async function submitAppeal(submission: AppealSubmission): Promise<void> {
   // Placeholder — wire to BE-208 appeal intake API when available
@@ -17,7 +25,10 @@ export default function AppealSubmitPage() {
           Provide structured evidence so your appeal can be reviewed accurately.
         </p>
       </div>
-      <AppealWorkspace onSubmit={submitAppeal} />
+      <VerificationBanner status={VERIFICATION_STATUS} />
+      <VerificationGate status={VERIFICATION_STATUS} action="submit an appeal">
+        <AppealWorkspace onSubmit={submitAppeal} />
+      </VerificationGate>
     </div>
   );
 }

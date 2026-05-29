@@ -12,14 +12,14 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
-import { RequireVerified } from "../../auth/verification.guard.js";
+import { RequireVerified, VerificationGuard } from "../../auth/verification.guard.js";
 import { AppealService } from "./appeal.service.js";
 import type { CreateAppealDto, TransitionAppealDto } from "./appeal.service.js";
 
 type OwnerKeyRequest = Request & { ownerKey: string };
 
 @Controller("wave/appeals")
-@UseGuards(OwnerKeyGuard)
+@UseGuards(OwnerKeyGuard, VerificationGuard)
 export class AppealController {
   constructor(private readonly appealService: AppealService) {}
 

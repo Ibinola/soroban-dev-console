@@ -114,6 +114,8 @@ model SupportTicket {
   @@index([status, priority])
   @@index([createdAt])
   @@map("support_tickets")
+}
+
 /// BE-206: Idempotent record of a contributor verification event from an external provider.
 model VerificationEvent {
   id            String   @id @default(cuid())
@@ -167,6 +169,8 @@ model BackgroundJob {
   @@index([status, scheduledAt])
   @@index([type, status])
   @@map("background_jobs")
+}
+
 /// BE-208: Appeal case submitted by a contributor disputing a decision.
 model AppealCase {
   id            String    @id @default(cuid())
