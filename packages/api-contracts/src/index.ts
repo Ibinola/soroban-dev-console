@@ -3,6 +3,7 @@
  */
 
 export * from "./runtime-defaults";
+export * from "./admin-sdk";
 
 // ── Runtime Config ────────────────────────────────────────────────────────
 
