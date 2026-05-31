@@ -13,3 +13,17 @@ Closes #
 - [ ] `npm run typecheck` passed
 - [ ] `npm run build` passed
 - [ ] Working tree clean before push
+
+## Review Routing
+
+Affected Areas
+
+- [ ] Security
+- [ ] Infrastructure
+- [ ] Appeals
+- [ ] Budgets
+- [ ] CI/CD
+
+## Required Reviewers
+
+List reviewer groups:

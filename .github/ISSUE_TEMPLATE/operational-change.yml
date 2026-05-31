@@ -1,0 +1,23 @@
+name: Operational Change
+
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Infrastructure
+        - Security
+        - Appeals
+        - Budgets
+        - CI/CD
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Operational Impact
+
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback Plan
