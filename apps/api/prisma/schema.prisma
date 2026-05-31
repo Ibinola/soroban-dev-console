@@ -325,6 +325,7 @@ model PointReservation {
   @@index([contributorId])
   @@index([issueRef])
   @@index([status])
+  @@unique([contributorId, issueRef, reservationType])
   @@map("point_reservations")
 }
 

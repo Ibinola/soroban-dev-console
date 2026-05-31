@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { IsString, IsOptional, IsIn, IsInt, Min } from "class-validator";
 import { Type } from "class-transformer";
 import { Prisma } from "@prisma/client";
@@ -146,9 +146,24 @@ export class SupportTicketsService {
 
   @MapDbErrors()
   async update(id: string, actorKey: string, dto: UpdateSupportTicketDto) {
-    await this.get(id);
+    const ticket = await this.get(id);
 
-    const ticket = await this.prisma.supportTicket.update({
+    const admins = process.env.SUPPORT_ADMIN_KEYS ? process.env.SUPPORT_ADMIN_KEYS.split(',') : [];
+    const isAdmin = admins.includes(actorKey);
+
+    if (actorKey !== ticket.reporterKey && !isAdmin) {
+      throw new ForbiddenException("Not authorized to update this support ticket");
+    }
+
+    if (dto.assigneeKey !== undefined && !isAdmin) {
+      throw new ForbiddenException("Only support administrators can assign tickets");
+    }
+
+    if (dto.status !== undefined && dto.status !== "closed" && !isAdmin) {
+      throw new ForbiddenException("Only support administrators can transition ticket status");
+    }
+
+    const updatedTicket = await this.prisma.supportTicket.update({
       where: { id },
       data: {
         ...(dto.status !== undefined ? { status: dto.status } : {}),
@@ -168,6 +183,6 @@ export class SupportTicketsService {
       metadata: { changes: dto as Record<string, unknown> } as Prisma.InputJsonValue,
     });
 
-    return { ...ticket, tags: JSON.parse(ticket.tags) };
+    return { ...updatedTicket, tags: JSON.parse(updatedTicket.tags) };
   }
 }

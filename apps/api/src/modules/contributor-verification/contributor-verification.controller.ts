@@ -11,6 +11,7 @@ import {
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 import { ContributorVerificationService } from "./contributor-verification.service.js";
 import type { UpsertVerificationDto } from "./contributor-verification.service.js";
+import type { Request } from "express";
 
 @Controller("contributor-verifications")
 @UseGuards(OwnerKeyGuard)
@@ -34,7 +35,8 @@ export class ContributorVerificationController {
 
   @Put(":contributorId")
   @HttpCode(HttpStatus.OK)
-  upsert(@Param("contributorId") contributorId: string, @Body() dto: UpsertVerificationDto) {
-    return this.service.upsert({ ...dto, contributorId });
+  upsert(@Param("contributorId") contributorId: string, @Body() dto: UpsertVerificationDto, @Req() req: Request) {
+    const actorKey = (req as any).ownerKey;
+    return this.service.upsert({ ...dto, contributorId }, actorKey);
   }
 }

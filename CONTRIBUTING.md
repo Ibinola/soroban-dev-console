@@ -145,9 +145,9 @@ soroban-dev-console/
 
 ### Backend (apps/api)
 
-- `/src/modules` - Feature modules (workspaces, rpc, shares, etc.)
+- `/src/modules` - Feature modules (workspaces, rpc, shares, verification, budget, support-tickets)
 - `/src/lib` - Shared utilities and services
-- `/src/auth` - Authentication guards
+- `/src/auth` - Authentication guards (including `OwnerKeyGuard` and `VerificationGuard`)
 - `/prisma` - Database schema, migrations, and seeds
 
 ## CI Gates
@@ -303,6 +303,7 @@ See [docs/governance.md](./docs/governance.md) for the full reference, including
 - Runbook for verification-sensitive flows (drift check, integrity check, migrations, wave-prep)
 - Fairness concerns and the appeals process
 - Maintainer checklist for wave windows
+- **Verification Abuse Threat Model:** Review `docs/threat-models/verification-abuse.md` before approving issues, overrides, or support tickets.
 
 ## Code of Conduct
 

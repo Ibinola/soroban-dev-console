@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { MapDbErrors } from "../../lib/db-error.mapper.js";
 import { AuditService } from "../../lib/audit.service.js";
 import { ContributorVerificationRepository } from "./contributor-verification.repository.js";
@@ -21,7 +21,22 @@ export class ContributorVerificationService {
   ) {}
 
   @MapDbErrors()
-  async upsert(dto: UpsertVerificationDto) {
+  async upsert(dto: UpsertVerificationDto, actorKey?: string) {
+    const admins = process.env.SUPPORT_ADMIN_KEYS ? process.env.SUPPORT_ADMIN_KEYS.split(',') : [];
+    const isSystemOrAdmin = actorKey === "system" || (actorKey && admins.includes(actorKey));
+
+    if (actorKey && actorKey !== dto.contributorId && !isSystemOrAdmin) {
+      throw new ForbiddenException("Not authorized to modify this verification record");
+    }
+
+    if (dto.manualReviewNote !== undefined && !isSystemOrAdmin) {
+      throw new ForbiddenException("Only support administrators can add manual review notes");
+    }
+
+    if (dto.status === "verified" && !isSystemOrAdmin) {
+      throw new ForbiddenException("Contributors cannot self-verify");
+    }
+
     const record = await this.repository.upsert({
       where: { contributorId: dto.contributorId },
       create: {
@@ -42,7 +57,7 @@ export class ContributorVerificationService {
       },
     });
     void this.audit.log({
-      actor: dto.contributorId,
+      actor: actorKey ?? dto.contributorId,
       action: "contributor.verification.upserted",
       resourceType: "contributor_verification",
       resourceId: record.id,
