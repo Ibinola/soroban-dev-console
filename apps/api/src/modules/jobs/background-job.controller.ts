@@ -11,6 +11,11 @@ export class BackgroundJobController {
     return this.service.getStats();
   }
 
+  @Get("config")
+  getConfig() {
+    return this.service.getWorkerConfig();
+  }
+
   @Get()
   findByStatus(@Query("status") status: JobStatus = "pending") {
     return this.service.findByStatus(status);

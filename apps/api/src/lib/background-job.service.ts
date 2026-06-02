@@ -6,9 +6,14 @@
  * - Increments attempt count
  * - Marks completed or failed with structured error
  * - Respects maxAttempts before marking permanently failed
+ *
+ * INFRA-212: Worker concurrency is controlled via WORKER_CONCURRENCY env var
+ * (default: 3). This caps how many jobs a single process claims simultaneously,
+ * preventing resource exhaustion under Wave 5 load spikes.
  */
 
 import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "./audit.service.js";
 import { PrismaService } from "./prisma.service.js";
@@ -40,11 +45,21 @@ export class BackgroundJobService {
   private readonly logger = new Logger(BackgroundJobService.name);
   /** Lock duration in milliseconds — prevents double-processing under concurrent workers */
   private readonly LOCK_DURATION_MS = 30_000;
+  /**
+   * INFRA-212: Max concurrent jobs claimed by this process.
+   * Read from WORKER_CONCURRENCY env var; default 3 for Wave 5 stability.
+   */
+  readonly concurrency: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-  ) {}
+    private readonly config?: ConfigService,
+  ) {
+    const raw = this.config?.get<string>("WORKER_CONCURRENCY");
+    const parsed = raw ? parseInt(raw, 10) : NaN;
+    this.concurrency = Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+  }
 
   async enqueue(options: EnqueueJobOptions): Promise<JobRecord> {
     const record = await this.prisma.backgroundJob.create({
@@ -203,5 +218,10 @@ export class BackgroundJobService {
       stats[row.status] = row._count.id;
     }
     return stats as Record<JobStatus, number>;
+  }
+
+  /** INFRA-212: Returns current worker configuration for operator visibility. */
+  getWorkerConfig(): { concurrency: number } {
+    return { concurrency: this.concurrency };
   }
 }

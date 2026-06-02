@@ -19,11 +19,12 @@ import {
   SupportTicketsService,
   UpdateSupportTicketDto,
 } from "./support-tickets.service.js";
+import { SupportTicketThrottleGuard } from "./support-ticket-throttle.guard.js";
 
 type OwnerKeyRequest = Request & { ownerKey: string };
 
 @Controller("support-tickets")
-@UseGuards(OwnerKeyGuard)
+@UseGuards(OwnerKeyGuard, SupportTicketThrottleGuard)
 export class SupportTicketsController {
   constructor(private readonly service: SupportTicketsService) {}
 

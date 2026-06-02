@@ -203,6 +203,25 @@ if [[ -f "${API_ENV}" ]]; then
     if [[ -n "${LOCAL_RPC}" ]] && echo "${LOCAL_RPC}" | grep -q "localhost"; then
       warn "SOROBAN_RPC_LOCAL_URL is set to a localhost URL in ${RUNTIME_MODE} mode — ensure this is intentional"
     fi
+
+    # INFRA-209: Wave-critical feature flag parity
+    echo ""
+    echo "── 6a. Wave Feature Flag Parity ─────────────────────"
+    MULTI_OP=$(get_env_val "${API_ENV}" "FEATURE_MULTI_OP")
+    if [[ "${MULTI_OP}" == "true" || -z "${MULTI_OP}" ]]; then
+      warn "FEATURE_MULTI_OP is enabled in ${RUNTIME_MODE} mode — production default is 'false'; set explicitly if intentional"
+    else
+      pass "FEATURE_MULTI_OP=false matches production default"
+    fi
+
+    for FLAG in FEATURE_SHARING FEATURE_TOKEN_DASHBOARD FEATURE_AUDIT_LOG FEATURE_RPC_GATEWAY; do
+      VAL=$(get_env_val "${API_ENV}" "${FLAG}")
+      if [[ "${VAL}" == "false" ]]; then
+        warn "${FLAG}=false in ${RUNTIME_MODE} mode — staging should match production (true) unless intentionally disabled"
+      else
+        pass "${FLAG} is enabled"
+      fi
+    done
   else
     info "RUNTIME_MODE=local — skipping non-local checks"
   fi
