@@ -1,5 +1,5 @@
 /**
- * WaveModule — bundles BE-207, BE-208, BE-211, BE-213 implementations.
+ * WaveModule — bundles BE-207, BE-208, BE-211, BE-213, AI-210 implementations.
  */
 
 import { Module } from "@nestjs/common";
@@ -14,6 +14,7 @@ import { ReviewWindowService } from "./review-window.service.js";
 import { ReviewWindowController } from "./review-window.controller.js";
 import { AbuseRiskService } from "./abuse-risk.service.js";
 import { AbuseRiskController } from "./abuse-risk.controller.js";
+import { CoordinatedAbuseDetectionService } from "./coordinated-abuse-detection.service.js";
 
 @Module({
   controllers: [AppealController, ReviewWindowController, AbuseRiskController],
@@ -26,7 +27,8 @@ import { AbuseRiskController } from "./abuse-risk.controller.js";
     AppealService,
     ReviewWindowService,
     AbuseRiskService,
+    CoordinatedAbuseDetectionService,
   ],
-  exports: [EligibilityService, ReviewWindowService, AbuseRiskService],
+  exports: [EligibilityService, ReviewWindowService, AbuseRiskService, CoordinatedAbuseDetectionService],
 })
 export class WaveModule {}

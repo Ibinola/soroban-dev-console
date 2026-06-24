@@ -403,6 +403,47 @@ export interface AppealTimingResult {
   appealDeadline: string;
 }
 
+// ── AI-210: Coordinated abuse pattern detection ───────────────────────────────
+
+export type AbuseEventKind =
+  | "appeal_submitted"
+  | "issue_claimed"
+  | "contributor_registered"
+  | "duplicate_submission"
+  | "rapid_resubmission";
+
+export type AbusePatternKind =
+  | "VELOCITY_CLUSTER"
+  | "APPEAL_FLOODING"
+  | "ISSUE_FARMING"
+  | "SHARED_METADATA"
+  | "DUPLICATE_APPEAL_CLUSTER";
+
+export type CoordinatedRiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface AbuseEventPayload {
+  contributorId: string;
+  issueRef: string;
+  kind: AbuseEventKind;
+  occurredAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DetectedPatternSummary {
+  kind: AbusePatternKind;
+  contributorIds: string[];
+  issueRefs: string[];
+  description: string;
+}
+
+export interface CoordinatedAbuseReportResponse {
+  analysedEventCount: number;
+  patterns: DetectedPatternSummary[];
+  overallRisk: CoordinatedRiskLevel;
+  requiresHumanReview: boolean;
+  generatedAt: string;
+}
+
 // ── Budget Accounting (BE-201, BE-202, BE-203, BE-204) ───────────────────────────
 
 export type BudgetEventType = 
