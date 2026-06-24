@@ -403,6 +403,48 @@ export interface AppealTimingResult {
   appealDeadline: string;
 }
 
+// ── AI-206: Policy-aware score calibration ────────────────────────────────────
+
+export type PolicyBand = "auto_approve" | "review" | "auto_reject";
+
+export interface CalibrationPolicy {
+  approveThreshold: number;
+  rejectThreshold: number;
+  humanReviewThreshold: number;
+  biasCorrectionFactor?: number;
+}
+
+export interface CalibratedScoreResponse {
+  band: PolicyBand;
+  action: "approve" | "escalate" | "reject";
+  confidence: number;
+  needsHumanReview: boolean;
+  rawScore: number;
+}
+
+// ── AI-209: Model rollout controls ────────────────────────────────────────────
+
+export type RolloutMode = "pinned" | "canary" | "full";
+
+export interface RolloutConfig {
+  activeVersion: string;
+  stableVersion: string;
+  mode: RolloutMode;
+  canaryPercent?: number;
+}
+
+export interface RolloutResolution {
+  modelVersion: string;
+  mode: RolloutMode;
+  reason: string;
+}
+
+export interface ModelRolloutState {
+  current: RolloutConfig;
+  previous: RolloutConfig | null;
+  updatedAt: string;
+}
+
 // ── Budget Accounting (BE-201, BE-202, BE-203, BE-204) ───────────────────────────
 
 export type BudgetEventType = 
