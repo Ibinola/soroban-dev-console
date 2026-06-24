@@ -481,6 +481,106 @@ export interface GetBudgetMetricsQuery {
   includeEvents?: boolean;
 }
 
+// ── AI-201: Prompt & Policy Registry ─────────────────────────────────────────
+
+export type PromptPolicyKind = "prompt" | "policy" | "threshold" | "model_version";
+
+export interface PromptPolicyEntrySummary {
+  id: string;
+  key: string;
+  version: number;
+  kind: PromptPolicyKind;
+  content: string;
+  isActive: boolean;
+  publishedBy: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface CreatePromptPolicyPayload {
+  key: string;
+  kind: PromptPolicyKind;
+  content: string;
+  notes?: string;
+  publishedBy?: string;
+}
+
+export interface ActivatePromptPolicyPayload {
+  publishedBy?: string;
+}
+
+// ── AI-202: Review Context AI Preprocessor ───────────────────────────────────
+
+export type ReviewSignal = "strong_approval" | "approval" | "neutral" | "changes_requested" | "rejected";
+
+export interface AIReadyReviewContext {
+  pullRequestId: string;
+  repositoryId: string;
+  signal: ReviewSignal;
+  confidence: number;
+  reviewerCount: number;
+  approvalCount: number;
+  changesRequestedCount: number;
+  totalComments: number;
+  totalRequestedChanges: number;
+  latestMergeStatus: string;
+  humanOverrideRecommended: boolean;
+  preprocessedAt: string;
+}
+
+// ── INFRA-213: Data Retention ─────────────────────────────────────────────────
+
+export interface RetentionPolicy {
+  resource: string;
+  retentionDays: number;
+  description: string;
+}
+
+export interface RetentionRunResult {
+  resource: string;
+  deletedCount: number;
+  cutoffDate: string;
+  dryRun: boolean;
+}
+
+export interface RetentionRunSummary {
+  ranAt: string;
+  dryRun: boolean;
+  results: RetentionRunResult[];
+  totalDeleted: number;
+}
+
+// ── INFRA-214: Feature Flag & Config Distribution ────────────────────────────
+
+export type WaveFeatureKey =
+  | "wave5_ai_appeals"
+  | "wave5_budget_accounting"
+  | "wave5_contributor_verification"
+  | "wave5_point_ledger"
+  | "wave5_notifications"
+  | "wave5_review_context"
+  | "wave5_data_retention";
+
+export interface WaveFeatureFlag {
+  key: WaveFeatureKey;
+  enabled: boolean;
+  rolloutPercent: number;
+  overriddenBy: string | null;
+  updatedAt: string;
+}
+
+export interface WaveRuntimeControls {
+  flags: WaveFeatureFlag[];
+  version: number;
+  generatedAt: string;
+}
+
+export interface SetFeatureFlagPayload {
+  enabled: boolean;
+  rolloutPercent?: number;
+  overriddenBy?: string;
+}
+
 export interface SetOrganizationBudgetPayload {
   organizationId: string;
   capPoints: number;
