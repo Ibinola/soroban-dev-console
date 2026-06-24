@@ -17,6 +17,8 @@ import { ReviewContextModule } from "./modules/review-context/review-context.mod
 import { BackgroundJobModule } from "./modules/jobs/background-job.module.js";
 import { WaveModule } from "./modules/wave/wave.module.js";
 import { BudgetModule } from "./modules/budget/budget.module.js";
+import { EvidencePackModule } from "./modules/evidence-pack/evidence-pack.module.js";
+import { AppealExplanationModule } from "./modules/appeal-explanation/appeal-explanation.module.js";
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { BudgetModule } from "./modules/budget/budget.module.js";
     ReviewContextModule,
     BackgroundJobModule,
     WaveModule,
+    EvidencePackModule,
+    AppealExplanationModule,
   ]
 })
 export class AppModule {}
