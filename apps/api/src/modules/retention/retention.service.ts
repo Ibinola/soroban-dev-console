@@ -9,6 +9,9 @@
  * Audit logs and financial records are EXCLUDED — they are retained indefinitely.
  * Runs are idempotent and safe to call multiple times (dry-run support included).
  * Operators can inspect health via the /retention/status endpoint.
+ *
+ * INFRA-831: Operationalized retention lifecycle jobs with scheduling,
+ * run history tracking, and configurable retention windows.
  */
 
 import { Injectable, Logger } from "@nestjs/common";
@@ -22,16 +25,22 @@ export const RETENTION_POLICIES = [
     resource: "notification_events",
     retentionDays: 30,
     description: "Delivered/failed notification events older than 30 days",
+    schedule: "0 2 * * *",
+    enabled: true,
   },
   {
     resource: "background_jobs_dead",
     retentionDays: 14,
     description: "Dead background jobs older than 14 days",
+    schedule: "0 3 * * *",
+    enabled: true,
   },
   {
     resource: "appeal_evidence",
     retentionDays: 90,
     description: "evidenceJson on resolved/rejected appeals older than 90 days (nulled, record kept)",
+    schedule: "0 4 * * *",
+    enabled: true,
   },
 ] as const;
 
@@ -68,6 +77,8 @@ export class RetentionService {
     this.logger.log(
       `Retention run (dryRun=${dryRun}): ${totalDeleted} records affected across ${results.length} resources`,
     );
+
+    this.recordRun(results, dryRun);
 
     return { ranAt: ranAt.toISOString(), dryRun, results, totalDeleted };
   }
@@ -167,5 +178,33 @@ export class RetentionService {
     const d = new Date();
     d.setDate(d.getDate() - retentionDays);
     return d;
+  }
+
+  /** INFRA-831: Run history for operational visibility. */
+  private readonly runHistory: Array<{ timestamp: string; results: RetentionRunResult[]; dryRun: boolean }> = [];
+  private static readonly MAX_HISTORY = 100;
+
+  getRunHistory(limit = 10): Array<{ timestamp: string; summary: string; dryRun: boolean }> {
+    return this.runHistory.slice(-limit).map((entry) => ({
+      timestamp: entry.timestamp,
+      summary: entry.results.map((r) => `${r.resource}: ${r.deletedCount}`).join(", "),
+      dryRun: entry.dryRun,
+    }));
+  }
+
+  /** INFRA-831: Get operational status of the retention lifecycle. */
+  getStatus() {
+    return {
+      policies: RETENTION_POLICIES,
+      lastRun: this.runHistory.length > 0 ? this.runHistory[this.runHistory.length - 1] : null,
+      totalRuns: this.runHistory.length,
+    };
+  }
+
+  private recordRun(results: RetentionRunResult[], dryRun: boolean): void {
+    this.runHistory.push({ timestamp: new Date().toISOString(), results, dryRun });
+    if (this.runHistory.length > RetentionService.MAX_HISTORY) {
+      this.runHistory.shift();
+    }
   }
 }

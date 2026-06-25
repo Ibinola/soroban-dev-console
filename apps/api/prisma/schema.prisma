@@ -25,6 +25,8 @@ model Workspace {
 
   @@index([ownerKey])
   @@index([updatedAt])
+  @@index([selectedNetwork])        /// INFRA-821: Index for network-filtered workspace queries
+  @@index([name])                   /// INFRA-821: Index for workspace name search
   @@map("workspaces")
 }
 
@@ -90,6 +92,8 @@ model AuditLog {
   @@index([actor])
   @@index([resourceType, resourceId])
   @@index([createdAt])
+  @@index([action, createdAt])            /// INFRA-821: Index for audit dashboard queries
+  @@index([actor, action])                /// INFRA-821: Index for per-actor audit analysis
   @@map("audit_logs")
 }
 
@@ -175,8 +179,8 @@ model BackgroundJob {
 
   @@index([status, scheduledAt])
   @@index([type, status])
-  @@index([queue, status, priority])
-  @@index([queue, scheduledAt])
+  @@index([type, createdAt])              /// INFRA-821: Index for job-type dashboard queries
+  @@index([status, updatedAt])            /// INFRA-821: Index for stale job detection
   @@map("background_jobs")
 }
 
@@ -197,6 +201,8 @@ model AppealCase {
   @@index([ownerKey])
   @@index([issueRef])
   @@index([status])
+  @@index([status, createdAt])          /// INFRA-821: Index for appeal dashboard queries
+  @@index([status, ownerKey])           /// INFRA-821: Index for per-user appeal lookups
   @@map("appeal_cases")
 }
 

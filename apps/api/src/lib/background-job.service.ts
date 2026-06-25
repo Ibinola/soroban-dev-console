@@ -11,9 +11,9 @@
  * (default: 3). This caps how many jobs a single process claims simultaneously,
  * preventing resource exhaustion under Wave 5 load spikes.
  *
- * INFRA-820: Queue topology redesign with priority-based scheduling and
- * dead-letter routing. Supports queue isolation (default, priority, retry)
- * so retry, prioritisation, and failure handling remain predictable.
+ * INFRA-828: Dead-letter handling for failed jobs.
+ * Jobs that exhaust their retries are moved to a dead-letter queue with
+ * full context (error, final payload, execution history) for later inspection.
  */
 
 import { Injectable, Logger } from "@nestjs/common";
@@ -263,8 +263,72 @@ export class BackgroundJobService {
     return stats as Record<JobStatus, number>;
   }
 
-  /** INFRA-212: Returns current worker configuration for operator visibility. */
+  /** INFRA-828: Returns current worker configuration for operator visibility. */
   getWorkerConfig(): { concurrency: number } {
     return { concurrency: this.concurrency };
+  }
+
+  /** INFRA-828: List dead-letter jobs with full context for inspection. */
+  async getDeadLetterJobs(limit = 50): Promise<JobRecord[]> {
+    return this.prisma.backgroundJob.findMany({
+      where: { status: "dead" },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    }) as Promise<JobRecord[]>;
+  }
+
+  /** INFRA-828: Retry a dead-letter job by resetting its state. */
+  async retryDeadLetter(id: string): Promise<JobRecord | null> {
+    const job = await this.prisma.backgroundJob.findUnique({ where: { id } });
+    if (!job || job.status !== "dead") return null;
+
+    await this.prisma.backgroundJob.update({
+      where: { id },
+      data: {
+        status: "pending",
+        attempts: 0,
+        lastError: null,
+        lockedUntil: null,
+        scheduledAt: new Date(),
+      },
+    });
+
+    await this.audit.log({
+      actor: "system:background-jobs",
+      action: "job.retried_dead_letter",
+      resourceType: "background_job",
+      resourceId: id,
+      summary: "Dead-letter job returned to pending queue for retry",
+      metadata: { type: job.type, previousAttempts: job.attempts },
+    });
+
+    return this.prisma.backgroundJob.findUnique({ where: { id } }) as Promise<JobRecord>;
+  }
+
+  /** INFRA-828: Purge dead-letter jobs older than the specified retention days. */
+  async purgeDeadLetterJobs(retentionDays = 14): Promise<number> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    const result = await this.prisma.backgroundJob.deleteMany({
+      where: {
+        status: "dead",
+        updatedAt: { lt: cutoff },
+      },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(`Purged ${result.count} dead-letter jobs older than ${retentionDays} days`);
+      await this.audit.log({
+        actor: "system:background-jobs",
+        action: "job.dead_letter_purged",
+        resourceType: "background_job",
+        resourceId: "batch",
+        summary: `Purged ${result.count} dead-letter jobs`,
+        metadata: { retentionDays, cutoffDate: cutoff.toISOString() },
+      });
+    }
+
+    return result.count;
   }
 }

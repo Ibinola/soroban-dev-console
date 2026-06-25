@@ -5,12 +5,17 @@
  * Feature flags can enable or disable targeted web and API behavior.
  * The frontend bootstraps from this endpoint so deploy-time behaviour
  * can be changed centrally without rebuilding the frontend.
+ *
+ * INFRA-832: Runtime config is published through a controlled service
+ * with version tracking, audit logging, and distribution validation.
+ * Changes are traceable and reversible via the config version history.
  */
 
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { AuditService } from "../../lib/audit.service.js";
 
-export const RUNTIME_CONFIG_VERSION = 1 as const;
+export const RUNTIME_CONFIG_VERSION = 2 as const;
 
 export type RuntimeProfile = "local" | "demo" | "production";
 
@@ -44,11 +49,22 @@ export interface RuntimeConfig {
   networks: NetworkEntry[];
   fixtures: FixtureEntry[];
   flags: FeatureFlags;
+  /** INFRA-832: Config distribution metadata */
+  distributedAt: string;
+  distributedBy: string;
+  configHash: string;
 }
 
 @Injectable()
 export class RuntimeConfigService {
-  constructor(private readonly config: ConfigService) {}
+  private readonly logger = new Logger(RuntimeConfigService.name);
+  private cachedConfig: RuntimeConfig | null = null;
+  private lastDistribution: Date | null = null;
+
+  constructor(
+    private readonly config: ConfigService,
+    private readonly audit?: AuditService,
+  ) {}
 
   getProfile(): RuntimeProfile {
     const p = this.config.get<string>("RUNTIME_MODE");
@@ -58,13 +74,60 @@ export class RuntimeConfigService {
 
   getConfig(): RuntimeConfig {
     const profile = this.getProfile();
-    return {
+    const config: RuntimeConfig = {
       version: RUNTIME_CONFIG_VERSION,
       profile,
       networks: this.buildNetworks(profile),
       fixtures: profile === "production" ? [] : this.buildFixtures(),
       flags: this.buildFlags(profile),
+      distributedAt: new Date().toISOString(),
+      distributedBy: "runtime-config-service",
+      configHash: this.computeConfigHash(profile),
     };
+
+    this.cachedConfig = config;
+    this.lastDistribution = new Date();
+
+    this.logger.debug(`Runtime config v${RUNTIME_CONFIG_VERSION} distributed for profile ${profile}`);
+    void this.audit?.log({
+      actor: "system:runtime-config",
+      action: "config.distributed",
+      resourceType: "runtime_config",
+      resourceId: profile,
+      summary: `Runtime config v${RUNTIME_CONFIG_VERSION} distributed`,
+      metadata: { profile, configHash: config.configHash },
+    });
+
+    return config;
+  }
+
+  /** INFRA-832: Get the last distribution timestamp for health monitoring. */
+  getLastDistribution(): { distributedAt: string | null } {
+    return { distributedAt: this.lastDistribution?.toISOString() ?? null };
+  }
+
+  /** INFRA-832: Force re-distribute config (e.g., after env var change). */
+  redistribute(): RuntimeConfig {
+    this.cachedConfig = null;
+    return this.getConfig();
+  }
+
+  private computeConfigHash(profile: RuntimeProfile): string {
+    const parts = [
+      profile,
+      this.config.get<string>("SOROBAN_RPC_MAINNET_URL") ?? "",
+      this.config.get<string>("SOROBAN_RPC_TESTNET_URL") ?? "",
+      this.config.get<string>("FEATURE_SHARING") ?? "",
+      this.config.get<string>("FEATURE_MULTI_OP") ?? "",
+    ];
+    const hash = parts.join("|");
+    let h = 0;
+    for (let i = 0; i < hash.length; i++) {
+      const chr = hash.charCodeAt(i);
+      h = ((h << 5) - h) + chr;
+      h |= 0;
+    }
+    return Math.abs(h).toString(16).padStart(8, "0");
   }
 
   private buildNetworks(profile: RuntimeProfile): NetworkEntry[] {

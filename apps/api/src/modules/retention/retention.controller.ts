@@ -11,6 +11,18 @@ export class RetentionController {
     return this.service.policies();
   }
 
+  /** INFRA-831: Return the operational status of the retention lifecycle. */
+  @Get("status")
+  status() {
+    return this.service.getStatus();
+  }
+
+  /** INFRA-831: Return run history for operational visibility. */
+  @Get("history")
+  history(@Query("limit") limit?: string) {
+    return this.service.getRunHistory(limit ? Number(limit) : 10);
+  }
+
   /**
    * Trigger a retention run.
    * Pass ?dryRun=true to preview without deleting.

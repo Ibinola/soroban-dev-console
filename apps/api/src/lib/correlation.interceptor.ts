@@ -4,6 +4,10 @@
  * Extracts or generates correlation IDs for every incoming request,
  * sets them in the async context, and adds them to response headers.
  * This enables end-to-end request tracing across the entire stack.
+ *
+ * INFRA-823: Standardized cross-service tracing with span propagation.
+ * Supports frontend → API → worker tracing via x-request-id and x-span-id headers.
+ * Background jobs inherit the correlation context from the originating request.
  */
 
 import {

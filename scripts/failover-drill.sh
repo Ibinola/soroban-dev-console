@@ -115,7 +115,58 @@ else
 fi
 echo ""
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+  # ── Scenario 5: Dead-letter handling drill ──────────────────────────────────
+  echo "── Scenario 5: Dead-Letter Job Handling ────────────────"
+  DL_RESP=$(http_get "${API_URL}/jobs/stats" || echo "")
+  if [[ -n "${DL_RESP}" ]]; then
+    DEAD=$(echo "${DL_RESP}" | grep -o '"dead":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    if [[ "${DEAD}" -gt 50 ]]; then
+      warn "Dead-letter queue has ${DEAD} jobs — investigate and retry via /jobs/:id/replay"
+    else
+      pass "Dead-letter queue depth is ${DEAD} — within normal range"
+    fi
+  else
+    warn "Job stats endpoint did not respond — dead-letter depth unknown"
+  fi
+  echo ""
+
+  # ── Scenario 6: Backup integrity check ──────────────────────────────────────
+  echo "── Scenario 6: Backup Integrity ────────────────────────"
+  BACKUP_DIR="${BACKUP_DIR:-.backups}"
+  if [[ -d "${BACKUP_DIR}" ]]; then
+    BACKUP_COUNT=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.db" | wc -l)
+    if [[ "${BACKUP_COUNT}" -gt 0 ]]; then
+      pass "${BACKUP_COUNT} backup(s) available in ${BACKUP_DIR}"
+      # Verify the most recent backup
+      LATEST=$(find "${BACKUP_DIR}" -maxdepth 1 -name "*.db" -print0 | sort -rz | head -1)
+      if sqlite3 "${LATEST}" "PRAGMA integrity_check;" 2>/dev/null | grep -q "^ok$"; then
+        pass "Latest backup integrity verified"
+      else
+        fail "Latest backup failed integrity check"
+      fi
+    else
+      warn "No backups found in ${BACKUP_DIR} — run backup-restore-drill.sh backup first"
+    fi
+  else
+    warn "Backup directory ${BACKUP_DIR} does not exist"
+  fi
+  echo ""
+
+  # ── Scenario 7: Staging parity check ────────────────────────────────────────
+  echo "── Scenario 7: Environment Parity ──────────────────────"
+  if command -v bash &>/dev/null && [[ -f "scripts/check-env-parity.sh" ]]; then
+    PARITY_RESULT=$(bash scripts/check-env-parity.sh 2>&1 || true)
+    if echo "${PARITY_RESULT}" | grep -q "FAIL"; then
+      fail "Environment parity check failed"
+    else
+      pass "Environment parity check passed"
+    fi
+  else
+    warn "check-env-parity.sh not available — skipping parity check"
+  fi
+  echo ""
+
+  # ── Summary ───────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════"
 if [[ "${ERRORS}" -eq 0 ]]; then
   echo -e "${GREEN}  ✅ Failover drill completed — no hard failures${NC}"
