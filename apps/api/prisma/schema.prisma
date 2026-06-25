@@ -446,3 +446,17 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
+
+/// AI-925: Plain-language explanation of a contract diff.
+model ContractDiffExplanation {
+  id            String   @id @default(cuid())
+  diffId        String   @unique @map("diff_id")
+  contractName  String   @map("contract_name")
+  explanations  Json
+  breakingCount Int      @map("breaking_count")
+  modelVersion  String   @map("model_version")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([diffId])
+  @@map("contract_diff_explanations")
+}
