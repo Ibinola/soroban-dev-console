@@ -446,3 +446,16 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
+
+/// AI-928: Fixture synthesis suggestions for a test context.
+model FixtureSynthesisResult {
+  id           String   @id @default(cuid())
+  contextId    String   @unique @map("context_id")
+  targetFlows  Json     @map("target_flows")
+  suggestions  Json
+  modelVersion String   @map("model_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([contextId])
+  @@map("fixture_synthesis_results")
+}
