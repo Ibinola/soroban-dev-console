@@ -154,10 +154,13 @@ model ReviewContext {
 }
 
 /// BE-216: Durable background job record for retry-safe execution.
+/// INFRA-820: Queue topology with priority, retry queue, and dead-letter support.
 model BackgroundJob {
   id          String    @id @default(cuid())
   type        String
   status      String    @default("pending")
+  queue       String    @default("default") /// INFRA-820: Queue name (default, priority, retry, dead_letter)
+  priority    Int       @default(0)        /// INFRA-820: Priority level (higher = more urgent, 0-100)
   payload     Json
   attempts    Int       @default(0)
   maxAttempts Int       @default(3) @map("max_attempts")
@@ -165,11 +168,15 @@ model BackgroundJob {
   lockedUntil DateTime? @map("locked_until")
   scheduledAt DateTime  @default(now()) @map("scheduled_at")
   completedAt DateTime? @map("completed_at")
+  deadLetterAt DateTime? @map("dead_letter_at") /// INFRA-820: When job moved to dead-letter queue
+  deadLetterReason String? @map("dead_letter_reason") /// INFRA-820: Why job was dead-lettered
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@index([status, scheduledAt])
   @@index([type, status])
+  @@index([queue, status, priority])
+  @@index([queue, scheduledAt])
   @@map("background_jobs")
 }
 

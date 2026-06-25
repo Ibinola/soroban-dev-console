@@ -19,7 +19,7 @@ The workflow runs these jobs in parallel, then gates on all of them:
 
 | Job | What it validates |
 |-----|-------------------|
-| `devops` | Runtime-port drift (`check-drift`) and lockfile/workspace integrity (`check-integrity`) |
+| `devops` | Runtime-port drift (`check-drift`), lockfile/workspace integrity (`check-integrity`), queue topology validation, log redaction compliance |
 | `web` | Lint, typecheck, build, unit tests, build-order verification, SSR/prerender smoke |
 | `api` | Lint, build, unit tests (with Prisma client generation) |
 | `api-schema` | Prisma schema validity and migration consistency (`verify-migrations.sh`) |
