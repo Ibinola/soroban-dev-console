@@ -447,15 +447,18 @@ model AiMetricSnapshot {
 }
 
 
-/// AI-922: Suggested test cases from pull request change diffs.
-model TestCaseSuggestion {
+/// AI-921: Cluster of related issues for maintainer triage.
+model IssueCluster {
   id           String   @id @default(cuid())
-  pullRequestId String  @map("pull_request_id")
-  suggestions  Json
-  diffSummary  String   @map("diff_summary")
+  clusterKey   String   @unique @map("cluster_key")
+  label        String
+  issueRefs    Json     @map("issue_refs")
+  theme        String
+  confidence   Float
   modelVersion String   @map("model_version")
   createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  @@index([pullRequestId])
-  @@map("test_case_suggestions")
+  @@index([clusterKey])
+  @@map("issue_clusters")
 }
