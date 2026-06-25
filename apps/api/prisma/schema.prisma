@@ -331,6 +331,25 @@ model PointReservation {
   @@map("point_reservations")
 }
 
+/// AI-201: Versioned registry entry for prompts, policies, thresholds, and model versions used in AI-assisted appeal decisions.
+model PromptPolicyEntry {
+  id          String   @id @default(cuid())
+  /// Logical key, e.g. "appeal_evaluation_prompt", "rejection_threshold"
+  key         String
+  version     Int
+  kind        String   /// prompt | policy | threshold | model_version
+  content     String   /// Raw prompt text or serialised JSON value
+  isActive    Boolean  @default(false) @map("is_active")
+  publishedBy String?  @map("published_by")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([key, version])
+  @@index([key, isActive])
+  @@index([kind])
+  @@map("prompt_policy_entries")
+}
+
 /// BE-204: Budget-impacting event log for analytics and dashboards.
 model BudgetEvent {
   id              String    @id @default(cuid())
