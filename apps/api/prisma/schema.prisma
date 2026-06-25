@@ -446,3 +446,18 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
+
+/// AI-926: Docs Q&A answer record.
+model DocsQaAnswer {
+  id           String   @id @default(cuid())
+  questionId   String   @unique @map("question_id")
+  question     String
+  answer       String
+  sources      Json
+  confidence   Float
+  modelVersion String   @map("model_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([questionId])
+  @@map("docs_qa_answers")
+}
