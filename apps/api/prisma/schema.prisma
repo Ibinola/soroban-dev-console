@@ -446,3 +446,17 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
+
+/// AI-930: Workflow recommendation for a contributor task.
+model WorkflowRecommendation {
+  id              String   @id @default(cuid())
+  taskId          String   @unique @map("task_id")
+  taskDescription String   @map("task_description")
+  recommendations Json
+  topWorkflow     String   @map("top_workflow")
+  modelVersion    String   @map("model_version")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([taskId])
+  @@map("workflow_recommendations")
+}
