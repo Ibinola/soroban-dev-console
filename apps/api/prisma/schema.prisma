@@ -447,16 +447,18 @@ model AiMetricSnapshot {
 }
 
 
-/// AI-929: Change impact analysis for a diff.
-model ChangeImpactAnalysis {
-  id            String   @id @default(cuid())
-  diffId        String   @unique @map("diff_id")
-  changedFiles  Json     @map("changed_files")
-  impactAreas   Json     @map("impact_areas")
-  highRiskCount Int      @map("high_risk_count")
-  modelVersion  String   @map("model_version")
-  createdAt     DateTime @default(now()) @map("created_at")
+/// AI-921: Cluster of related issues for maintainer triage.
+model IssueCluster {
+  id           String   @id @default(cuid())
+  clusterKey   String   @unique @map("cluster_key")
+  label        String
+  issueRefs    Json     @map("issue_refs")
+  theme        String
+  confidence   Float
+  modelVersion String   @map("model_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  @@index([diffId])
-  @@map("change_impact_analyses")
+  @@index([clusterKey])
+  @@map("issue_clusters")
 }
