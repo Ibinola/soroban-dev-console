@@ -643,3 +643,58 @@ export interface ReconcileBudgetPayload {
   organizationId: string;
   dryRun?: boolean;
 }
+
+// ── AI Appeal Pipeline (AI-203, AI-207) ───────────────────────────────────────
+
+export interface EvidencePackInput {
+  appealId: string;
+  pullRequestId: string;
+  workflowContext?: Record<string, unknown>;
+}
+
+export interface ReviewEvidencePack {
+  appealId: string;
+  issueRef: string;
+  pullRequestId: string;
+  assembledAt: string;
+  appeal: {
+    reason: string;
+    status: string;
+    createdAt: string;
+    resolvedAt: string | null;
+    resolution: string | null;
+    evidenceJson: Record<string, unknown> | null;
+  };
+  reviewSummary: {
+    totalReviews: number;
+    approvalCount: number;
+    changesRequestedCount: number;
+    totalComments: number;
+    latestMergeStatus: string;
+    reviewTimeline: Array<{
+      reviewerId: string;
+      decision: string;
+      commentCount: number;
+      reviewedAt: string;
+    }>;
+  };
+  priorDecisions: Array<{
+    outcome: string;
+    modelVersion: string | null;
+    humanOverride: boolean;
+    rationaleSummary: string | null;
+    decidedAt: string;
+  }>;
+  workflowContext: Record<string, unknown> | null;
+}
+
+export interface AppealExplanation {
+  appealId: string;
+  outcome: "approved" | "rejected" | "escalated";
+  confidence: "high" | "medium" | "low";
+  requiresHumanReview: boolean;
+  headline: string;
+  detail: string;
+  nextSteps: string[];
+  generatedAt: string;
+}

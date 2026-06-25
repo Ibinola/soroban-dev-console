@@ -17,9 +17,8 @@ import { ReviewContextModule } from "./modules/review-context/review-context.mod
 import { BackgroundJobModule } from "./modules/jobs/background-job.module.js";
 import { WaveModule } from "./modules/wave/wave.module.js";
 import { BudgetModule } from "./modules/budget/budget.module.js";
-import { PromptPolicyModule } from "./modules/prompt-policy/prompt-policy.module.js";
-import { RetentionModule } from "./modules/retention/retention.module.js";
-import { WaveConfigModule } from "./modules/wave-config/wave-config.module.js";
+import { EvidencePackModule } from "./modules/evidence-pack/evidence-pack.module.js";
+import { AppealExplanationModule } from "./modules/appeal-explanation/appeal-explanation.module.js";
 
 @Module({
   imports: [
@@ -43,10 +42,8 @@ import { WaveConfigModule } from "./modules/wave-config/wave-config.module.js";
     ReviewContextModule,
     BackgroundJobModule,
     WaveModule,
-    BudgetModule,
-    PromptPolicyModule,
-    RetentionModule,
-    WaveConfigModule,
+    EvidencePackModule,
+    AppealExplanationModule,
   ]
 })
 export class AppModule {}
