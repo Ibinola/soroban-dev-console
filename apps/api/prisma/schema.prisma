@@ -446,3 +446,18 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
+
+/// AI-933: Maintainer triage digest.
+model TriageDigest {
+  id             String   @id @default(cuid())
+  digestId       String   @unique @map("digest_id")
+  issueCount     Int      @map("issue_count")
+  highlights     Json
+  digestText     String   @map("digest_text")
+  actionableCount Int     @map("actionable_count")
+  modelVersion   String   @map("model_version")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([digestId])
+  @@map("triage_digests")
+}
