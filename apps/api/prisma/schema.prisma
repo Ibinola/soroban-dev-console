@@ -446,3 +446,17 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
+
+/// AI-934: Spec recommendation for a change set.
+model SpecRecommendation {
+  id              String   @id @default(cuid())
+  changeSetId     String   @unique @map("change_set_id")
+  changedFiles    Json     @map("changed_files")
+  recommendations Json
+  mustRunCount    Int      @map("must_run_count")
+  modelVersion    String   @map("model_version")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([changeSetId])
+  @@map("spec_recommendations")
+}

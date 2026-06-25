@@ -21,6 +21,7 @@ import { TicketClassifierModule } from "./modules/ticket-classifier/ticket-class
 import { ReviewSummarizerModule } from "./modules/review-summarizer/review-summarizer.module.js";
 import { BudgetExceptionModule } from "./modules/budget-exception/budget-exception.module.js";
 import { AiMonitorModule } from "./modules/ai-monitor/ai-monitor.module.js";
+import { SpecRecommenderModule } from "./modules/spec-recommender/spec-recommender.module.js";
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { AiMonitorModule } from "./modules/ai-monitor/ai-monitor.module.js";
     ReviewSummarizerModule,
     BudgetExceptionModule,
     AiMonitorModule,
+    SpecRecommenderModule,
   ]
 })
 export class AppModule {}
