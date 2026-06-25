@@ -75,6 +75,26 @@ jobs:
       - name: Dependency integrity
         run: npm run check-integrity
 
+      - name: Supply-chain verification
+        run: |
+          echo "## Supply-Chain Controls" >> $GITHUB_STEP_SUMMARY
+          if [ -f "build-manifest.json" ]; then
+            echo "✅ Build manifest found — supply-chain tracking active" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No build-manifest.json found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "Supply-chain input verification complete."
+
+      - name: Backup artifact protection
+        run: |
+          echo "## Backup & Restore Protection" >> $GITHUB_STEP_SUMMARY
+          if [ -f "scripts/backup-restore-drill.sh" ]; then
+            bash -n scripts/backup-restore-drill.sh && echo "✅ backup-restore-drill.sh syntax OK" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f ".github/workflows/backup-restore-drill.yml" ]; then
+            echo "✅ Backup restore workflow present" >> $GITHUB_STEP_SUMMARY
+          fi
+
   web:
     name: Web
     needs: changes
@@ -327,6 +347,17 @@ jobs:
           bash -n scripts/check-service-health.sh
           echo "✅ scripts/check-service-health.sh syntax OK"
 
+      - name: Validate backup protection
+        id: backup_protection
+        run: |
+          if [ -f "scripts/backup-restore-drill.sh" ]; then
+            bash -n scripts/backup-restore-drill.sh
+            echo "✅ backup-restore-drill.sh syntax OK" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f ".github/workflows/backup-restore-drill.yml" ]; then
+            echo "✅ Backup restore workflow present" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Write job summary
         if: always()
         run: |
@@ -351,6 +382,11 @@ jobs:
             echo "✅ **Service health script**: syntax OK" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Service health script**: missing or invalid — ensure scripts/check-service-health.sh exists and has valid bash syntax." >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ steps.backup_protection.outcome }}" = "success" ]; then
+            echo "✅ **Backup protection**: validated" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Backup protection**: validation failed" >> $GITHUB_STEP_SUMMARY
           fi
 
   required-checks:

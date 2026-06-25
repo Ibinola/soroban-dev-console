@@ -48,6 +48,7 @@ import { LogAnalyzerModule } from "./modules/log-analyzer/log-analyzer.module.js
     BudgetModule,
     TicketClassifierModule,
     ReviewSummarizerModule,
+    FeedbackTaggerModule,
     BudgetExceptionModule,
     AiMonitorModule,
     LogAnalyzerModule,
