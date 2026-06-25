@@ -447,18 +447,18 @@ model AiMetricSnapshot {
 }
 
 
-/// AI-921: Cluster of related issues for maintainer triage.
-model IssueCluster {
-  id           String   @id @default(cuid())
-  clusterKey   String   @unique @map("cluster_key")
-  label        String
-  issueRefs    Json     @map("issue_refs")
-  theme        String
-  confidence   Float
-  modelVersion String   @map("model_version")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+/// AI-927: Log analysis result from the assistant workflow.
+model LogAnalysisResult {
+  id               String   @id @default(cuid())
+  sessionId        String   @unique @map("session_id")
+  source           String
+  lineCount        Int      @map("line_count")
+  themes           Json
+  correlatedEvents Json     @map("correlated_events")
+  errorCount       Int      @map("error_count")
+  modelVersion     String   @map("model_version")
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  @@index([clusterKey])
-  @@map("issue_clusters")
+  @@index([sessionId])
+  @@map("log_analysis_results")
 }
