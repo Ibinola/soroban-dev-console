@@ -447,20 +447,18 @@ model AiMetricSnapshot {
 }
 
 
-/// AI-920: Draft summary of a merged pull request generated from diff statistics.
-model PrDraftSummary {
-  id            String   @id @default(cuid())
-  pullRequestId String   @unique @map("pull_request_id")
-  mergedAt      DateTime @map("merged_at")
-  authorKey     String   @map("author_key")
-  diffStats     Json     @map("diff_stats")
-  summaryText   String   @map("summary_text")
-  modelVersion  String   @map("model_version")
-  humanOverride Boolean  @default(false) @map("human_override")
-  overriddenBy  String?  @map("overridden_by")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+/// AI-921: Cluster of related issues for maintainer triage.
+model IssueCluster {
+  id           String   @id @default(cuid())
+  clusterKey   String   @unique @map("cluster_key")
+  label        String
+  issueRefs    Json     @map("issue_refs")
+  theme        String
+  confidence   Float
+  modelVersion String   @map("model_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  @@index([pullRequestId])
-  @@map("pr_draft_summaries")
+  @@index([clusterKey])
+  @@map("issue_clusters")
 }
