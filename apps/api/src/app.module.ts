@@ -21,7 +21,7 @@ import { TicketClassifierModule } from "./modules/ticket-classifier/ticket-class
 import { ReviewSummarizerModule } from "./modules/review-summarizer/review-summarizer.module.js";
 import { BudgetExceptionModule } from "./modules/budget-exception/budget-exception.module.js";
 import { AiMonitorModule } from "./modules/ai-monitor/ai-monitor.module.js";
-import { CiFailureSummaryModule } from "./modules/ci-failure-summary/ci-failure-summary.module.js";
+import { IssueClusterModule } from "./modules/issue-cluster/issue-cluster.module.js";
 
 @Module({
   imports: [
@@ -50,7 +50,7 @@ import { CiFailureSummaryModule } from "./modules/ci-failure-summary/ci-failure-
     ReviewSummarizerModule,
     BudgetExceptionModule,
     AiMonitorModule,
-    CiFailureSummaryModule,
+    IssueClusterModule,
   ]
 })
 export class AppModule {}

@@ -447,19 +447,18 @@ model AiMetricSnapshot {
 }
 
 
-/// AI-923: Structured summary of a CI run failure for faster triage.
-model CiFailureSummary {
-  id            String   @id @default(cuid())
-  runId         String   @unique @map("run_id")
-  repository    String
-  branch        String
-  failedSteps   Json     @map("failed_steps")
-  affectedFiles Json     @map("affected_files")
-  likelyCauses  Json     @map("likely_causes")
-  nextActions   Json     @map("next_actions")
-  modelVersion  String   @map("model_version")
-  createdAt     DateTime @default(now()) @map("created_at")
+/// AI-921: Cluster of related issues for maintainer triage.
+model IssueCluster {
+  id           String   @id @default(cuid())
+  clusterKey   String   @unique @map("cluster_key")
+  label        String
+  issueRefs    Json     @map("issue_refs")
+  theme        String
+  confidence   Float
+  modelVersion String   @map("model_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  @@index([runId])
-  @@map("ci_failure_summaries")
+  @@index([clusterKey])
+  @@map("issue_clusters")
 }
