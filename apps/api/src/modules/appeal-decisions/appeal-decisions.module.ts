@@ -4,11 +4,11 @@ import { AuditService } from "../../lib/audit.service.js";
 import { AppealDecisionsController } from "./appeal-decisions.controller.js";
 import { AppealDecisionsService } from "./appeal-decisions.service.js";
 import { AppealDecisionsRepository } from "./appeal-decisions.repository.js";
-import { ScoreCalibrationService } from "./score-calibration.service.js";
+import { ModelRolloutService } from "./model-rollout.service.js";
 
 @Module({
   controllers: [AppealDecisionsController],
-  providers: [AppealDecisionsService, AppealDecisionsRepository, PrismaService, AuditService, ScoreCalibrationService],
-  exports: [AppealDecisionsService, ScoreCalibrationService],
+  providers: [AppealDecisionsService, AppealDecisionsRepository, PrismaService, AuditService, ModelRolloutService],
+  exports: [AppealDecisionsService, ModelRolloutService],
 })
 export class AppealDecisionsModule {}
