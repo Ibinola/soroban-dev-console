@@ -447,17 +447,18 @@ model AiMetricSnapshot {
 }
 
 
-/// AI-924: Drafted release notes from merged work.
-model ReleaseNotesDraft {
-  id           String   @id @default(cuid())
-  releaseId    String   @unique @map("release_id")
-  version      String
-  sections     Json
-  notesText    String   @map("notes_text")
-  entryCount   Int      @map("entry_count")
-  modelVersion String   @map("model_version")
-  createdAt    DateTime @default(now()) @map("created_at")
+/// AI-927: Log analysis result from the assistant workflow.
+model LogAnalysisResult {
+  id               String   @id @default(cuid())
+  sessionId        String   @unique @map("session_id")
+  source           String
+  lineCount        Int      @map("line_count")
+  themes           Json
+  correlatedEvents Json     @map("correlated_events")
+  errorCount       Int      @map("error_count")
+  modelVersion     String   @map("model_version")
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  @@index([releaseId])
-  @@map("release_notes_drafts")
+  @@index([sessionId])
+  @@map("log_analysis_results")
 }
