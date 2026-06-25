@@ -446,18 +446,19 @@ model AiMetricSnapshot {
   @@map("ai_metric_snapshots")
 }
 
-/// AI-935: Reusable feedback tagging batch record.
-model FeedbackTagBatch {
+
+/// AI-927: Log analysis result from the assistant workflow.
+model LogAnalysisResult {
   id               String   @id @default(cuid())
-  batchId          String   @unique @map("batch_id")
-  itemCount        Int      @map("item_count")
-  taggedItems      Json     @map("tagged_items")
-  tagSummary       Json     @map("tag_summary")
-  needsReviewCount Int      @default(0) @map("needs_review_count")
+  sessionId        String   @unique @map("session_id")
+  source           String
+  lineCount        Int      @map("line_count")
+  themes           Json
+  correlatedEvents Json     @map("correlated_events")
+  errorCount       Int      @map("error_count")
   modelVersion     String   @map("model_version")
   createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
 
-  @@map("feedback_tag_batches")
+  @@index([sessionId])
+  @@map("log_analysis_results")
 }
-
