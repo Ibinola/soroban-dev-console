@@ -351,3 +351,79 @@ model BudgetEvent {
   @@index([eventType])
   @@map("budget_events")
 }
+
+/// AI-211: Rule-based classification result for a support ticket.
+model TicketClassification {
+  id                String    @id @default(cuid())
+  ticketId          String    @unique @map("ticket_id")
+  suggestedCategory String    @map("suggested_category")
+  suggestedPriority String    @map("suggested_priority")
+  suggestedRoute    String    @map("suggested_route")
+  confidence        Float
+  signals           Json
+  modelVersion      String    @map("model_version")
+  humanOverride     Boolean   @default(false) @map("human_override")
+  overriddenBy      String?   @map("overridden_by")
+  overrideNote      String?   @map("override_note")
+  overriddenAt      DateTime? @map("overridden_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@index([ticketId])
+  @@index([suggestedRoute])
+  @@map("ticket_classifications")
+}
+
+/// AI-212: Structured summary of a maintainer review thread for appeal triage.
+model ReviewSummary {
+  id            String   @id @default(cuid())
+  pullRequestId String   @unique @map("pull_request_id")
+  summaryText   String   @map("summary_text")
+  keySignals    Json     @map("key_signals")
+  modelVersion  String   @map("model_version")
+  humanOverride Boolean  @default(false) @map("human_override")
+  overriddenBy  String?  @map("overridden_by")
+  overrideNote  String?  @map("override_note")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([pullRequestId])
+  @@map("review_summaries")
+}
+
+/// AI-213: Signal-based recommendation for an org budget exception review.
+model BudgetExceptionRecommendation {
+  id             String    @id @default(cuid())
+  organizationId String    @unique @map("organization_id")
+  signals        Json
+  recommendation String
+  confidence     Float
+  modelVersion   String    @map("model_version")
+  humanDecision  String?   @map("human_decision")
+  decidedBy      String?   @map("decided_by")
+  decisionNote   String?   @map("decision_note")
+  decidedAt      DateTime? @map("decided_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId])
+  @@index([recommendation])
+  @@map("budget_exception_recommendations")
+}
+
+/// AI-214: Point-in-time snapshot of an AI pipeline health metric.
+model AiMetricSnapshot {
+  id             String   @id @default(cuid())
+  snapshotAt     DateTime @default(now()) @map("snapshot_at")
+  modelVersion   String   @map("model_version")
+  metricType     String   @map("metric_type")
+  value          Float
+  windowHours    Int      @map("window_hours")
+  metadata       Json?
+  alertTriggered Boolean  @default(false) @map("alert_triggered")
+  alertThreshold Float?   @map("alert_threshold")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([metricType, snapshotAt])
+  @@index([modelVersion])
+  @@map("ai_metric_snapshots")
+}
+
