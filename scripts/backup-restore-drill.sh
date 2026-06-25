@@ -337,6 +337,59 @@ cmd_verify() {
     fail "Database integrity check FAILED."
     exit 1
   fi
+
+  # INFRA-825: Extended backup integrity validation
+  heading "Extended Backup Integrity Checks"
+  local errors=0
+
+  if [[ -d "$BACKUP_DIR" ]]; then
+    local backup_files=()
+    while IFS= read -r -d '' f; do
+      backup_files+=("$f")
+    done < <(find "$BACKUP_DIR" -maxdepth 1 -name "*.db" -print0 | sort -rz)
+
+    if [[ ${#backup_files[@]} -gt 0 ]]; then
+      info "Found ${#backup_files[@]} backup(s) in $BACKUP_DIR"
+
+      # Verify the most recent backup
+      local latest="${backup_files[0]}"
+      info "Verifying latest backup: $(basename "$latest")"
+      if sqlite3 "$latest" "PRAGMA integrity_check;" | grep -q "^ok$"; then
+        ok "Latest backup integrity check passed: $(basename "$latest")"
+      else
+        fail "Latest backup integrity check FAILED: $(basename "$latest")"
+        errors=$((errors + 1))
+      fi
+
+      # Verify backup age
+      local backup_mtime
+      backup_mtime=$(stat -c%Y "$latest" 2>/dev/null || stat -f%m "$latest")
+      local now
+      now=$(date +%s)
+      local age_hours=$(( (now - backup_mtime) / 3600 ))
+      if [[ $age_hours -gt 24 ]]; then
+        warn "Most recent backup is ${age_hours}h old — consider running a fresh backup"
+      else
+        ok "Most recent backup is ${age_hours}h old — within 24h window"
+      fi
+    else
+      warn "No backups found in $BACKUP_DIR — run 'backup' command first"
+    fi
+  else
+    warn "Backup directory $BACKUP_DIR does not exist — create it with 'backup' command"
+  fi
+
+  # Verify the backup restore workflow exists
+  if [[ -f ".github/workflows/backup-restore-drill.yml" ]]; then
+    ok "Backup restore workflow (.github/workflows/backup-restore-drill.yml) is present"
+  else
+    warn "Backup restore workflow not found — CI-based backup validation is not active"
+  fi
+
+  if [[ $errors -gt 0 ]]; then
+    fail "$errors backup integrity issue(s) found"
+    exit 1
+  fi
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

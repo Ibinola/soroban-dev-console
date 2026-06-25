@@ -185,47 +185,79 @@ else
 fi
 echo ""
 
-# ── 6. Non-local environment warnings ────────────────────────────────────────
-echo "── 6. Non-Local Environment Warnings ───────────────────"
-if [[ -f "${API_ENV}" ]]; then
-  RUNTIME_MODE=$(get_env_val "${API_ENV}" "RUNTIME_MODE")
-  if [[ "${RUNTIME_MODE}" != "local" && "${RUNTIME_MODE}" != "" ]]; then
-    info "RUNTIME_MODE=${RUNTIME_MODE} — checking for localhost values..."
+  # ── 6. Non-local environment warnings ────────────────────────────────────────
+  echo "── 6. Non-Local Environment Warnings ───────────────────"
+  if [[ -f "${API_ENV}" ]]; then
+    RUNTIME_MODE=$(get_env_val "${API_ENV}" "RUNTIME_MODE")
+    if [[ "${RUNTIME_MODE}" != "local" && "${RUNTIME_MODE}" != "" ]]; then
+      info "RUNTIME_MODE=${RUNTIME_MODE} — checking for localhost values..."
 
-    WEB_ORIGIN=$(get_env_val "${API_ENV}" "WEB_ORIGIN")
-    if echo "${WEB_ORIGIN}" | grep -q "localhost"; then
-      warn "WEB_ORIGIN contains 'localhost' but RUNTIME_MODE=${RUNTIME_MODE}"
-    else
-      pass "WEB_ORIGIN does not use localhost in ${RUNTIME_MODE} mode"
-    fi
-
-    LOCAL_RPC=$(get_env_val "${API_ENV}" "SOROBAN_RPC_LOCAL_URL")
-    if [[ -n "${LOCAL_RPC}" ]] && echo "${LOCAL_RPC}" | grep -q "localhost"; then
-      warn "SOROBAN_RPC_LOCAL_URL is set to a localhost URL in ${RUNTIME_MODE} mode — ensure this is intentional"
-    fi
-
-    # INFRA-209: Wave-critical feature flag parity
-    echo ""
-    echo "── 6a. Wave Feature Flag Parity ─────────────────────"
-    MULTI_OP=$(get_env_val "${API_ENV}" "FEATURE_MULTI_OP")
-    if [[ "${MULTI_OP}" == "true" || -z "${MULTI_OP}" ]]; then
-      warn "FEATURE_MULTI_OP is enabled in ${RUNTIME_MODE} mode — production default is 'false'; set explicitly if intentional"
-    else
-      pass "FEATURE_MULTI_OP=false matches production default"
-    fi
-
-    for FLAG in FEATURE_SHARING FEATURE_TOKEN_DASHBOARD FEATURE_AUDIT_LOG FEATURE_RPC_GATEWAY; do
-      VAL=$(get_env_val "${API_ENV}" "${FLAG}")
-      if [[ "${VAL}" == "false" ]]; then
-        warn "${FLAG}=false in ${RUNTIME_MODE} mode — staging should match production (true) unless intentionally disabled"
+      WEB_ORIGIN=$(get_env_val "${API_ENV}" "WEB_ORIGIN")
+      if echo "${WEB_ORIGIN}" | grep -q "localhost"; then
+        warn "WEB_ORIGIN contains 'localhost' but RUNTIME_MODE=${RUNTIME_MODE}"
       else
-        pass "${FLAG} is enabled"
+        pass "WEB_ORIGIN does not use localhost in ${RUNTIME_MODE} mode"
       fi
-    done
-  else
-    info "RUNTIME_MODE=local — skipping non-local checks"
+
+      LOCAL_RPC=$(get_env_val "${API_ENV}" "SOROBAN_RPC_LOCAL_URL")
+      if [[ -n "${LOCAL_RPC}" ]] && echo "${LOCAL_RPC}" | grep -q "localhost"; then
+        warn "SOROBAN_RPC_LOCAL_URL is set to a localhost URL in ${RUNTIME_MODE} mode — ensure this is intentional"
+      fi
+
+      # INFRA-209: Wave-critical feature flag parity
+      echo ""
+      echo "── 6a. Wave Feature Flag Parity ─────────────────────"
+      MULTI_OP=$(get_env_val "${API_ENV}" "FEATURE_MULTI_OP")
+      if [[ "${MULTI_OP}" == "true" || -z "${MULTI_OP}" ]]; then
+        warn "FEATURE_MULTI_OP is enabled in ${RUNTIME_MODE} mode — production default is 'false'; set explicitly if intentional"
+      else
+        pass "FEATURE_MULTI_OP=false matches production default"
+      fi
+
+      for FLAG in FEATURE_SHARING FEATURE_TOKEN_DASHBOARD FEATURE_AUDIT_LOG FEATURE_RPC_GATEWAY; do
+        VAL=$(get_env_val "${API_ENV}" "${FLAG}")
+        if [[ "${VAL}" == "false" ]]; then
+          warn "${FLAG}=false in ${RUNTIME_MODE} mode — staging should match production (true) unless intentionally disabled"
+        else
+          pass "${FLAG} is enabled"
+        fi
+      done
+
+      # INFRA-826: Staging parity checks
+      echo ""
+      echo "── 6b. Staging Parity Validation ────────────────────"
+      STAGING_API_URL=$(get_env_val "${API_ENV}" "STAGING_API_URL" 2>/dev/null || echo "")
+      STAGING_WEB_ORIGIN=$(get_env_val "${API_ENV}" "STAGING_WEB_ORIGIN" 2>/dev/null || echo "")
+
+      if [[ -n "${STAGING_API_URL}" ]]; then
+        pass "STAGING_API_URL is set"
+      else
+        warn "STAGING_API_URL not set — staging API URL should be configured for parity"
+      fi
+
+      if [[ -n "${STAGING_WEB_ORIGIN}" ]]; then
+        pass "STAGING_WEB_ORIGIN is set"
+      else
+        warn "STAGING_WEB_ORIGIN not set — staging web origin should be configured for parity"
+      fi
+
+      # Verify staging env has all required variables that production has
+      STAGING_ENV_FILE="${API_ENV}.staging"
+      if [[ -f "${STAGING_ENV_FILE}" ]]; then
+        info "Staging env file found: ${STAGING_ENV_FILE}"
+        for VAR in PORT DATABASE_URL RUNTIME_MODE WEB_ORIGIN; do
+          STAGING_VAL=$(get_env_val "${STAGING_ENV_FILE}" "${VAR}" 2>/dev/null || echo "")
+          if [[ -z "${STAGING_VAL}" ]]; then
+            fail "Staging env missing required variable: ${VAR}"
+          fi
+        done
+      else
+        info "No staging env file at ${STAGING_ENV_FILE} — create it for full parity validation"
+      fi
+    else
+      info "RUNTIME_MODE=local — skipping non-local checks"
+    fi
   fi
-fi
 echo ""
 
 # ── Summary ───────────────────────────────────────────────────────────────────
