@@ -1,8 +1,3 @@
-#!/usr/bin/env tsx
-// scripts/wave-test-utils.ts
-// DX-209: Shared test utilities for Wave 5 verification, budget, and appeal flows.
-// Import from test files to avoid repeating setup logic across suites.
-
 export interface VerificationState {
   contributorId: string;
   status: "pending" | "approved" | "rejected" | "under_review";
@@ -31,6 +26,24 @@ export interface QueueFixture {
   kind: "verification" | "appeal" | "abuse_report";
   depth: number;
   oldestEntryAt: string;
+}
+
+export interface RpcTraceFixture {
+  callId: string;
+  method: string;
+  params: Record<string, unknown>;
+  error?: string;
+  durationMs: number;
+  timestamp: string;
+}
+
+export interface SupportTicketFixture {
+  ticketId: string;
+  contributorId: string;
+  subject: string;
+  status: "open" | "in_progress" | "resolved" | "closed";
+  priority: "low" | "medium" | "high" | "critical";
+  createdAt: string;
 }
 
 // ── Verification state builders ───────────────────────────────────────────────
@@ -124,6 +137,43 @@ export function makeBackloggedQueue(kind: QueueFixture["kind"], depth = 50): Que
   });
 }
 
+// ── RPC trace fixture builders ────────────────────────────────────────────────
+
+export function makeRpcTraceFixture(overrides: Partial<RpcTraceFixture> = {}): RpcTraceFixture {
+  return {
+    callId: overrides.callId ?? `call-${Date.now()}`,
+    method: overrides.method ?? "invokeContractFunction",
+    params: overrides.params ?? {},
+    durationMs: overrides.durationMs ?? 100,
+    timestamp: overrides.timestamp ?? new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+export function makeFailedRpcTrace(method: string, error: string): RpcTraceFixture {
+  return makeRpcTraceFixture({
+    method,
+    error,
+    durationMs: 0,
+  });
+}
+
+// ── Support ticket fixture builders ───────────────────────────────────────────
+
+export function makeSupportTicketFixture(
+  overrides: Partial<SupportTicketFixture> = {},
+): SupportTicketFixture {
+  return {
+    ticketId: overrides.ticketId ?? `ticket-${Date.now()}`,
+    contributorId: overrides.contributorId ?? `contributor-${Date.now()}`,
+    subject: overrides.subject ?? "Test support ticket",
+    status: overrides.status ?? "open",
+    priority: overrides.priority ?? "medium",
+    createdAt: overrides.createdAt ?? new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 // ── Assertion helpers ─────────────────────────────────────────────────────────
 
 export function assertBudgetSolvent(budget: BudgetFixture): void {
@@ -165,4 +215,18 @@ export function assertLedgerConsistency(entries: LedgerEntry[]): void {
       throw new Error(`Negative ledger balance for contributor=${id}: ${balance}`);
     }
   }
+}
+
+// ── General helper ───────────────────────────────────────────────────────────
+
+export function randomId(prefix = "id"): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+export function hoursAgo(hours: number): string {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 }
