@@ -7,10 +7,24 @@ const PATTERNS = [
   { rule: "email", regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
   { rule: "jwt", regex: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g },
   { rule: "private_key", regex: /S[A-Z2-7]{55}/g },
+  { rule: "stellar_secret", regex: /S[A-Z2-7]{55}/g },
   { rule: "long_hex_secret", regex: /\b[a-f0-9]{64,}\b/gi },
+  { rule: "api_key", regex: /\b(?:api[_-]?key|api[_-]?token|access[_-]?token)[=:]["']?[A-Za-z0-9_\-]{16,}["']?/gi },
+  { rule: "bearer_token", regex: /Bearer\s+[A-Za-z0-9\-._~+/]+=*/g },
+  { rule: "ghp_token", regex: /ghp_[A-Za-z0-9]{36,}/g },
+  { rule: "gho_token", regex: /gho_[A-Za-z0-9]{36,}/g },
+  { rule: "npm_token", regex: /npm_[A-Za-z0-9]{36,}/g },
+  { rule: "connection_string", regex: /(?:mongodb|postgres)://[^\s]+/gi },
 ];
 const INCLUDE_DIRS = ["apps", "packages", "contracts", "docs", "scripts", ".github"];
 const EXCLUDE_PARTS = ["/node_modules/", "/dist/", "/target/", "/.git/", "/.turbo/", "/.backups/"];
+
+const WHITELIST_FILES = [
+  "docs/contributor-playbook.md",
+  "docs/maintainer-playbook.md",
+  "docs/runbooks.md",
+  "scripts/secret-scan.ts",
+];
 
 function isTextFile(file: string): boolean {
   return /\.(ts|tsx|js|jsx|json|md|yml|yaml|sh|txt|toml|rs|sql|prisma|env|cjs|mjs)$/i.test(file);
@@ -42,15 +56,17 @@ for (const file of files) {
   }
 }
 
+let foundSecret = false;
 for (const finding of findings) {
   const rel = path.relative(ROOT, finding.file).replace(/\\/g, "/");
-  if (["docs/contributor-playbook.md", "docs/maintainer-playbook.md", "docs/runbooks.md"].includes(rel)) continue;
+  if (WHITELIST_FILES.includes(rel)) continue;
   console.error(`${rel}:${finding.line} [${finding.rule}] ${finding.sample}`);
-  process.exitCode = 1;
+  foundSecret = true;
 }
 
-if (process.exitCode) {
+if (foundSecret) {
+  console.error(`\nSecret scan FAILED: ${findings.filter(f => !WHITELIST_FILES.includes(path.relative(ROOT, f.file).replace(/\\/g, "/"))).length} potential secrets found.`);
   process.exit(1);
 }
 
-console.log(`Secret scan passed: ${files.length} files checked.`);
+console.log(`Secret scan passed: ${files.length} files checked with ${PATTERNS.length} patterns.`);

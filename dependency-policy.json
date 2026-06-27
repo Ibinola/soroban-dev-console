@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "criticalPackages": [
+    "next",
+    "react",
+    "react-dom",
+    "@stellar/stellar-sdk",
+    "@nestjs/core",
+    "@nestjs/common",
+    "@prisma/client",
+    "prisma",
+    "tailwindcss",
+    "typescript",
+    "zod"
+  ],
+  "rules": {
+    "patch": {
+      "autoMerge": true,
+      "requiredReviewers": 0
+    },
+    "minor": {
+      "critical": {
+        "autoMerge": false,
+        "requiredReviewers": 1
+      },
+      "nonCritical": {
+        "autoMerge": true,
+        "requiredReviewers": 0
+      }
+    },
+    "major": {
+      "autoMerge": false,
+      "requiredReviewers": 2,
+      "blockDuringWave": true,
+      "waveCooldownDays": 14
+    }
+  },
+  "securityUpdates": {
+    "criticalCve": {
+      "responseTimeHours": 24,
+      "bypassFreeze": true
+    },
+    "highCve": {
+      "responseTimeHours": 72,
+      "bypassFreeze": true
+    }
+  },
+  "freeze": {
+    "enabled": false,
+    "waveStartDate": null,
+    "cooldownDays": 14
+  }
+}
