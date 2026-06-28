@@ -54,4 +54,34 @@ export const REDACTION_PATTERNS = [
     regex: /\b(?:\d{4}[-\s]?){3}\d{4}\b/g,
     replacement: '[REDACTED_CARD]',
   },
+  {
+    name: 'github_token',
+    regex: /gh[psou]_[A-Za-z0-9]{36,}/g,
+    replacement: '[REDACTED_GITHUB_TOKEN]',
+  },
+  {
+    name: 'npm_token',
+    regex: /npm_[A-Za-z0-9]{36,}/g,
+    replacement: '[REDACTED_NPM_TOKEN]',
+  },
+  {
+    name: 'wallet_seed',
+    regex: /\b[GS][A-Z2-7]{55}\b/g,
+    replacement: '[REDACTED_WALLET_KEY]',
+  },
+  {
+    name: 'auth_header',
+    regex: /(Authorization|X-Api-Key|X-Auth-Token):\s*\S+/gi,
+    replacement: '$1: [REDACTED]',
+  },
+  {
+    name: 'slack_token',
+    regex: /xox[baprs]-\d+-\d+-\d+-[a-f0-9]+/gi,
+    replacement: '[REDACTED_SLACK_TOKEN]',
+  },
+  {
+    name: 'discord_token',
+    regex: /[MN][A-Za-z\d]{23,25}\.[A-Za-z\d]{6,7}\.[A-Za-z\d_-]{27,38}/g,
+    replacement: '[REDACTED_DISCORD_TOKEN]',
+  },
 ];
