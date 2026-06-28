@@ -12,6 +12,8 @@ Closes #
 - [ ] `npm run lint` passed
 - [ ] `npm run typecheck` passed
 - [ ] `npm run build` passed
+- [ ] `npm run check-drift` passed (if scripts or config changed)
+- [ ] `npm run check-integrity` passed (if deps changed)
 - [ ] Working tree clean before push
 
 ## Review Routing
@@ -23,6 +25,8 @@ Affected Areas
 - [ ] Appeals
 - [ ] Budgets
 - [ ] CI/CD
+- [ ] Documentation
+- [ ] DX / Tooling
 
 ## Required Reviewers
 
