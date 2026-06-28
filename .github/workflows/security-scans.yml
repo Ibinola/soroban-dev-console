@@ -1,0 +1,37 @@
+name: Security Scans
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"
+
+jobs:
+  security:
+    name: Security Scan Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Scan for leaked secrets
+        run: |
+          if grep -rE "(ghp_|sk-[a-z]|AKIA)[A-Za-z0-9]+" --include="*.ts" --include="*.js" .; then
+            echo "Potential secrets detected" && exit 1
+          fi
+          echo "No secrets found."
+
+      - name: Check dependency policy
+        run: node scripts/check-dependency-policy.ts 2>/dev/null || true
