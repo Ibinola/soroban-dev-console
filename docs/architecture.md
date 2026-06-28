@@ -51,16 +51,35 @@ Soroban DevConsole is a monorepo-based web application that provides a comprehen
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Project Structure
+
+```
+soroban-dev-console/
+├── apps/
+│   ├── web/              # Next.js 16 frontend (React 19, TypeScript)
+│   └── api/              # NestJS 11 backend (TypeScript, Prisma 6, SQLite)
+├── contracts/            # Soroban smart contract fixtures (Rust)
+├── packages/             # Shared packages
+│   ├── api-contracts/    # TypeScript type definitions & Admin SDK
+│   ├── ui/               # Shared UI components (Shadcn/ui based)
+│   ├── soroban-utils/    # Soroban utility library
+│   └── typescript-config/# Shared TypeScript configuration
+├── docs/                 # Documentation
+├── scripts/              # Automation and utility scripts
+└── .github/              # CI workflows, issue templates, PR template
+```
+
 ## Component Details
 
 ### 1. Web Frontend (apps/web)
 
 #### Technology Stack
-- **Framework**: Next.js 15 with App Router
+- **Framework**: Next.js 16 with App Router
 - **Language**: TypeScript (strict mode)
 - **Styling**: Tailwind CSS + Shadcn/ui components
-- **State Management**: Zustand with persist middleware
+- **State Management**: Zustand 5 with persist middleware
 - **Build Tool**: Next.js built-in (Webpack/Turbopack)
+- **UI Runtime**: React 19
 
 #### Key Modules
 
@@ -94,11 +113,12 @@ Soroban DevConsole is a monorepo-based web application that provides a comprehen
 ### 2. API Backend (apps/api)
 
 #### Technology Stack
-- **Framework**: NestJS (modular architecture)
+- **Framework**: NestJS 11 (modular architecture)
 - **Language**: TypeScript
-- **Database**: SQLite with Prisma ORM
+- **Database**: SQLite with Prisma 6 ORM
 - **Validation**: class-validator + class-transformer
 - **Error Handling**: Global filters and interceptors
+- **Runtime**: Express 5
 
 #### Module Architecture
 
@@ -153,12 +173,65 @@ Responsibilities:
 - Cleanup expired shares
 - Validate snapshot size/depth
 
+**Security Module**
+```
+security/
+├── security.module.ts
+├── services/
+│   ├── redaction-patterns.ts    # Redaction pattern definitions
+│   ├── redaction.service.ts     # Text and JSON redaction
+│   └── redaction.service.test.ts
+```
+
+Responsibilities:
+- Redact sensitive fields from logs and audit entries
+- Provide reusable redaction utilities for guards and services
+- Centralize security-related pattern definitions
+
+**Wave Module**
+```
+wave/
+├── wave.module.ts
+├── appeal.controller.ts
+├── appeal.service.ts
+├── eligibility.service.ts
+├── abuse-risk.controller.ts
+├── abuse-risk.service.ts
+├── coordinated-abuse-detection.service.ts
+├── review-window.controller.ts
+├── review-window.service.ts
+```
+
+**Verification Module**
+```
+verification/
+├── verification.controller.ts
+├── verification.module.ts
+└── verification.service.ts
+```
+
+**Budget Module**
+```
+budget/
+├── budget.controller.ts
+├── budget.module.ts
+├── budget.service.ts
+├── budget-accounting.ts
+└── budget-concurrency.test.ts
+```
+
 **Cross-Cutting Concerns**
 
 **Authentication (`auth/`)**
-- `owner-key.guard.ts` - Bearer token validation
-- Length and pattern checks
-- Attached to mutation routes only
+- `owner-key.guard.ts` - Bearer token validation with rate limiting
+- `verification.guard.ts` - Verified identity enforcement
+- `guards/admin.guard.ts` - Admin role guard
+- `guards/permission-boundary.guard.ts` - Permission boundary enforcement
+- `guards/pii-export.guard.ts` - PII export guard
+- `guards/rate-limit.guard.ts` - Rate limiting guard
+- `guards/supply-chain.guard.ts` - Supply chain verification guard
+- `services/rate-limit.service.ts` - Rate limit service
+- `decorators/throttle-policies.ts` - Throttle policy definitions
 
 **Request Context (`lib/`)**
 - `request-context.ts` - AsyncLocalStorage for correlation IDs
@@ -292,6 +365,21 @@ Test fixtures for development and testing:
 - Minimum 8 chars, maximum 256
 - Forbidden patterns rejected
 - Stored in localStorage (frontend)
+- Rate limited: 10 attempts per minute per IP
+- All failures logged with client IP
+
+**Verified Identity Authentication**
+- Required for Wave-sensitive actions (issue claiming, appeal intake)
+- Provided via `x-verified-key` header
+- Minimum 8 characters
+- Rate limited: 20 attempts per minute per IP
+
+**Webhook Security**
+- `WebhookSignatureService`: HMAC-SHA256 signature verification
+- `WebhookSignatureGuard`: Combined signature + replay detection
+- `WebhookReplayService`: In-memory TTL-based replay prevention
+- Timestamp verification with 5-minute tolerance
+- All rejections logged with reason
 
 **Recommendations for Production**
 - Implement Stellar signature authentication
