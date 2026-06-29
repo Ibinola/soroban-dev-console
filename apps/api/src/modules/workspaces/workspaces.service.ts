@@ -31,7 +31,7 @@ export class WorkspacesService {
     private readonly repository: WorkspacesRepository,
     private readonly events: DomainEventBus,
     private readonly audit: AuditService,
-  ) {}
+  ) { }
 
   @MapDbErrors()
   async list(ownerKey: string, query: ListWorkspacesDto = {}): Promise<PaginatedResponse<any>> {
@@ -97,49 +97,72 @@ export class WorkspacesService {
     return workspace;
   }
 
+  /**
+   * BE-320: Workspace mutation API boundary.
+   *
+   * Command boundary: perform the DB mutation and return the mutated entity.
+   * Side-effects boundary: emit domain events and audit logs *after* the mutation.
+   */
+  private async runMutationWithSideEffects<T>(
+    command: () => Promise<T>,
+    sideEffects: (result: T) => void | Promise<void>,
+  ): Promise<T> {
+    const result = await command();
+    await sideEffects(result);
+    return result;
+  }
+
   @MapDbErrors()
   async create(ownerKey: string, dto: CreateWorkspaceDto) {
     const network = dto.selectedNetwork ?? "testnet";
-    const workspace = await this.repository.create({
-      data: {
-        ownerKey,
-        name: dto.name.trim(),
-        description: dto.description?.trim() || null,
-        selectedNetwork: network,
-        savedContracts: dto.contracts
-          ? {
-              create: dto.contracts.map((c) => ({
-                contractId: c.contractId,
-                network: c.network || network,
-              })),
-            }
-          : undefined,
-        savedInteractions: dto.interactions
-          ? {
-              create: dto.interactions.map((i) => ({
-                functionName: i.functionName,
-                argumentsJson: (i.argumentsJson || {}) as Prisma.InputJsonValue,
-                network: network,
-              })),
-            }
-          : undefined,
+
+    return this.runMutationWithSideEffects(
+      async () => {
+        const workspace = await this.repository.create({
+          data: {
+            ownerKey,
+            name: dto.name.trim(),
+            description: dto.description?.trim() || null,
+            selectedNetwork: network,
+            savedContracts: dto.contracts
+              ? {
+                create: dto.contracts.map((c) => ({
+                  contractId: c.contractId,
+                  network: c.network || network,
+                })),
+              }
+              : undefined,
+            savedInteractions: dto.interactions
+              ? {
+                create: dto.interactions.map((i) => ({
+                  functionName: i.functionName,
+                  argumentsJson: (i.argumentsJson || {}) as Prisma.InputJsonValue,
+                  network: network,
+                })),
+              }
+              : undefined,
+          },
+        });
+        return workspace;
       },
-    });
-    this.events.emit(WORKSPACE_CREATED, {
-      workspaceId: workspace.id,
-      ownerKey,
-      name: workspace.name,
-      selectedNetwork: workspace.selectedNetwork,
-    });
-    void this.audit.log({
-      actor: ownerKey,
-      action: "workspace.created",
-      resourceType: "workspace",
-      resourceId: workspace.id,
-      summary: `Created workspace "${workspace.name}"`,
-    });
-    return workspace;
+      (workspace) => {
+        this.events.emit(WORKSPACE_CREATED, {
+          workspaceId: workspace.id,
+          ownerKey,
+          name: workspace.name,
+          selectedNetwork: workspace.selectedNetwork,
+        });
+        void this.audit.log({
+          actor: ownerKey,
+          action: "workspace.created",
+          resourceType: "workspace",
+          resourceId: workspace.id,
+          summary: `Created workspace "${workspace.name}"`,
+        });
+      },
+    );
   }
+
 
   @MapDbErrors()
   async update(id: string, ownerKey: string, dto: UpdateWorkspaceDto) {
@@ -152,51 +175,72 @@ export class WorkspacesService {
       );
     }
 
-    const workspace = await this.repository.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.description !== undefined
-          ? { description: dto.description.trim() || null }
-          : {}),
-        ...(dto.selectedNetwork !== undefined
-          ? { selectedNetwork: dto.selectedNetwork }
-          : {}),
-        revision: { increment: 1 },
+    const changes = {
+      ...(dto.name !== undefined ? { name: dto.name } : {}),
+      ...(dto.description !== undefined
+        ? { description: dto.description }
+        : {}),
+      ...(dto.selectedNetwork !== undefined
+        ? { selectedNetwork: dto.selectedNetwork }
+        : {}),
+    };
+
+    return this.runMutationWithSideEffects(
+      async () => {
+        return this.repository.update({
+          where: { id },
+          data: {
+            ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+            ...(dto.description !== undefined
+              ? { description: dto.description.trim() || null }
+              : {}),
+            ...(dto.selectedNetwork !== undefined
+              ? { selectedNetwork: dto.selectedNetwork }
+              : {}),
+            revision: { increment: 1 },
+          },
+        });
       },
-    });
-    this.events.emit(WORKSPACE_UPDATED, {
-      workspaceId: id,
-      ownerKey,
-      changes: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.selectedNetwork !== undefined ? { selectedNetwork: dto.selectedNetwork } : {}),
+      (workspace) => {
+        this.events.emit(WORKSPACE_UPDATED, {
+          workspaceId: workspace.id,
+          ownerKey,
+          changes,
+        });
+        void this.audit.log({
+          actor: ownerKey,
+          action: "workspace.updated",
+          resourceType: "workspace",
+          resourceId: workspace.id,
+          summary: `Updated workspace`,
+          metadata: { changes: dto as Record<string, unknown> } as Prisma.InputJsonValue,
+        });
       },
-    });
-    void this.audit.log({
-      actor: ownerKey,
-      action: "workspace.updated",
-      resourceType: "workspace",
-      resourceId: id,
-      summary: `Updated workspace`,
-      metadata: { changes: dto as Record<string, unknown> } as Prisma.InputJsonValue,
-    });
-    return workspace;
+    );
   }
+
 
   @MapDbErrors()
   async remove(id: string, ownerKey: string) {
     await this.get(id, ownerKey);
-    await this.repository.delete({ where: { id } });
-    this.events.emit(WORKSPACE_DELETED, { workspaceId: id, ownerKey });
-    void this.audit.log({
-      actor: ownerKey,
-      action: "workspace.deleted",
-      resourceType: "workspace",
-      resourceId: id,
-    });
+
+    await this.runMutationWithSideEffects(
+      async () => {
+        await this.repository.delete({ where: { id } });
+        return undefined;
+      },
+      () => {
+        this.events.emit(WORKSPACE_DELETED, { workspaceId: id, ownerKey });
+        void this.audit.log({
+          actor: ownerKey,
+          action: "workspace.deleted",
+          resourceType: "workspace",
+          resourceId: id,
+        });
+      },
+    );
   }
+
 
   @MapDbErrors()
   async import(ownerKey: string, dto: ImportWorkspaceDto) {
@@ -217,45 +261,51 @@ export class WorkspacesService {
       );
     }
 
-    const workspace = await this.repository.create({
-      data: {
-        id: dto.id,
-        ownerKey,
-        name: dto.name.trim(),
-        description: null,
-        selectedNetwork: dto.selectedNetwork,
-        savedContracts: {
-          create: dto.contractIds.map((contractId) => ({
-            contractId,
-            network: dto.selectedNetwork,
-          })),
-        },
-        artifacts: {
-          create: dto.artifactRefs.map((artifact) => ({
-            kind: artifact.kind,
-            name: artifact.id,
-            network: dto.selectedNetwork,
-            hash: artifact.kind === "wasm" ? artifact.id : null,
-            metadata: { sourceId: artifact.id },
-          })),
-        },
+    return this.runMutationWithSideEffects(
+      async () => {
+        return this.repository.create({
+          data: {
+            id: dto.id,
+            ownerKey,
+            name: dto.name.trim(),
+            description: null,
+            selectedNetwork: dto.selectedNetwork,
+            savedContracts: {
+              create: dto.contractIds.map((contractId) => ({
+                contractId,
+                network: dto.selectedNetwork,
+              })),
+            },
+            artifacts: {
+              create: dto.artifactRefs.map((artifact) => ({
+                kind: artifact.kind,
+                name: artifact.id,
+                network: dto.selectedNetwork,
+                hash: artifact.kind === "wasm" ? artifact.id : null,
+                metadata: { sourceId: artifact.id },
+              })),
+            },
+          },
+        });
       },
-    });
-    this.events.emit(WORKSPACE_IMPORTED, {
-      workspaceId: workspace.id,
-      ownerKey,
-      version: dto.version,
-    });
-    void this.audit.log({
-      actor: ownerKey,
-      action: "workspace.imported",
-      resourceType: "workspace",
-      resourceId: workspace.id,
-      summary: `Imported workspace "${workspace.name}"`,
-      metadata: { version: dto.version },
-    });
-    return workspace;
+      (workspace) => {
+        this.events.emit(WORKSPACE_IMPORTED, {
+          workspaceId: workspace.id,
+          ownerKey,
+          version: dto.version,
+        });
+        void this.audit.log({
+          actor: ownerKey,
+          action: "workspace.imported",
+          resourceType: "workspace",
+          resourceId: workspace.id,
+          summary: `Imported workspace "${workspace.name}"`,
+          metadata: { version: dto.version },
+        });
+      },
+    );
   }
+
 
   @MapDbErrors()
   async export(id: string, ownerKey: string) {
@@ -286,13 +336,21 @@ export class WorkspacesService {
       createdAt: workspace.createdAt.getTime(),
       updatedAt: workspace.updatedAt.getTime(),
     };
-    this.events.emit(WORKSPACE_EXPORTED, { workspaceId: id, ownerKey });
-    void this.audit.log({
-      actor: ownerKey,
-      action: "workspace.exported",
-      resourceType: "workspace",
-      resourceId: id,
-    });
+
+    // Export is a read-only operation; still route through the same side-effects boundary.
+    await this.runMutationWithSideEffects(
+      async () => snapshot,
+      async () => {
+        this.events.emit(WORKSPACE_EXPORTED, { workspaceId: id, ownerKey });
+        void this.audit.log({
+          actor: ownerKey,
+          action: "workspace.exported",
+          resourceType: "workspace",
+          resourceId: id,
+        });
+      },
+    );
+
     return snapshot;
   }
 }

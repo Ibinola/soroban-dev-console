@@ -22,6 +22,7 @@ import { ReviewSummarizerModule } from "./modules/review-summarizer/review-summa
 import { BudgetExceptionModule } from "./modules/budget-exception/budget-exception.module.js";
 import { AiMonitorModule } from "./modules/ai-monitor/ai-monitor.module.js";
 import { LogAnalyzerModule } from "./modules/log-analyzer/log-analyzer.module.js";
+import { AuditModule } from "./modules/audit/audit.module.js";
 
 @Module({
   imports: [
@@ -48,10 +49,10 @@ import { LogAnalyzerModule } from "./modules/log-analyzer/log-analyzer.module.js
     BudgetModule,
     TicketClassifierModule,
     ReviewSummarizerModule,
-    FeedbackTaggerModule,
     BudgetExceptionModule,
     AiMonitorModule,
     LogAnalyzerModule,
+    AuditModule,
   ]
 })
-export class AppModule {}
+export class AppModule { }
