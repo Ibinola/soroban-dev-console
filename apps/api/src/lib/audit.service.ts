@@ -39,4 +39,27 @@ export class AuditService {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  async query(query: { actor?: string; action?: string; resourceType?: string; resourceId?: string; skip?: number; take?: number; }) {
+    const { skip = 0, take = 50, actor, action, resourceType, resourceId } = query;
+    
+    const where = {
+      ...(actor && { actor }),
+      ...(action && { action }),
+      ...(resourceType && { resourceType }),
+      ...(resourceId && { resourceId }),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    return { data, pagination: { total, skip, take } };
+  }
 }

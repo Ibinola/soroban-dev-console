@@ -18,6 +18,7 @@ import {
 import { AuditService } from "../../lib/audit.service.js";
 import { randomBytes } from "crypto";
 import { getCorrelationId } from "../../lib/request-context.js";
+import { sortJsonKeys } from "../../lib/deterministic-json.js";
 
 import { IsString, IsOptional, IsObject, IsInt, Min, IsIn } from "class-validator";
 import { Type } from "class-transformer";
@@ -121,14 +122,17 @@ export class SharesService {
       }
     }
 
+    // BE-321: Deterministic serialization to ensure consistent state hashing and rebuilds
+    const deterministicSnapshot = sortJsonKeys(dto.snapshotJson);
+
     // DEVOPS-002: Validate snapshot JSON size and depth
-    const snapshotString = JSON.stringify(dto.snapshotJson);
+    const snapshotString = JSON.stringify(deterministicSnapshot);
     if (snapshotString.length > MAX_SNAPSHOT_SIZE_BYTES) {
       throw new BadRequestException(
         `Snapshot data exceeds maximum size of ${MAX_SNAPSHOT_SIZE_BYTES / 1000}KB`,
       );
     }
-    if (this.getJsonDepth(dto.snapshotJson) > MAX_JSON_DEPTH) {
+    if (this.getJsonDepth(deterministicSnapshot) > MAX_JSON_DEPTH) {
       throw new BadRequestException(
         `Snapshot data exceeds maximum nesting depth of ${MAX_JSON_DEPTH}`,
       );
@@ -141,7 +145,7 @@ export class SharesService {
         workspace: { connect: { id: dto.workspaceId } },
         token,
         label: dto.label,
-        snapshotJson: dto.snapshotJson,
+        snapshotJson: deterministicSnapshot,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       },
     });
