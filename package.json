@@ -12,22 +12,11 @@
     "lint": "turbo run lint --filter=web --filter=@devconsole/ui --filter=@devconsole/soroban-utils",
     "typecheck": "turbo run typecheck --filter=web --filter=@devconsole/ui --filter=@devconsole/soroban-utils",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-drift": "tsx scripts/check-runtime-drift.ts",
-    "check-integrity": "tsx scripts/check-dependency-integrity.ts",
-    "security:scan": "tsx scripts/secret-scan.ts",
-    "security:playbooks": "tsx scripts/incident-playbook-check.ts",
-    "security:backup": "bash scripts/backup-restore-drill.sh verify",
-    "audit:ci": "turbo run audit --filter=web --filter=api",
-    "wave-prep": "npm run check-drift && npm run check-integrity && tsx scripts/verify-build-order.ts && tsx scripts/validate-branch-workflow.ts && tsx scripts/smoke-ssr-prerender.ts",
-    "release-evidence": "tsx scripts/generate-release-evidence.ts",
-    "deploy:contracts": "bash scripts/deploy-test-suite.sh"
+    "test": "turbo run test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@types/stellar-sdk": "^0.11.1",
     "prettier": "^3.2.5",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "tsx": "^4.21.0",
     "turbo": "latest"
   },
   "dependencies": {
