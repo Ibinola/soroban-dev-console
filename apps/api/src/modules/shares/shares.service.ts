@@ -18,7 +18,20 @@ import {
 import { AuditService } from "../../lib/audit.service.js";
 import { randomBytes } from "crypto";
 import { getCorrelationId } from "../../lib/request-context.js";
-import { sortJsonKeys } from "../../lib/deterministic-json.js";
+function sortJsonKeys(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sortJsonKeys);
+  }
+  const sortedKeys = Object.keys(obj).sort();
+  const result: Record<string, any> = {};
+  for (const key of sortedKeys) {
+    result[key] = sortJsonKeys(obj[key]);
+  }
+  return result;
+}
 
 import { IsString, IsOptional, IsObject, IsInt, Min, IsIn } from "class-validator";
 import { Type } from "class-transformer";
