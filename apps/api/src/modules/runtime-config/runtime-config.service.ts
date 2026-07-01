@@ -11,7 +11,7 @@
  * Changes are traceable and reversible via the config version history.
  */
 
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AuditService } from "../../lib/audit.service.js";
 
@@ -63,7 +63,7 @@ export class RuntimeConfigService {
 
   constructor(
     private readonly config: ConfigService,
-    private readonly audit?: AuditService,
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   getProfile(): RuntimeProfile {

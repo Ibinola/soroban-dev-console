@@ -3,8 +3,9 @@
  * Run before app-level builds to catch missing outputs early.
  */
 
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 interface PackageCheck {
   name: string;
@@ -40,5 +41,7 @@ function checkPackageArtifacts(root: string): void {
   console.log("\nAll shared package artifacts verified. App builds may proceed.");
 }
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 checkPackageArtifacts(repoRoot);

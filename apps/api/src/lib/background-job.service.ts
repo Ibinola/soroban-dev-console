@@ -268,15 +268,6 @@ export class BackgroundJobService {
     return { concurrency: this.concurrency };
   }
 
-  /** INFRA-828: List dead-letter jobs with full context for inspection. */
-  async getDeadLetterJobs(limit = 50): Promise<JobRecord[]> {
-    return this.prisma.backgroundJob.findMany({
-      where: { status: "dead" },
-      orderBy: { updatedAt: "desc" },
-      take: limit,
-    }) as Promise<JobRecord[]>;
-  }
-
   /** INFRA-828: Retry a dead-letter job by resetting its state. */
   async retryDeadLetter(id: string): Promise<JobRecord | null> {
     const job = await this.prisma.backgroundJob.findUnique({ where: { id } });
@@ -290,6 +281,9 @@ export class BackgroundJobService {
         lastError: null,
         lockedUntil: null,
         scheduledAt: new Date(),
+        deadLetterAt: null,
+        deadLetterReason: null,
+        queue: job.queue === "dead_letter" ? "retry" : job.queue,
       },
     });
 

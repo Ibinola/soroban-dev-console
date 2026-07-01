@@ -27,7 +27,7 @@ export default async function RootLayout({
         <script
           id="__runtime_config__"
           type="application/json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult).replace(/<\//g, '<\\/') }}
         />
       </head>
       <body>

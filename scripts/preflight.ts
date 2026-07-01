@@ -4,8 +4,8 @@ const checks: Array<{ label: string; cmd: string }> = [
   { label: "Node >= 18", cmd: 'node -e "process.exit(parseInt(process.version.slice(1))>=18?0:1)"' },
   { label: "npm installed", cmd: "npm --version" },
   { label: "Git user configured", cmd: "git config user.email" },
-  { label: "Web .env.example exists", cmd: "node -e "require('fs').accessSync('apps/web/.env.example')"" },
-  { label: "API .env.example exists", cmd: "node -e "require('fs').accessSync('apps/api/.env.example')"" },
+  { label: "Web .env.example exists", cmd: 'node -e "require(\'fs\').accessSync(\'apps/web/.env.example\')"' },
+  { label: "API .env.example exists", cmd: 'node -e "require(\'fs\').accessSync(\'apps/api/.env.example\')"' },
 ];
 
 let passed = 0;

@@ -15,4 +15,8 @@ jobs:
 
       - name: Validate CODEOWNERS
         run: |
-          echo "Review routing validated"
+          if [ ! -f ".github/CODEOWNERS" ]; then
+            echo "⚠️ No .github/CODEOWNERS file found — review routing is unconfigured"
+          else
+            echo "✅ CODEOWNERS file present"
+          fi
