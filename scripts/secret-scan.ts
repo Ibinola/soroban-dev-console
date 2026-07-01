@@ -6,7 +6,6 @@ const ROOT = process.cwd();
 const PATTERNS = [
   { rule: "email", regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
   { rule: "jwt", regex: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g },
-  { rule: "private_key", regex: /S[A-Z2-7]{55}/g },
   { rule: "stellar_secret", regex: /S[A-Z2-7]{55}/g },
   { rule: "long_hex_secret", regex: /\b[a-f0-9]{64,}\b/gi },
   { rule: "api_key", regex: /\b(?:api[_-]?key|api[_-]?token|access[_-]?token)[=:]["']?[A-Za-z0-9_\-]{16,}["']?/gi },
@@ -14,7 +13,7 @@ const PATTERNS = [
   { rule: "ghp_token", regex: /ghp_[A-Za-z0-9]{36,}/g },
   { rule: "gho_token", regex: /gho_[A-Za-z0-9]{36,}/g },
   { rule: "npm_token", regex: /npm_[A-Za-z0-9]{36,}/g },
-  { rule: "connection_string", regex: /(?:mongodb|postgres)://[^\s]+/gi },
+  { rule: "connection_string", regex: /(?:mongodb|postgres):\/\/[^\s]+/gi },
 ];
 const INCLUDE_DIRS = ["apps", "packages", "contracts", "docs", "scripts", ".github"];
 const EXCLUDE_PARTS = ["/node_modules/", "/dist/", "/target/", "/.git/", "/.turbo/", "/.backups/"];

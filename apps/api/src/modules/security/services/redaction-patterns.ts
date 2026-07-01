@@ -10,11 +10,6 @@ export const REDACTION_PATTERNS = [
     replacement: '[REDACTED_PHONE]',
   },
   {
-    name: 'private_key',
-    regex: /S[A-Z2-7]{55}/g,
-    replacement: '[REDACTED_SECRET]',
-  },
-  {
     name: 'jwt',
     regex: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
     replacement: '[REDACTED_TOKEN]',

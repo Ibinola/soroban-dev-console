@@ -405,6 +405,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           case "merge-additive":
             resolved = mergeAdditive(local, pendingConflict.remoteSnapshot);
             break;
+          default:
+            resolved = { ...local, updatedAt: Date.now() };
         }
         set((state) => ({
           workspaces: state.workspaces.map((w) =>
@@ -607,6 +609,34 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // FE-036: use the shared migration framework
       migrate: createMigrateFn(
         buildMigrations<WorkspaceState>([
+          {
+            fromVersion: 0,
+            toVersion: 1,
+            migrate: (persisted) => {
+              const raw = persisted as Record<string, unknown> | undefined;
+              const workspaces = raw?.workspaces as Array<Record<string, unknown>> | undefined;
+              return {
+                workspaces: (workspaces?.map((w) => ({
+                  version: STORE_SCHEMA_VERSION,
+                  id: (w.id as string) ?? crypto.randomUUID(),
+                  name: (w.name as string) ?? "Migrated Workspace",
+                  contractIds: (w.contractIds as string[]) ?? [],
+                  savedCallIds: ((w.savedCalls ?? w.savedCallIds) as string[]) ?? [],
+                  artifactRefs: [],
+                  selectedNetwork: "testnet",
+                  createdAt: (w.createdAt as number) ?? Date.now(),
+                  updatedAt: (w.updatedAt as number) ?? Date.now(),
+                })) ?? [defaultWorkspace]) as WorkspaceSnapshot[],
+                activeWorkspaceId: raw?.activeWorkspaceId as string | undefined,
+                cloudId: null,
+                syncState: "idle" as const,
+                syncError: null,
+                checkpoints: {},
+                pendingConflict: null,
+                contractBookmarks: {},
+              };
+            },
+          },
           {
             fromVersion: 1,
             toVersion: 2,
