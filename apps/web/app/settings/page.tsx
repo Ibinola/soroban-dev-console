@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { DataManagement } from "@/components/data-management";
 import { RuntimeConfigStatus } from "@/components/runtime-config-status";
+import { SupportBundleCard } from "@/components/support-bundle-card";
 import { toast } from "sonner";
 import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
@@ -250,6 +251,11 @@ export default function SettingsPage() {
       <div className="max-w-2xl">
         <h2 className="mb-4 text-xl font-semibold">Application Data</h2>
         <DataManagement />
+      </div>
+
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Diagnostics</h2>
+        <SupportBundleCard />
       </div>
     </div>
   );

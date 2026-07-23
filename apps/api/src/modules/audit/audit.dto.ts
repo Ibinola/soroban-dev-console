@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min } from "class-validator";
+import { IsOptional, IsString, IsInt, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 
 export class ListAuditDto {
@@ -17,6 +17,19 @@ export class ListAuditDto {
   @IsOptional()
   @IsString()
   resourceId?: string;
+
+  /** Base64-encoded composite cursor (createdAt + id) for cursor-based pagination. */
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  /** Page size for cursor-based pagination (max 100). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 
   @IsOptional()
   @Type(() => Number)

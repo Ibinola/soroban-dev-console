@@ -47,6 +47,16 @@ interface BundleCall {
   createdAt: string;
 }
 
+/**
+ * Truncate an address-like value to its first 4 and last 4 characters so
+ * wallet/contract addresses can be included for debugging without exposing
+ * the full value. Values that are already short are returned unchanged.
+ */
+export function truncateAddress(value: string): string {
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
 export function generateSupportBundle(
   workspace: WorkspaceSnapshot | undefined,
   savedCalls: SavedCall[],
@@ -84,7 +94,8 @@ export function generateSupportBundle(
     recentCalls: workspaceCalls.slice(0, 20).map((c) => ({
       id: c.id,
       name: c.name,
-      contractId: c.contractId,
+      // Contract/wallet addresses are truncated so the bundle is safe to share.
+      contractId: truncateAddress(c.contractId),
       fnName: c.fnName,
       network: c.network,
       createdAt: new Date(c.createdAt).toISOString(),
