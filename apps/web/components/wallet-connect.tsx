@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useWallet } from "@/store/useWallet";
-import { walletProviderList, type WalletProviderId } from "@/lib/wallet/provider";
+import {
+  walletProviderList,
+  type WalletProviderId,
+} from "@/lib/wallet/provider";
 import { Button } from "@devconsole/ui";
 import { Skeleton } from "@devconsole/ui";
 import {
@@ -21,7 +24,14 @@ import {
   DropdownMenuTrigger,
 } from "@devconsole/ui";
 import { Badge } from "@devconsole/ui";
-import { Wallet, LogOut, Copy, ExternalLink, AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  Wallet,
+  LogOut,
+  Copy,
+  ExternalLink,
+  AlertTriangle,
+  CheckCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 export function ConnectWalletButton() {
@@ -33,6 +43,7 @@ export function ConnectWalletButton() {
     connect,
     disconnect,
     revalidateSession,
+    refreshWalletNetworkSnapshot,
     getCapabilities,
   } = useWallet();
 
@@ -50,9 +61,15 @@ export function ConnectWalletButton() {
         if (status === "stale") {
           toast.warning("Wallet session expired. Please reconnect.");
         } else if (status === "mismatch") {
-          toast.warning("Network changed since last connection. Please verify.");
+          toast.warning(
+            "Network changed since last connection. Please verify.",
+          );
         }
       });
+      // W7-FE-001 (#675): also re-fetch the wallet's currently selected
+      // network so the mismatch banner has live data, not whatever was
+      // persisted at last connect.
+      void refreshWalletNetworkSnapshot();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -132,7 +149,9 @@ export function ConnectWalletButton() {
           {sessionStatus !== "valid" && (
             <div className="px-2 pb-2">
               <Badge
-                variant={sessionStatus === "mismatch" ? "outline" : "destructive"}
+                variant={
+                  sessionStatus === "mismatch" ? "outline" : "destructive"
+                }
                 className="w-full justify-center text-[10px]"
               >
                 {sessionStatus === "mismatch"
@@ -186,7 +205,9 @@ export function ConnectWalletButton() {
               className="h-auto justify-start gap-4 border-2 px-6 py-3 hover:border-primary/50"
               onClick={() => handleConnect(provider.id)}
             >
-              <Wallet className={`h-6 w-6 shrink-0 ${provider.accentClassName}`} />
+              <Wallet
+                className={`h-6 w-6 shrink-0 ${provider.accentClassName}`}
+              />
               <div className="flex flex-col items-start gap-1">
                 <span className="font-semibold">{provider.label}</span>
                 <span className="text-xs text-muted-foreground">
@@ -195,13 +216,19 @@ export function ConnectWalletButton() {
                 {/* FE-041: show capability summary in picker */}
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   {provider.capabilities.canSign && (
-                    <Badge variant="secondary" className="text-[10px]">Sign</Badge>
+                    <Badge variant="secondary" className="text-[10px]">
+                      Sign
+                    </Badge>
                   )}
                   {provider.capabilities.canSignAuthEntries && (
-                    <Badge variant="secondary" className="text-[10px]">Auth Entries</Badge>
+                    <Badge variant="secondary" className="text-[10px]">
+                      Auth Entries
+                    </Badge>
                   )}
                   {provider.capabilities.requiresExtension && (
-                    <Badge variant="outline" className="text-[10px]">Extension required</Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      Extension required
+                    </Badge>
                   )}
                 </div>
               </div>

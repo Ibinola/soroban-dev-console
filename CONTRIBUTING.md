@@ -14,23 +14,27 @@ Thank you for considering contributing to Soroban DevConsole! This project aims 
 ### Setup
 
 1. **Fork and clone the repository**:
+
    ```bash
    git clone https://github.com/your-username/soroban-dev-console.git
    cd soroban-dev-console
    ```
 
 2. **Install dependencies**:
+
    ```bash
    npm install
    ```
 
 3. **Set up environment variables**:
+
    ```bash
    cp apps/api/.env.example apps/api/.env
    cp apps/web/.env.example apps/web/.env.local
    ```
 
 4. **Initialize the database**:
+
    ```bash
    cd apps/api
    npx prisma generate
@@ -40,6 +44,7 @@ Thank you for considering contributing to Soroban DevConsole! This project aims 
    ```
 
 5. **Start development servers**:
+
    ```bash
    npm run dev -w web
    npm run dev -w api
@@ -52,6 +57,7 @@ Thank you for considering contributing to Soroban DevConsole! This project aims 
 ### Branch Naming
 
 Use descriptive branch names following this pattern:
+
 - `feat/short-description` - New features
 - `fix/short-description` - Bug fixes
 - `docs/short-description` - Documentation updates
@@ -59,6 +65,7 @@ Use descriptive branch names following this pattern:
 - `test/short-description` - Test additions/updates
 
 Examples:
+
 - `feat/workspace-export`
 - `fix/rpc-caching-bug`
 - `docs/update-readme`
@@ -74,6 +81,7 @@ type(scope): description
 ```
 
 Types:
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -83,6 +91,7 @@ Types:
 - `chore`: Maintenance tasks
 
 Examples:
+
 ```
 feat(workspaces): add export functionality
 fix(rpc): correct cache key generation for batch requests
@@ -92,12 +101,14 @@ docs(readme): update setup instructions
 ### Code Style
 
 This project uses:
+
 - **TypeScript** strict mode
 - **Prettier** for code formatting
 - **ESLint** for code quality
 - **Shadcn/ui** for UI components
 
 Run linting and formatting before committing:
+
 ```bash
 npm run lint
 npm run format
@@ -121,6 +132,30 @@ cargo test --manifest-path contracts/Cargo.toml
 node --experimental-strip-types scripts/check-runtime-drift.ts
 node --experimental-strip-types scripts/check-dependency-integrity.ts
 ```
+
+### Changelog
+
+The repository uses [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+format in `CHANGELOG.md`, with summary entries per Stellar Wave.
+
+To regenerate the "Unreleased" section from PR merges after a given date
+(useful when preparing a wave cutover or release), run:
+
+```bash
+# All merged PRs since the beginning of the current wave
+npm run generate-changelog -- --since 2026-07-01
+
+# Bounded range, with a custom section heading, written straight into CHANGELOG.md
+npm run generate-changelog -- --since 2026-07-01 --until 2026-07-23 \
+  --release "Wave 7" --out CHANGELOG.fragment.md
+```
+
+The generator reads `git log --merges --first-parent` from a base ref
+(default `origin/main`) and groups PR titles by conventional-commit type
+(Added / Changed / Fixed / Deprecated / Removed / Security). It exits
+non-zero when no merged PRs are found in the supplied range, so CI jobs
+that drive the generator will fail loudly against an empty range rather
+than silently producing an empty section.
 
 ## Project Structure
 
@@ -163,11 +198,13 @@ Verifies that all documented ports and URLs (in `README.md`, `docs/architecture.
 ### Dependency Integrity Check (`npm run check-integrity`)
 
 Verifies that:
+
 1. `package-lock.json` is consistent with `package.json` (no lockfile drift).
 2. Workspace packages reference each other at consistent versions.
 3. Critical shared dependencies (`react`, `next`, `@stellar/stellar-sdk`, etc.) use the same version across all packages.
 
 **If it fails**: run `npm run check-integrity` locally. The output will identify the specific package and version mismatch. Common fixes:
+
 - Run `npm install` and commit the updated `package-lock.json`.
 - Align mismatched workspace dependency versions.
 
@@ -178,20 +215,21 @@ When the DevOps job runs in CI, a step summary is written to the GitHub Actions 
 ### Skipping the DevOps gate
 
 The DevOps job only runs when relevant files change (scripts, `runtime-defaults.ts`, docs, env examples, or lockfiles). If none of those files are touched, the job is skipped and the Required Checks gate treats a skip as a pass.
+
 ## Branch Protection and Required Checks
 
 The `main` branch is fully protected. **Direct pushes are rejected** — all changes must go through a pull request.
 
 A PR cannot be merged until all applicable CI jobs pass:
 
-| Job | Runs when |
-|-----|-----------|
-| `Web` | `apps/web/**` or `packages/ui/**` changed |
-| `API` | `apps/api/**` or `packages/api-contracts/**` changed |
-| `Package Validation` | `packages/**` changed |
-| `Contracts` | `contracts/**` changed |
-| `DevOps` | `scripts/**`, `.env.example`, `README.md`, or `docs/architecture.md` changed |
-| `E2E Tests` | `apps/web/e2e/**` changed or when `Web` runs |
+| Job                  | Runs when                                                                    |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `Web`                | `apps/web/**` or `packages/ui/**` changed                                    |
+| `API`                | `apps/api/**` or `packages/api-contracts/**` changed                         |
+| `Package Validation` | `packages/**` changed                                                        |
+| `Contracts`          | `contracts/**` changed                                                       |
+| `DevOps`             | `scripts/**`, `.env.example`, `README.md`, or `docs/architecture.md` changed |
+| `E2E Tests`          | `apps/web/e2e/**` changed or when `Web` runs                                 |
 
 At least **1 approving review** is required. Reviews are dismissed when new commits are pushed.
 
@@ -200,6 +238,7 @@ See [docs/branch-protection.md](./docs/branch-protection.md) for the full refere
 ## Pull Request Process
 
 1. **Create a branch** from `main`:
+
    ```bash
    git checkout -b feat/my-feature
    ```
@@ -207,6 +246,7 @@ See [docs/branch-protection.md](./docs/branch-protection.md) for the full refere
 2. **Make your changes** following the code style guidelines
 
 3. **Run tests and linting**:
+
    ```bash
    npm run test:run -w web
    npm run test -w api
@@ -217,6 +257,7 @@ See [docs/branch-protection.md](./docs/branch-protection.md) for the full refere
 4. **Commit your changes** with a descriptive message
 
 5. **Push to your fork**:
+
    ```bash
    git push origin feat/my-feature
    ```
@@ -234,29 +275,34 @@ See [docs/branch-protection.md](./docs/branch-protection.md) for the full refere
 ## Areas We Need Help
 
 ### Frontend Development
+
 - UI/UX improvements
 - React component development
 - State management optimizations
 - Accessibility improvements
 
 ### Backend Development
+
 - API endpoint enhancements
 - Database optimizations
 - Security improvements
 - Performance tuning
 
 ### Smart Contracts
+
 - Soroban contract development
 - Test fixture creation
 - Contract interaction patterns
 
 ### Documentation
+
 - Tutorials and guides
 - API documentation
 - Code comments
 - Architecture docs
 
 ### Testing
+
 - Unit tests
 - Integration tests
 - End-to-end tests
@@ -265,6 +311,7 @@ See [docs/branch-protection.md](./docs/branch-protection.md) for the full refere
 ## Code Review Guidelines
 
 When reviewing PRs, check for:
+
 - Code follows project style guidelines
 - Tests are included and passing
 - No security vulnerabilities introduced
@@ -275,17 +322,20 @@ When reviewing PRs, check for:
 ## Reporting Issues
 
 When reporting bugs or proposing changes, please use the provided **Issue Templates**:
+
 - **Audit Regression**: For reporting functional regressions found during testing.
 - **Cleanup-only Work**: For proposing non-functional refactoring or debt reduction.
 - **Backlog Gap / Follow-up**: For tracking missing features or audit follow-ups.
 
 Templates include sections for:
+
 - **Context**: Background and Track ID (e.g., [FE-001]).
 - **Expected Outcome**: Clear definition of "done".
 - **Implementation Notes**: Technical approach or blockers.
 - **Acceptance Criteria**: Verification checklist.
 
 If a template doesn't fit, you can still open a regular issue with:
+
 - Clear description of the issue
 - Steps to reproduce
 - Expected vs actual behavior

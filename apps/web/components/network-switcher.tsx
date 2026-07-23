@@ -13,9 +13,11 @@ import { Button } from "@devconsole/ui";
 import { Skeleton } from "@devconsole/ui";
 import { ChevronDown, AlertTriangle, Wifi, Settings } from "lucide-react";
 import Link from "next/link";
+import { useWallet } from "@/store/useWallet";
 
 export function NetworkSwitcher() {
   const { currentNetwork, setNetwork, getAllNetworks } = useNetworkStore();
+  const { refreshWalletNetworkSnapshot } = useWallet();
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -28,6 +30,10 @@ export function NetworkSwitcher() {
 
   const handleSwitch = (id: string) => {
     setNetwork(id);
+    // W7-FE-001 (#675): after an app-level network switch, refresh the
+    // wallet's reported passphrase so the mismatch banner updates without
+    // requiring a wallet reconnect.
+    void refreshWalletNetworkSnapshot();
     window.location.reload();
   };
 

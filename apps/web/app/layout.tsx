@@ -7,6 +7,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/command-palette";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
+import { NetworkDegradedBanner } from "@/components/network-degraded-banner";
+import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 
 export const metadata: Metadata = {
   title: "Soroban DevConsole",
@@ -27,7 +29,9 @@ export default async function RootLayout({
         <script
           id="__runtime_config__"
           type="application/json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult).replace(/<\//g, '<\\/') }}
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(runtimeConfigResult).replace(/<\//g, "<\\/"),
+          }}
         />
       </head>
       <body>
@@ -42,6 +46,8 @@ export default async function RootLayout({
               <AppSidebar />
               <SidebarInset>
                 <SiteHeader />
+                <NetworkDegradedBanner />
+                <WalletNetworkMismatchBanner />
                 <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
                   {children}
                   <CommandPalette />
