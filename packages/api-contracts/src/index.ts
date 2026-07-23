@@ -115,6 +115,7 @@ export interface WorkspaceSummary {
   name: string;
   description: string | null;
   selectedNetwork: string;
+  archived?: boolean;
   /** BE-006: Current revision for optimistic concurrency control. */
   revision: number;
   createdAt: Date | string;
@@ -140,6 +141,7 @@ export interface UpdateWorkspacePayload {
   name?: string;
   description?: string;
   selectedNetwork?: string;
+  archived?: boolean;
   contracts?: WorkspaceContract[];
   interactions?: WorkspaceInteraction[];
   /** BE-006: Pass the current revision to enable optimistic concurrency control. */

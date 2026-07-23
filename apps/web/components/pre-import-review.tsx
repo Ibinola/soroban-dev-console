@@ -23,10 +23,12 @@ import {
 } from "lucide-react";
 import {
   generateImportPreview,
+  generatePreImportReview,
   formatValidationSummary,
   type ImportPreview,
   type ImportSelection,
   type ImportReviewOptions,
+  type PreImportDiffPreview,
 } from "@/lib/pre-import-review";
 
 interface PreImportReviewProps {
@@ -37,7 +39,7 @@ interface PreImportReviewProps {
 }
 
 export function PreImportReview({ raw, onConfirm, onCancel, options = {} }: PreImportReviewProps) {
-  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [preview, setPreview] = useState<(ImportPreview & { diffPreview?: PreImportDiffPreview }) | null>(null);
   const [selection, setSelection] = useState<ImportSelection>({
     restoreWorkspace: true,
     restoreContracts: true,
@@ -50,7 +52,7 @@ export function PreImportReview({ raw, onConfirm, onCancel, options = {} }: PreI
     if (raw) {
       setIsLoading(true);
       try {
-        const importPreview = generateImportPreview(raw, options);
+        const importPreview = generatePreImportReview(raw, options);
         setPreview(importPreview);
         
         // Auto-select all if no issues or if option is set
@@ -188,6 +190,63 @@ export function PreImportReview({ raw, onConfirm, onCancel, options = {} }: PreI
               </div>
             </div>
           </div>
+
+          {/* Import Diff Preview */}
+          {preview.diffPreview && (
+            <div className="rounded-md border p-4 space-y-3 bg-muted/20">
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium text-sm">Diff Preview</h4>
+                <Badge variant="outline">Schema v{preview.diffPreview.schemaVersion}</Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="rounded bg-background p-2 border">
+                  <div className="font-semibold text-green-600 mb-1">
+                    New Contracts ({preview.diffPreview.contractsToAdd.length})
+                  </div>
+                  {preview.diffPreview.contractsToAdd.length === 0 ? (
+                    <span className="text-muted-foreground">None</span>
+                  ) : (
+                    <ul className="list-disc list-inside space-y-0.5 text-muted-foreground truncate">
+                      {preview.diffPreview.contractsToAdd.map((id) => (
+                        <li key={id} className="truncate">{id.slice(0, 12)}…</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="rounded bg-background p-2 border">
+                  <div className="font-semibold text-red-600 mb-1">
+                    Contracts to Remove ({preview.diffPreview.contractsToRemove.length})
+                  </div>
+                  {preview.diffPreview.contractsToRemove.length === 0 ? (
+                    <span className="text-muted-foreground">None</span>
+                  ) : (
+                    <ul className="list-disc list-inside space-y-0.5 text-muted-foreground truncate">
+                      {preview.diffPreview.contractsToRemove.map((id) => (
+                        <li key={id} className="truncate">{id.slice(0, 12)}…</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="rounded bg-background p-2 border">
+                  <div className="font-semibold text-blue-600 mb-1">
+                    Changed Interactions ({preview.diffPreview.changedInteractions.length})
+                  </div>
+                  {preview.diffPreview.changedInteractions.length === 0 ? (
+                    <span className="text-muted-foreground">None</span>
+                  ) : (
+                    <ul className="list-disc list-inside space-y-0.5 text-muted-foreground truncate">
+                      {preview.diffPreview.changedInteractions.map((item, idx) => (
+                        <li key={idx} className="truncate">{item}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Selection Controls */}
           <div className="space-y-4">

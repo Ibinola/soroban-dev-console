@@ -43,6 +43,7 @@ export class WorkspacesService {
     const where = {
       ownerKey,
       ...(query.network ? { selectedNetwork: query.network } : {}),
+      ...(query.includeArchived ? {} : { archived: false }),
     };
 
     const select = {
@@ -50,6 +51,7 @@ export class WorkspacesService {
       name: true,
       description: true,
       selectedNetwork: true,
+      archived: true,
       revision: true,
       createdAt: true,
       updatedAt: true,
@@ -183,6 +185,7 @@ export class WorkspacesService {
       ...(dto.selectedNetwork !== undefined
         ? { selectedNetwork: dto.selectedNetwork }
         : {}),
+      ...(dto.archived !== undefined ? { archived: dto.archived } : {}),
     };
 
     return this.runMutationWithSideEffects(
@@ -197,6 +200,7 @@ export class WorkspacesService {
             ...(dto.selectedNetwork !== undefined
               ? { selectedNetwork: dto.selectedNetwork }
               : {}),
+            ...(dto.archived !== undefined ? { archived: dto.archived } : {}),
             revision: { increment: 1 },
           },
         });
