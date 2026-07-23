@@ -20,10 +20,10 @@
   },
   "dependencies": {
     "@devconsole/api-contracts": "*",
-    "@nestjs/common": "^11.1.17",
-    "@nestjs/config": "^4.0.3",
-    "@nestjs/core": "^11.1.17",
-    "@nestjs/platform-express": "^11.1.17",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/platform-express": "^11.1.28",
     "@prisma/client": "^6.5.0",
     "@stellar/stellar-sdk": "^14.5.0",
     "class-transformer": "^0.5.1",
@@ -37,7 +37,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@nestjs/testing": "^11.1.17",
+    "@nestjs/testing": "^11.1.28",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.4",
     "@types/node": "^25.0.9",
