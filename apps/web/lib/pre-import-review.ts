@@ -42,6 +42,13 @@ export interface ImportReviewOptions {
   requireUserConfirmation?: boolean;
 }
 
+export interface PreImportDiffPreview {
+  contractsToAdd: string[];
+  contractsToRemove: string[];
+  changedInteractions: string[];
+  schemaVersion: number;
+}
+
 export function generateImportPreview(
   raw: unknown,
   _options: ImportReviewOptions = {},
@@ -63,6 +70,85 @@ export function generateImportPreview(
       importableNotes: payload.notes.length,
     },
   };
+}
+
+export function generatePreImportReview(
+  raw: unknown,
+  options: ImportReviewOptions = {},
+): ImportPreview & { diffPreview: PreImportDiffPreview } {
+  try {
+    const preview = generateImportPreview(raw, options);
+    let currentWorkspace: any = null;
+    if (typeof window !== "undefined") {
+      try {
+        const rawState = localStorage.getItem("soroban-workspaces");
+        const parsed = rawState ? JSON.parse(rawState)?.state : null;
+        currentWorkspace = parsed?.workspaces?.find(
+          (w: any) => w.id === parsed?.activeWorkspaceId,
+        );
+      } catch {
+        currentWorkspace = null;
+      }
+    }
+
+    const currentContracts = new Set<string>(currentWorkspace?.contractIds ?? []);
+    const importContracts = new Set<string>(preview.workspace.contractIds ?? []);
+
+    const contractsToAdd = [...importContracts].filter((id) => !currentContracts.has(id));
+    const contractsToRemove = [...currentContracts].filter((id) => !importContracts.has(id));
+
+    const currentCalls = new Set<string>(currentWorkspace?.savedCallIds ?? []);
+    const importCalls = new Set<string>(preview.workspace.savedCallIds ?? []);
+    const changedInteractions = [
+      ...[...importCalls].filter((id) => !currentCalls.has(id)).map((id) => `Add interaction ${id}`),
+      ...[...currentCalls].filter((id) => !importCalls.has(id)).map((id) => `Remove interaction ${id}`),
+    ];
+
+    return {
+      ...preview,
+      diffPreview: {
+        contractsToAdd,
+        contractsToRemove,
+        changedInteractions,
+        schemaVersion: preview.workspace.version ?? 2,
+      },
+    };
+  } catch (err: any) {
+    return {
+      workspace: {
+        version: 2,
+        id: "",
+        name: "",
+        contractIds: [],
+        savedCallIds: [],
+        artifactRefs: [],
+        selectedNetwork: "testnet",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      contracts: [],
+      savedCalls: [],
+      notes: [],
+      validation: {
+        errors: [err?.message || "Invalid workspace payload"],
+        warnings: [],
+      },
+      statistics: {
+        totalContracts: 0,
+        importableContracts: 0,
+        totalCalls: 0,
+        importableCalls: 0,
+        totalNotes: 0,
+        importableNotes: 0,
+      },
+      diffPreview: {
+        contractsToAdd: [],
+        contractsToRemove: [],
+        changedInteractions: [],
+        schemaVersion: 0,
+      },
+    };
+  }
 }
 
 function pickSelectedIds<T extends { id: string }>(

@@ -22,7 +22,7 @@ import {
   AlertCircle,
   Download,
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useSavedCallsStore, SavedCall } from "@/store/useSavedCallsStore";
@@ -205,6 +205,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       (key) => key.toUpperCase() === normalizedConnectedAddress,
     );
 
+  const searchParams = useSearchParams();
+  const methodParam = searchParams.get("method");
+
   useEffect(() => {
     if (
       contractId ===
@@ -214,6 +217,15 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       setSpec(contractId, DEFAULT_TOKEN_SPEC);
     }
   }, [contractId, spec, setSpec]);
+
+  useEffect(() => {
+    if (methodParam && spec?.functions.some((f) => f.name === methodParam)) {
+      setFnName(methodParam);
+      setSimulation(null);
+      const nextFunction = spec.functions.find((entry) => entry.name === methodParam);
+      setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
+    }
+  }, [methodParam, spec]);
 
   const handleFnChange = (name: string) => {
     setFnName(name);

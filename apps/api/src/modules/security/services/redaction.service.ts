@@ -1,3 +1,4 @@
+import { Injectable } from "@nestjs/common";
 import { REDACTION_PATTERNS } from "./redaction-patterns.js";
 
 export function redactText(value: string): string {
@@ -29,4 +30,15 @@ export function redactJsonValue(value: unknown): unknown {
   }
 
   return value;
+}
+
+@Injectable()
+export class RedactionService {
+  redactText(value: string): string {
+    return redactText(value);
+  }
+
+  redactJsonValue(value: unknown): unknown {
+    return redactJsonValue(value);
+  }
 }
