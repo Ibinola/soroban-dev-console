@@ -1,0 +1,46 @@
+version: 2
+updates:
+  # npm — monorepo root and all workspaces
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      stellar-sdk:
+        patterns:
+          - "@stellar/*"
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      nestjs:
+        patterns:
+          - "@nestjs/*"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@testing-library/*"
+          - "playwright"
+          - "@playwright/*"
+    ignore:
+      # Turbo is pinned manually — see package.json
+      - dependency-name: "turbo"
+        update-types: ["version-update:semver-major"]
+
+  # Cargo — contracts workspace
+  - package-ecosystem: "cargo"
+    directory: "/contracts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5

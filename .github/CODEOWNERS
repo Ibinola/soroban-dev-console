@@ -1,0 +1,27 @@
+# CODEOWNERS
+#
+# Each line is a file pattern followed by one or more owners.
+# Owners are notified when a pull request touches the matching paths.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: repository owner reviews everything
+*                   @Ibinola
+
+# Frontend app
+apps/web/           @Ibinola
+
+# Backend API
+apps/api/           @Ibinola
+
+# Smart contracts
+contracts/          @Ibinola
+
+# Shared packages
+packages/           @Ibinola
+
+# CI/CD and DevOps
+.github/            @Ibinola
+scripts/            @Ibinola
+
+# Docs
+docs/               @Ibinola
