@@ -32,10 +32,15 @@ export default function Home() {
                 <ConnectWalletButton />
               </div>
               <Button variant="outline" className="gap-2" asChild>
-                <Link href="/docs">
+                {/* docs route was removed in the strip commit; link to the quickstart doc */}
+                <a
+                  href="https://developers.stellar.org/docs/smart-contracts"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <BookOpen className="h-4 w-4" />
                   Documentation
-                </Link>
+                </a>
               </Button>
             </div>
           </div>
@@ -67,27 +72,31 @@ export default function Home() {
 
           {/* Quick Links */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Card className="group cursor-pointer transition-colors hover:bg-muted/50">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between text-lg">
-                  Contract Explorer
-                  <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                </CardTitle>
-                <CardDescription>
-                  Interact with deployed contracts
-                </CardDescription>
-              </CardHeader>
-            </Card>
+            <Link href="/contracts" className="block">
+              <Card className="group cursor-pointer transition-colors hover:bg-muted/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between text-lg">
+                    Contract Explorer
+                    <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
+                  </CardTitle>
+                  <CardDescription>
+                    Interact with deployed contracts
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
 
-            <Card className="group cursor-pointer transition-colors hover:bg-muted/50">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between text-lg">
-                  XDR Decoder
-                  <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                </CardTitle>
-                <CardDescription>Debug raw Stellar data</CardDescription>
-              </CardHeader>
-            </Card>
+            <Link href="/tools/xdr" className="block">
+              <Card className="group cursor-pointer transition-colors hover:bg-muted/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between text-lg">
+                    XDR Decoder
+                    <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
+                  </CardTitle>
+                  <CardDescription>Debug raw Stellar data</CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
           </div>
 
           {/* FE-032: Workspace template starter packs */}
