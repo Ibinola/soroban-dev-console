@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@devconsole/ui";
 import { Card, CardContent } from "@devconsole/ui";
+import { XdrTooltip } from "./xdr-tooltip";
 
 interface ContractEventsProps {
   contractId: string;
@@ -128,11 +129,19 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
                     </span>
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate font-mono text-xs text-muted-foreground">
-                    {evt.topic.join(", ")}
+                    <XdrTooltip value={evt.topic[0]} kind="scval">
+                      <span className="cursor-help underline decoration-dotted">
+                        {evt.topic.join(", ")}
+                      </span>
+                    </XdrTooltip>
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate text-right font-mono text-xs">
                     {/* Data is usually XDR base64, truncated for UI */}
-                    {evt.data.slice(0, 20)}...
+                    <XdrTooltip value={evt.data} kind="scval">
+                      <span className="cursor-help underline decoration-dotted">
+                        {evt.data.slice(0, 20)}...
+                      </span>
+                    </XdrTooltip>
                   </TableCell>
                 </TableRow>
               ))

@@ -36,6 +36,7 @@ import { Plus, Trash2, RefreshCw, Database, Camera, GitCompare } from "lucide-re
 import { toast } from "sonner";
 import { StateDiffViewer } from "./state-diff-viewer";
 import { StorageSnapshot, takeSnapshot, diffSnapshots } from "@/lib/diff-utils";
+import { XdrTooltip } from "./xdr-tooltip";
 
 interface ContractStorageProps {
   contractId: string;
@@ -249,10 +250,22 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
                       {entry.keyType}
                     </TableCell>
                     <TableCell className="break-all font-mono text-xs font-medium">
-                      {entry.keyValue}
+                      <XdrTooltip value={entry.ledgerKeyXdr} kind="ledgerEntry">
+                        <span className="cursor-help underline decoration-dotted">
+                          {entry.keyValue}
+                        </span>
+                      </XdrTooltip>
                     </TableCell>
                     <TableCell>
                       {entry.found ? (
+                        /*
+                         * The decodedValue here is JSON-stringified
+                         * scValToNative(...), not base64 XDR — so we
+                         * intentionally do NOT wrap the value cell in an
+                         * XdrTooltip (decoding-as-XDR would always fail).
+                         * The raw ledgerKey XDR is the only XDR on this row
+                         * and is decoded on hover via the Key cell above.
+                         */
                         <code className="block max-w-[300px] overflow-hidden text-ellipsis break-all rounded bg-muted px-2 py-1 font-mono text-xs">
                           {entry.decodedValue}
                         </code>

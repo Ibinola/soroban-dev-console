@@ -7,6 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@devconsole/ui";
 import { toast } from "sonner";
 import type { TxResult } from "@/lib/tx-orchestrator";
 import type { NormalizedSimulationResult } from "@devconsole/soroban-utils";
+import { XdrTooltip, type XdrKind } from "./xdr-tooltip";
+
+function rawXdrString(value: unknown): string | null {
+  if (typeof value === "string" && value.length > 0) return value;
+  return null;
+}
 
 export interface TransactionResultProps {
   result: TxResult;
@@ -195,8 +201,8 @@ export function TransactionResult({
         {/* Simulation Results */}
         {result.simulation && renderSimulationDetails(result.simulation)}
 
-        {/* Transaction Result XDR */}
-        {result.resultXdr && (
+        {/* Transaction Result XDR — hover to decode (W7-FE-002) */}
+        {rawXdrString(result.resultXdr) && (
           <div>
             <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
               Result XDR
@@ -208,18 +214,20 @@ export function TransactionResult({
                 <Copy className="h-3 w-3" />
               </Button>
             </h4>
-            <div className="max-h-40 overflow-y-auto border rounded-md p-2">
-              <pre className="text-xs">
-                {typeof result.resultXdr === "string"
-                  ? result.resultXdr
-                  : JSON.stringify(result.resultXdr, null, 2)}
-              </pre>
-            </div>
+            <XdrTooltip value={rawXdrString(result.resultXdr)} kind={"result" as XdrKind}>
+              <div className="max-h-40 overflow-y-auto border rounded-md p-2 cursor-help">
+                <pre className="text-xs">
+                  {typeof result.resultXdr === "string"
+                    ? result.resultXdr
+                    : JSON.stringify(result.resultXdr, null, 2)}
+                </pre>
+              </div>
+            </XdrTooltip>
           </div>
         )}
 
-        {/* Transaction Meta XDR */}
-        {result.resultMetaXdr && (
+        {/* Transaction Meta XDR — hover to decode (W7-FE-002) */}
+        {rawXdrString(result.resultMetaXdr) && (
           <div>
             <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
               Meta XDR
@@ -231,13 +239,15 @@ export function TransactionResult({
                 <Copy className="h-3 w-3" />
               </Button>
             </h4>
-            <div className="max-h-40 overflow-y-auto border rounded-md p-2">
-              <pre className="text-xs">
-                {typeof result.resultMetaXdr === "string"
-                  ? result.resultMetaXdr
-                  : JSON.stringify(result.resultMetaXdr, null, 2)}
-              </pre>
-            </div>
+            <XdrTooltip value={rawXdrString(result.resultMetaXdr)} kind={"meta" as XdrKind}>
+              <div className="max-h-40 overflow-y-auto border rounded-md p-2 cursor-help">
+                <pre className="text-xs">
+                  {typeof result.resultMetaXdr === "string"
+                    ? result.resultMetaXdr
+                    : JSON.stringify(result.resultMetaXdr, null, 2)}
+                </pre>
+              </div>
+            </XdrTooltip>
           </div>
         )}
       </CardContent>

@@ -1,2 +1,5 @@
 target/
 **/test_snapshots/
+# W7-SC-001: enforce a single authoritative workspace lockfile
+**/Cargo.lock
+!Cargo.lock
