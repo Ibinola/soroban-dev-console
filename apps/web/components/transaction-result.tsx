@@ -1,10 +1,13 @@
 "use client";
 
+import { useMemo } from "react";
 import { CheckCircle2, XCircle, Clock, ExternalLink, Copy } from "lucide-react";
 import { Button } from "@devconsole/ui";
 import { Badge } from "@devconsole/ui";
 import { Card, CardContent, CardHeader, CardTitle } from "@devconsole/ui";
+import { XdrTooltip } from "@devconsole/ui";
 import { toast } from "sonner";
+import { decodeXdr } from "@devconsole/soroban-utils";
 import type { TxResult } from "@/lib/tx-orchestrator";
 import type { NormalizedSimulationResult } from "@devconsole/soroban-utils";
 
@@ -48,16 +51,31 @@ export function TransactionResult({
   const renderSimulationDetails = (simulation: NormalizedSimulationResult) => {
     if (!showSimulation || compact) return null;
 
+    const simDecoded = useMemo(
+      () => decodeXdr(simulation.resultXdr ?? ""),
+      [simulation.resultXdr],
+    );
+
     return (
       <div className="space-y-3">
         <div>
           <h4 className="text-sm font-medium mb-2">Simulation Details</h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Result XDR:</span>
-              <span className="ml-2 font-mono">
-                {simulation.resultXdr ? "Available" : "N/A"}
-              </span>
+            <div className="col-span-2">
+              <span className="text-muted-foreground">Result XDR:</span>{" "}
+              {simulation.resultXdr ? (
+                <XdrTooltip
+                  value={simulation.resultXdr}
+                  decoded={simDecoded}
+                  label="Simulation result XDR"
+                >
+                  <span className="ml-2 cursor-pointer font-mono text-xs underline decoration-dotted">
+                    Hover to decode
+                  </span>
+                </XdrTooltip>
+              ) : (
+                <span className="ml-2 font-mono">N/A</span>
+              )}
             </div>
             <div>
               <span className="text-muted-foreground">CPU Instructions:</span>
@@ -197,48 +215,26 @@ export function TransactionResult({
 
         {/* Transaction Result XDR */}
         {result.resultXdr && (
-          <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-              Result XDR
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyToClipboard(result.resultXdr as string)}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </h4>
-            <div className="max-h-40 overflow-y-auto border rounded-md p-2">
-              <pre className="text-xs">
-                {typeof result.resultXdr === "string"
-                  ? result.resultXdr
-                  : JSON.stringify(result.resultXdr, null, 2)}
-              </pre>
-            </div>
-          </div>
+          <XdrTooltipSection
+            label="Result XDR"
+            rawValue={
+              typeof result.resultXdr === "string"
+                ? result.resultXdr
+                : result.resultXdr.toXDR("base64")
+            }
+          />
         )}
 
         {/* Transaction Meta XDR */}
         {result.resultMetaXdr && (
-          <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-              Meta XDR
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyToClipboard(result.resultMetaXdr as string)}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </h4>
-            <div className="max-h-40 overflow-y-auto border rounded-md p-2">
-              <pre className="text-xs">
-                {typeof result.resultMetaXdr === "string"
-                  ? result.resultMetaXdr
-                  : JSON.stringify(result.resultMetaXdr, null, 2)}
-              </pre>
-            </div>
-          </div>
+          <XdrTooltipSection
+            label="Meta XDR"
+            rawValue={
+              typeof result.resultMetaXdr === "string"
+                ? result.resultMetaXdr
+                : result.resultMetaXdr.toXDR("base64")
+            }
+          />
         )}
       </CardContent>
     </Card>
@@ -304,6 +300,25 @@ export function CallTransactionResult({ result, functionName }: { result: TxResu
       description={description}
       showSimulation={true}
     />
+  );
+}
+
+/**
+ * Local helper that renders a raw XDR string inside an <XdrTooltip /> so
+ * the user can hover or focus to view the decoded tree, with copy buttons
+ * surfaced from the popover itself.
+ */
+function XdrTooltipSection({ label, rawValue }: { label: string; rawValue: string }) {
+  const decoded = useMemo(() => decodeXdr(rawValue), [rawValue]);
+  return (
+    <div>
+      <h4 className="mb-2 text-sm font-medium">{label}</h4>
+      <XdrTooltip value={rawValue} decoded={decoded} label={label}>
+        <pre className="max-h-40 cursor-pointer overflow-y-auto whitespace-pre-wrap break-all rounded-md border p-2 text-xs">
+          {rawValue}
+        </pre>
+      </XdrTooltip>
+    </div>
   );
 }
 

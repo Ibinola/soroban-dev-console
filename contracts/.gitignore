@@ -1,2 +1,7 @@
 target/
 **/test_snapshots/
+
+# W7-SC-001: sub-project Cargo.lock files are stale duplicates of the
+# workspace root lockfile (contracts/Cargo.lock). Track only the root so a
+# single authoritative lockfile is used by `cargo build --workspace`.
+*/Cargo.lock
