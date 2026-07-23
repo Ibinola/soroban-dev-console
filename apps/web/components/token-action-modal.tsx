@@ -14,7 +14,6 @@ import {
   Contract,
   TransactionBuilder,
   TimeoutInfinite,
-  Operation,
   nativeToScVal,
   rpc as SorobanRpc,
   StrKey,
@@ -72,6 +71,10 @@ const ACTION_DESCRIPTIONS: Record<TokenAction, string> = {
  * Pure helper that constructs the appropriate SAC operation for a token
  * action. Used by both the modal (live flow) and unit tests, so the
  * wiring logic stays in one place.
+ *
+ * Returns the same concrete type `Contract.call` returns in the current
+ * SDK; the helper is deliberately not annotated so it tracks SDK changes
+ * automatically.
  */
 export function buildSacOperation(
   contract: Contract,
@@ -79,7 +82,7 @@ export function buildSacOperation(
   from: string,
   to: string,
   amount: bigint,
-): Operation {
+): ReturnType<Contract["call"]> {
   const amountSc = nativeToScVal(amount, { type: "i128" });
   switch (action) {
     case "transfer":
@@ -188,7 +191,12 @@ export function TokenActionModal({
         fee: "100",
         networkPassphrase: network.networkPassphrase,
       })
-        .addOperation(op)
+        .addOperation(
+          // SDK v14 returns Operation2 from Contract.call while
+          // addOperation expects Operation2<Operation>; this cast is
+          // SDK-version-bound (see @stellar/stellar-sdk upgrade notes).
+          op as Parameters<TransactionBuilder["addOperation"]>[0],
+        )
         .setTimeout(TimeoutInfinite)
         .build();
 

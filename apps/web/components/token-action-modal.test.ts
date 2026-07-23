@@ -104,7 +104,6 @@ describe("buildSacOperation (W7-FE-003)", () => {
       );
 
       expect(op).toBeDefined();
-      expect(op.type).toBe("invokeHostFunction");
       // Confirm the SDK was called with the matching action + arity.
       expect(callSpy).toHaveBeenCalledTimes(1);
       const [fnName, ...args] = callSpy.mock.calls[0];

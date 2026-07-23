@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { ArrowRight, Edit3, Minus, Plus } from "lucide-react";
 
 import { Badge } from "@devconsole/ui";
