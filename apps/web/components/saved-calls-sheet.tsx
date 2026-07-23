@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { useSavedCallsStore, SavedCall } from "@/store/useSavedCallsStore";
 import { Button } from "@devconsole/ui";
 import {
@@ -11,7 +12,7 @@ import {
   SheetTrigger,
 } from "@devconsole/ui";
 import { ScrollArea } from "@devconsole/ui";
-import { Bookmark, Trash2, PlayCircle } from "lucide-react";
+import { Bookmark, Trash2, PlayCircle, Download, Upload } from "lucide-react";
 import { Badge } from "@devconsole/ui";
 
 interface SavedCallsSheetProps {
@@ -23,9 +24,38 @@ export function SavedCallsSheet({
   contractId,
   onSelect,
 }: SavedCallsSheetProps) {
-  const { savedCalls, removeCall } = useSavedCallsStore();
+  const { savedCalls, removeCall, exportSavedCalls, importSavedCalls } =
+    useSavedCallsStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const relevantCalls = savedCalls.filter((c) => c.contractId === contractId);
+
+  // #780: download all saved calls as a portable JSON file.
+  const handleExport = () => {
+    const json = exportSavedCalls();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "saved-calls.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // #780: import saved calls from a previously exported JSON file.
+  const handleImportFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-importing the same file
+    if (!file) return;
+    try {
+      const result = importSavedCalls(await file.text());
+      alert(`Imported ${result.imported} call(s), skipped ${result.skipped}.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to import file.");
+    }
+  };
 
   return (
     <Sheet>
@@ -44,6 +74,35 @@ export function SavedCallsSheet({
           <SheetDescription>
             Quickly load previously saved function calls for this contract.
           </SheetDescription>
+          {/* #780: export/import saved calls as portable JSON */}
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={handleExport}
+              disabled={savedCalls.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+              Import
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={handleImportFile}
+            />
+          </div>
         </SheetHeader>
 
         <ScrollArea className="mt-6 h-[calc(100vh-120px)] pr-4">

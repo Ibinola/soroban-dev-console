@@ -3,6 +3,17 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
+  // #778: `--reset` truncates the seeded tables before re-seeding so a run
+  // starts from a clean slate. Ordered to respect foreign-key dependencies.
+  if (process.argv.includes("--reset")) {
+    await prisma.shareLink.deleteMany();
+    await prisma.savedInteraction.deleteMany();
+    await prisma.savedContract.deleteMany();
+    await prisma.workspaceArtifact.deleteMany();
+    await prisma.workspace.deleteMany();
+    console.log("Seed reset: cleared existing workspace data");
+  }
+
   const workspaceId = "demo-workspace";
 
   const workspace = await prisma.workspace.upsert({
