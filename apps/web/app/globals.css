@@ -72,3 +72,36 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Mobile touch ergonomics and layout guards for small viewports. */
+
+  /* WCAG 2.5.5: interactive controls should be at least 44x44px on touch. */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  @media (max-width: 640px) {
+    /* Prevent accidental horizontal page scroll on narrow screens. */
+    html,
+    body {
+      overflow-x: hidden;
+    }
+
+    /* Wide tables scroll within their own container instead of the page. */
+    .table-responsive {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Give tap targets a comfortable minimum size on mobile. */
+    button,
+    a[role="button"],
+    [data-touch-target] {
+      min-height: 44px;
+    }
+  }
+}
