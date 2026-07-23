@@ -11,7 +11,7 @@ Soroban DevConsole is a monorepo-based web application that provides a comprehen
 │                         User Browser                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
 │  │  Next.js 15   │  │  Zustand     │  │  Wallet Adapters     │  │
-│  │  Frontend     │  │  State Store │  │  (Freighter, Albedo) │  │
+│  │  Frontend     │  │  State Store │  │  (Freighter, xBull,  │  │
 │  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘  │
 └─────────┼─────────────────┼──────────────────────┼──────────────┘
           │                 │                      │
@@ -107,7 +107,7 @@ soroban-dev-console/
 **Key Features**
 - Schema versioning with automatic migration
 - Correlation ID generation for request tracing
-- Wallet integration via Stellar wallets
+- Wallet integration via Stellar wallets (Freighter, xBull, Albedo)
 - Local state persistence with version control
 
 ### 2. API Backend (apps/api)

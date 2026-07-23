@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@albedo-link/intent": "^0.13.0",
+    "@creit.tech/xbull-wallet-connect": "^0.4.0",
     "@devconsole/api-contracts": "*",
     "@devconsole/soroban-utils": "*",
     "@devconsole/ui": "*",
