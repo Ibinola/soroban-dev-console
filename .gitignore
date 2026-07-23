@@ -40,6 +40,9 @@ Thumbs.db
 coverage
 .backups/
 
+# Rust build artifacts
+contracts/**/target/
+
 # DEVOPS-216: release evidence bundles (generated locally or in CI)
 release-evidence/
 release-evidence-bundle.tar.gz
