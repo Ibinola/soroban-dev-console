@@ -15,6 +15,7 @@ model Workspace {
   description       String?
   selectedNetwork   String              @default("testnet") @map("selected_network")
   revision          Int                 @default(0)
+  archived          Boolean             @default(false)
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
   savedContracts    SavedContract[]

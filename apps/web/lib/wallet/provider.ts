@@ -13,9 +13,19 @@ export interface WalletCapabilities {
   supportsMainnet: boolean;
 }
 
+// FE-042 / W7-FE-002: Session now carries the network passphrase so the
+// wallet store can detect a mismatch if the user changes networks later.
 export interface WalletSession {
   provider: WalletProviderId;
   address: string;
+  networkPassphrase?: string | null;
+}
+
+// W7-FE-002 / #675: revalidation returns the wallet's *current* network
+// passphrase so the store can compare it against the active app network.
+export interface RevalidationResult {
+  isValid: boolean;
+  networkPassphrase?: string | null;
 }
 
 export interface WalletProviderDefinition {
@@ -27,8 +37,40 @@ export interface WalletProviderDefinition {
   connect: () => Promise<WalletSession>;
   // FE-041: Signing abstraction — unified sign interface
   signTransaction: (xdr: string, networkPassphrase: string) => Promise<string>;
-  // FE-042: Revalidation — check if the provider is still live
-  revalidate: () => Promise<boolean>;
+  // FE-042: Revalidation — check if the provider is still live.
+  // Returns the wallet's current networkPassphrase so the store can
+  // surface a mismatch warning to the user.
+  revalidate: () => Promise<RevalidationResult>;
+  // W7-FE-002 / #675: best-effort lookup of the wallet's active network
+  // passphrase without re-prompting the user.
+  getNetworkPassphrase?: () => Promise<string | null>;
+}
+
+/**
+ * Best-effort fetch of the wallet provider's active network passphrase.
+ * Used for the network mismatch warning (#675). Returns null if the
+ * provider does not expose network info or if the user denies/interrupts.
+ */
+async function freighterGetNetworkPassphrase(): Promise<string | null> {
+  try {
+    // Preferred path — getNetworkDetails returns the full passphrase.
+    if (freighter.getNetworkDetails) {
+      const details = await freighter.getNetworkDetails();
+      if (!details?.error && details?.networkPassphrase) {
+        return details.networkPassphrase;
+      }
+    }
+    // Fallback — older getNetwork API.
+    if (freighter.getNetwork) {
+      const network = await freighter.getNetwork();
+      if (!network?.error && network?.networkPassphrase) {
+        return network.networkPassphrase;
+      }
+    }
+  } catch {
+    // Swallow — we treat any failure as "could not determine wallet network".
+  }
+  return null;
 }
 
 async function connectFreighter(): Promise<WalletSession> {
@@ -83,12 +125,19 @@ async function connectFreighter(): Promise<WalletSession> {
     );
   }
 
-  return { provider: "freighter", address: finalAddress };
+  const networkPassphrase = await freighterGetNetworkPassphrase();
+  return { provider: "freighter", address: finalAddress, networkPassphrase };
 }
 
 async function connectAlbedo(): Promise<WalletSession> {
   const result = await albedo.publicKey({});
-  return { provider: "albedo", address: result.pubkey };
+  // Albedo's public_key response does not include a network field by
+  // default; we treat it as unknown and let revalidation resolve it.
+  return {
+    provider: "albedo",
+    address: result.pubkey,
+    networkPassphrase: null,
+  };
 }
 
 // FE-041: Signing abstraction implementations
@@ -107,15 +156,15 @@ async function albedoSign(xdr: string, networkPassphrase: string): Promise<strin
 }
 
 // FE-042: Revalidation helpers
-async function freighterRevalidate(): Promise<boolean> {
+async function freighterRevalidate(): Promise<RevalidationResult> {
   try {
-    if (!freighter.isConnected) return false;
+    if (!freighter.isConnected) return { isValid: false };
     const connected = await freighter.isConnected();
     const isConn =
       typeof connected === "object"
         ? Boolean((connected as { isConnected?: boolean }).isConnected)
         : Boolean(connected);
-    if (!isConn) return false;
+    if (!isConn) return { isValid: false };
 
     if (freighter.getAddress) {
       const addrRes = await freighter.getAddress();
@@ -123,17 +172,29 @@ async function freighterRevalidate(): Promise<boolean> {
         typeof addrRes === "object"
           ? ((addrRes as { address?: string }).address ?? "")
           : addrRes;
-      return Boolean(addr);
+      if (!addr) return { isValid: false };
     }
-    return true;
+
+    const passphrase = await freighterGetNetworkPassphrase();
+    return { isValid: true, networkPassphrase: passphrase };
   } catch {
-    return false;
+    return { isValid: false };
   }
 }
 
-async function albedoRevalidate(): Promise<boolean> {
-  // Albedo is web-based; assume valid if we have a session
-  return true;
+// W7-FE-002 / #651: albedoRevalidate now attempts a session probe via
+// publicKey({}). A rejection (user revoked access or session expired)
+// yields `isValid: false` so the wallet store clears itself.
+async function albedoRevalidate(): Promise<RevalidationResult> {
+  try {
+    const result = await albedo.publicKey({});
+    return {
+      isValid: Boolean(result?.pubkey),
+      networkPassphrase: null,
+    };
+  } catch {
+    return { isValid: false };
+  }
 }
 
 async function connectXbull(): Promise<WalletSession> {
@@ -183,6 +244,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectFreighter,
     signTransaction: freighterSign,
     revalidate: freighterRevalidate,
+    getNetworkPassphrase: freighterGetNetworkPassphrase,
   },
   albedo: {
     id: "albedo",

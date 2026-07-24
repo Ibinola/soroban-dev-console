@@ -18,8 +18,9 @@ import {
   registerDecorator,
   ValidationOptions,
   ValidationArguments,
+  IsBoolean,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 
 /** Regex to detect HTML tags (including script, style, event handlers) */
 const HTML_TAG_PATTERN = /<[^>]*>/g;
@@ -128,6 +129,10 @@ export class UpdateWorkspaceDto {
   @IsIn(NETWORKS)
   selectedNetwork?: string;
 
+  @IsOptional()
+  @IsBoolean()
+  archived?: boolean;
+
   /**
    * BE-006: Optimistic concurrency control.
    * If provided, the update is rejected with 409 if the stored revision differs.
@@ -194,6 +199,11 @@ export class ListWorkspacesDto {
   @IsOptional()
   @IsString()
   network?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === "true" || value === true)
+  @IsBoolean()
+  includeArchived?: boolean;
 }
 
 /** BE-005: Pagination response envelope */
