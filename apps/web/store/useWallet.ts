@@ -20,6 +20,9 @@ interface WalletState {
   networkAtConnect: string | null;
   // FE-043: sandbox mode
   isSandboxMode: boolean;
+  // W7-FE-002 / #675: network passphrase captured at connect time so we
+  // can detect a wallet-vs-app network mismatch after re-hydration.
+  networkPassphraseAtConnect: string | null;
 
   connect: (provider: WalletProviderId) => Promise<void>;
   disconnect: () => void;
@@ -42,6 +45,7 @@ export const useWallet = create<WalletState>()(
       sessionStatus: "disconnected",
       networkAtConnect: null,
       isSandboxMode: false,
+      networkPassphraseAtConnect: null,
 
       connect: async (provider) => {
         try {
@@ -53,6 +57,7 @@ export const useWallet = create<WalletState>()(
             walletType: session.provider,
             sessionStatus: "valid",
             networkAtConnect: currentNetwork,
+            networkPassphraseAtConnect: session.networkPassphrase ?? null,
             isSandboxMode: false,
           });
         } catch (e: any) {
@@ -69,6 +74,7 @@ export const useWallet = create<WalletState>()(
           sessionStatus: "disconnected",
           networkAtConnect: null,
           isSandboxMode: false,
+          networkPassphraseAtConnect: null,
         });
       },
 
@@ -89,23 +95,51 @@ export const useWallet = create<WalletState>()(
         return walletProviders[walletType].capabilities;
       },
 
-      // FE-042: revalidate persisted session against live provider state
+      // FE-042: revalidate persisted session against live provider state.
+      // If the wallet reports the session is no longer valid we fully
+      // disconnect so the user is forced back to the connect prompt.
       revalidateSession: async () => {
-        const { walletType, isConnected, networkAtConnect } = get();
+        const { walletType, isConnected, networkAtConnect, networkPassphraseAtConnect } = get();
 
         if (!isConnected || !walletType) {
           set({ sessionStatus: "disconnected" });
           return "disconnected";
         }
 
-        const stillLive = await walletProviders[walletType].revalidate();
-        if (!stillLive) {
-          set({ sessionStatus: "stale", isConnected: false });
-          return "stale";
+        let revalidateResult;
+        try {
+          revalidateResult = await walletProviders[walletType].revalidate();
+        } catch (err) {
+          // Treat any thrown error as a stale session — the wallet store
+          // should clear and prompt the user to reconnect.
+          revalidateResult = { isValid: false };
         }
 
-        // FE-042: detect network mismatch
+        if (!revalidateResult?.isValid) {
+          // W7-FE-002 / #651: failed revalidation clears the wallet store
+          // and surfaces the connect prompt.
+          get().disconnect();
+          return "disconnected";
+        }
+
+        // W7-FE-002 / #675: detect network mismatch using the wallet's
+        // freshly-fetched passphrase. Fall back to the network ID for
+        // legacy persisted sessions that lack a passphrase.
         const currentNetwork = useNetworkStore.getState().currentNetwork;
+        const currentPassphrase = useNetworkStore
+          .getState()
+          .getActiveNetworkConfig().networkPassphrase;
+
+        const walletPassphrase =
+          revalidateResult.networkPassphrase ??
+          networkPassphraseAtConnect ??
+          null;
+
+        if (walletPassphrase && walletPassphrase !== currentPassphrase) {
+          set({ sessionStatus: "mismatch" });
+          return "mismatch";
+        }
+
         if (networkAtConnect && networkAtConnect !== currentNetwork) {
           set({ sessionStatus: "mismatch" });
           return "mismatch";
@@ -127,12 +161,14 @@ export const useWallet = create<WalletState>()(
     }),
     {
       name: "soroban-wallet-storage",
+      version: 1,
       // FE-042: don't persist transient session status
       partialize: (state) => ({
         isConnected: state.isConnected,
         address: state.address,
         walletType: state.walletType,
         networkAtConnect: state.networkAtConnect,
+        networkPassphraseAtConnect: state.networkPassphraseAtConnect,
       }),
     },
   ),

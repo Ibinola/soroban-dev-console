@@ -17,7 +17,8 @@
     "security:playbooks": "npx tsx scripts/validate-playbooks.ts",
     "check-integrity": "npx tsx scripts/check-dependency-integrity.ts",
     "check-drift": "npx tsx scripts/check-runtime-drift.ts",
-    "release-evidence": "npx tsx scripts/generate-release-evidence.ts"
+    "release-evidence": "npx tsx scripts/generate-release-evidence.ts",
+    "generate-changelog": "npx tsx scripts/generate-changelog.ts"
   },
   "devDependencies": {
     "prettier": "^3.2.5",
