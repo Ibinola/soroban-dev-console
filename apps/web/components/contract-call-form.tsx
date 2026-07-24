@@ -39,6 +39,7 @@ import {
 import { signTransaction } from "@stellar/freighter-api";
 import { SavedCallsSheet } from "./saved-calls-sheet";
 import { AbiInputField } from "./abi-input-field";
+import { SimulationExplainerDisplay } from "./simulation-explainer-display";
 import { useAbiStore } from "@/store/useAbiStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
@@ -758,6 +759,14 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               </p>
             )}
           </div>
+        )}
+
+        {/* Simulation Explainer - Human-readable auth requirements */}
+        {simulation && (
+          <SimulationExplainerDisplay
+            rawSimulation={simulation}
+            connectedAddress={address}
+          />
         )}
 
         <div className="flex gap-3 pt-2">
