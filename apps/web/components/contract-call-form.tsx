@@ -22,7 +22,7 @@ import {
   AlertCircle,
   Download,
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useSavedCallsStore, SavedCall } from "@/store/useSavedCallsStore";
@@ -144,11 +144,15 @@ function toContractArg(field: NonNullable<NormalizedContractSpec["functions"][nu
 
 export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialMethod = searchParams?.get("method");
+  
   const genId = () => Math.random().toString(36).substring(2, 9);
   const { isConnected, address, isSandboxMode, enterSandbox, exitSandbox } = useWallet();
   const { getActiveNetworkConfig } = useNetworkStore();
 
-  const [fnName, setFnName] = useState("");
+  const [fnName, setFnName] = useState(initialMethod || "");
   const [args, setArgs] = useState<ContractArg[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -215,12 +219,27 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     }
   }, [contractId, spec, setSpec]);
 
+  useEffect(() => {
+    if (initialMethod && spec?.functions.some(f => f.name === initialMethod)) {
+      if (fnName !== initialMethod) {
+        setFnName(initialMethod);
+        const nextFunction = spec.functions.find((entry) => entry.name === initialMethod);
+        setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
+      }
+    }
+  }, [initialMethod, spec]);
+
   const handleFnChange = (name: string) => {
     setFnName(name);
     setSimulation(null);
     const nextFunction = spec?.functions.find((entry) => entry.name === name);
 
     setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
+    
+    const url = new URL(window.location.href);
+    url.searchParams.set("method", name);
+    url.searchParams.set("network", getActiveNetworkConfig().id);
+    router.replace(url.pathname + url.search, { scroll: false });
   };
 
   const addArg = () => {
@@ -513,7 +532,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           <Label>Function Name</Label>
           {spec ? (
             <Select value={fnName} onValueChange={handleFnChange}>
-              <SelectTrigger>
+              <SelectTrigger aria-describedby={selectedFunction?.doc ? "method-description" : undefined}>
                 <SelectValue placeholder="Select a function..." />
               </SelectTrigger>
               <SelectContent>
@@ -541,6 +560,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
                   variant="outline"
                   size="icon"
                   title="Save Interaction"
+                  aria-label="Save Interaction"
                   disabled={!fnName}
                 >
                   <Save className="h-4 w-4" />
@@ -550,6 +570,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
                 variant="outline"
                 size="sm"
                 title="Save reusable operation preset"
+                aria-label="Save reusable operation preset"
                 disabled={!fnName}
                 onClick={handleSavePreset}
               >
@@ -587,7 +608,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           </div>
 
           {selectedFunction?.doc && (
-            <p className="text-sm text-muted-foreground">{selectedFunction.doc}</p>
+            <p id="method-description" className="text-sm text-muted-foreground">{selectedFunction.doc}</p>
           )}
 
           {args.length === 0 && selectedFunction && (
@@ -630,6 +651,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
                   size="icon"
                   variant="ghost"
                   className="text-destructive"
+                  aria-label={`Remove argument ${arg.name || "unnamed"}`}
                   onClick={() => removeArg(arg.id)}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -639,14 +661,15 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           ))}
         </div>
 
-        {result && (
-          <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
-            {result}
-          </div>
-        )}
+        <div aria-live="polite" className="space-y-4 w-full">
+          {result && (
+            <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
+              {result}
+            </div>
+          )}
 
-        {simulation && (
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4">
+          {simulation && (
+            <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={simulation.ok ? "default" : "destructive"}>
                 {simulation.ok ? "Simulation Succeeded" : "Simulation Failed"}
@@ -759,6 +782,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
             )}
           </div>
         )}
+        </div>
 
         <div className="flex gap-3 pt-2">
           {/* FE-044: fee/resource tuning toggle */}
@@ -829,11 +853,13 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               className="w-full"
               onClick={handleSimulate}
               disabled={isLoading || !fnName}
+              aria-label={isSandboxMode ? "Simulate Contract Call in Sandbox" : "Simulate Contract Call"}
+              aria-busy={isLoading}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Terminal className="mr-2 h-4 w-4" />
+                <Terminal className="mr-2 h-4 w-4" aria-hidden="true" />
               )}
               {isSandboxMode ? "Simulate (Sandbox)" : "Simulate"}
             </Button>
@@ -844,11 +870,13 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               className="w-full"
               onClick={handleSend}
               disabled={isLoading || !fnName}
+              aria-label="Send Transaction"
+              aria-busy={isLoading}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Send className="mr-2 h-4 w-4" />
+                <Send className="mr-2 h-4 w-4" aria-hidden="true" />
               )}
               Send Transaction
             </Button>

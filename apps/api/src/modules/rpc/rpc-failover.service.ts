@@ -10,7 +10,8 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 const FAILURE_THRESHOLD = 3;   // consecutive failures before marking degraded
-const COOLDOWN_MS = 30_000;    // how long a degraded endpoint is skipped
+// Default cooldown, overridden by process.env.RPC_FAILOVER_COOLDOWN_MS
+const DEFAULT_COOLDOWN_MS = 60_000;    // how long a degraded endpoint is skipped
 
 interface EndpointState {
   url: string;
@@ -59,7 +60,8 @@ export class RpcFailoverService {
 
     state.failures += 1;
     if (state.failures >= FAILURE_THRESHOLD) {
-      state.degradedUntil = Date.now() + COOLDOWN_MS;
+      const cooldownMs = this.configService.get<number>("RPC_FAILOVER_COOLDOWN_MS") ?? DEFAULT_COOLDOWN_MS;
+      state.degradedUntil = Date.now() + cooldownMs;
       return true;
     }
     return false;
@@ -81,11 +83,26 @@ export class RpcFailoverService {
   }
 
   private parseUrls(network: string): string[] {
-    const key = `SOROBAN_RPC_${network.toUpperCase()}_URL`;
-    const raw = this.configService.get<string>(key) ?? "";
-    return raw
+    const key = `RPC_ENDPOINTS_${network.toUpperCase()}`;
+    const raw = this.configService.get<string>(key);
+    
+    // Fallback to previous env var name if new one is missing
+    const oldKey = `SOROBAN_RPC_${network.toUpperCase()}_URL`;
+    const oldRaw = this.configService.get<string>(oldKey);
+    
+    const combined = raw || oldRaw || "";
+    return combined
       .split(",")
       .map((u) => u.trim())
       .filter(Boolean);
+  }
+
+  /** Expose endpoint status for internal health monitoring */
+  getStatus() {
+    const status: Record<string, EndpointState[]> = {};
+    for (const [network, states] of this.endpoints.entries()) {
+      status[network] = states.map((s) => ({ ...s }));
+    }
+    return status;
   }
 }
