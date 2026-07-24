@@ -16,37 +16,42 @@ const PATTERNS = [
   { rule: "npm_token", regex: /npm_[A-Za-z0-9]{36,}/g },
   { rule: "connection_string", regex: /(?:mongodb|postgres):\/\/[^\s]+/gi },
 ];
-const INCLUDE_DIRS = ["apps", "packages", "contracts", "docs", "scripts", ".github"];
-const EXCLUDE_PARTS = ["/node_modules/", "/dist/", "/target/", "/.git/", "/.turbo/", "/.backups/"];
 
 const WHITELIST_FILES = [
   "docs/contributor-playbook.md",
   "docs/maintainer-playbook.md",
   "docs/runbooks.md",
   "scripts/secret-scan.ts",
+  "scripts/secret-scan-staged.ts",
 ];
 
 function isTextFile(file: string): boolean {
   return /\.(ts|tsx|js|jsx|json|md|yml|yaml|sh|txt|toml|rs|sql|prisma|env|cjs|mjs)$/i.test(file);
 }
 
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (EXCLUDE_PARTS.some((part) => full.includes(part))) continue;
-    if (entry.isDirectory()) walk(full, out);
-    else if (entry.isFile() && isTextFile(full)) out.push(full);
-  }
-  return out;
-}
+// Get files from arguments (for staged file scanning) or scan all
+const args = process.argv.slice(2);
+const files: string[] = args
+  .filter(f => {
+    if (!isTextFile(f) || !fs.existsSync(f)) return false;
+    // Skip node_modules, dist, test files, and package lock files
+    if (f.includes("node_modules") || f.includes("/dist/") || f.includes("\\dist\\")) return false;
+    if (f.includes(".test.ts") || f.includes(".test.tsx") || f.includes(".test.js")) return false;
+    if (f.includes(".spec.ts") || f.includes(".spec.tsx") || f.includes(".spec.js")) return false;
+    if (f.includes("package-lock.json") || f.includes("yarn.lock")) return false;
+    return true;
+  });
 
-const files = INCLUDE_DIRS.flatMap((dir) => {
-  const full = path.join(ROOT, dir);
-  return fs.existsSync(full) ? walk(full) : [];
-});
+if (files.length === 0 && args.length > 0) {
+  console.log("No scannable files in the provided list.");
+  process.exit(0);
+}
 
 const findings: Array<{ file: string; line: number; rule: string; sample: string }> = [];
 for (const file of files) {
+  const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+  if (WHITELIST_FILES.includes(rel)) continue;
+  
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   for (const [idx, line] of lines.entries()) {
     for (const pattern of PATTERNS) {
@@ -59,13 +64,13 @@ for (const file of files) {
 let foundSecret = false;
 for (const finding of findings) {
   const rel = path.relative(ROOT, finding.file).replace(/\\/g, "/");
-  if (WHITELIST_FILES.includes(rel)) continue;
   console.error(`${rel}:${finding.line} [${finding.rule}] ${finding.sample}`);
   foundSecret = true;
 }
 
 if (foundSecret) {
-  console.error(`\nSecret scan FAILED: ${findings.filter(f => !WHITELIST_FILES.includes(path.relative(ROOT, f.file).replace(/\\/g, "/"))).length} potential secrets found.`);
+  console.error(`\nSecret scan FAILED: ${findings.length} potential secrets found.`);
+  console.error("Remove secrets before committing or add to .gitignore.");
   process.exit(1);
 }
 

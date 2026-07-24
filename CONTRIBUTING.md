@@ -309,6 +309,34 @@ See [docs/governance.md](./docs/governance.md) for the full reference, including
 
 We are committed to providing a friendly, safe, and welcoming environment for all contributors. Please be respectful and inclusive in your interactions.
 
+## Security
+
+### Pre-commit Secret Scanning
+
+A pre-commit hook runs `lint-staged` with a secret scanner that blocks commits containing potential credentials (AWS keys, Stellar secrets, API keys, JWTs, GitHub tokens, etc.).
+
+**How it works:**
+- On `git commit`, the hook scans only staged files matching `*.{ts,tsx,js,jsx,json,md,yml,yaml,sh,sql}`
+- Test files (`*.test.*`, `*.spec.*`) and `node_modules` are excluded
+- If a secret pattern is detected, the commit is blocked with an error message showing the file, line, rule, and matched sample
+
+**If the hook blocks your commit:**
+1. Review the flagged content
+2. Remove the secret or replace it with a placeholder
+3. Add legitimate test fixtures to `scripts/secret-scan-staged.ts` whitelist if needed
+4. Run `npm run security:scan` to verify the full scan passes
+
+**Whitelisted files** (in `scripts/secret-scan-staged.ts`):
+- `docs/contributor-playbook.md`
+- `docs/maintainer-playbook.md`
+- `docs/runbooks.md`
+- `scripts/secret-scan.ts`
+- `scripts/secret-scan-staged.ts`
+
+### CI Secret Scanning
+
+The CI `Security Guardrails` job runs the full secret scan (`npm run security:scan`) on all source files when scripts, docs, or env examples change. This is a defense-in-depth layer — the pre-commit hook is the first line of defense.
+
 ## Questions?
 
 - Check existing [Issues](https://github.com/Ibinola/soroban-dev-console/issues)
