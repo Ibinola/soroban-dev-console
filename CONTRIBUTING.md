@@ -103,6 +103,17 @@ npm run lint
 npm run format
 ```
 
+### Security
+
+A **pre-commit hook** is installed automatically when you run `npm install`. It uses [husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged) to scan staged files for secrets (AWS keys, Stellar secret keys, API tokens, JWTs, connection strings, etc.) before each commit.
+
+- If a secret pattern is detected, the commit is **blocked** and you must remove the secret before retrying.
+- The scanner runs `scripts/secret-scan-staged.ts`, a lightweight variant of `scripts/secret-scan.ts` that only checks files in the commit.
+- To run a full repository scan manually: `npm run security:scan`
+- To bypass the hook in an emergency (not recommended): `git commit --no-verify`
+
+**Supported secret patterns:** Stellar secret keys (`S...`), AWS keys, GitHub PATs (`ghp_`), npm tokens (`npm_`), JWTs (`eyJ...`), bearer tokens, API keys, and database connection strings.
+
 ### Testing
 
 Write tests for new features and bug fixes:
