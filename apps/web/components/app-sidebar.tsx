@@ -7,11 +7,13 @@ import {
   HardDrive,
   Calculator,
   UploadCloud,
+  Keyboard,
 } from "lucide-react";
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -22,6 +24,7 @@ import {
 } from "@devconsole/ui";
 
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { useKeyboardShortcutsStore } from "./keyboard-shortcuts-modal";
 
 const items = [
   {
@@ -67,6 +70,8 @@ const items = [
 ];
 
 export function AppSidebar() {
+  const openShortcuts = useKeyboardShortcutsStore((s) => s.open);
+
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="flex flex-col gap-4 py-4">
@@ -95,6 +100,20 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      {/* Issue #750: Keyboard shortcut hint in sidebar footer */}
+      <SidebarFooter className="border-t border-sidebar-border p-2">
+        <button
+          onClick={openShortcuts}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          title="Keyboard shortcuts (?)"
+          aria-label="Open keyboard shortcuts"
+        >
+          <Keyboard className="h-3.5 w-3.5" />
+          <span>Shortcuts</span>
+          <kbd className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-muted font-mono text-[10px]">?</kbd>
+        </button>
+      </SidebarFooter>
     </Sidebar>
   );
 }

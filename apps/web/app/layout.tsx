@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/site-header";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/command-palette";
+import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
 import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
 
@@ -30,6 +31,16 @@ export default async function RootLayout({
           type="application/json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult).replace(/<\//g, '<\\/') }}
         />
+        {/*
+          Issue #748: Prevent flash of incorrect theme (FOIT) on page load.
+          Reads from localStorage using the sdc:theme:v1 key and applies the
+          theme class to <html> before React hydration.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('sdc:theme:v1');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+          }}
+        />
       </head>
       <body>
         <ThemeProvider
@@ -37,6 +48,7 @@ export default async function RootLayout({
           defaultTheme="system"
           disableTransitionOnChange
           enableSystem
+          storageKey="sdc:theme:v1"
         >
           <SidebarProvider>
             <TooltipProvider>
@@ -47,6 +59,8 @@ export default async function RootLayout({
                 <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
                   {children}
                   <CommandPalette />
+                  {/* Issue #750: Keyboard shortcuts modal — global, responds to ? key */}
+                  <KeyboardShortcutsModal />
                 </div>
               </SidebarInset>
             </TooltipProvider>
