@@ -60,3 +60,40 @@ export function mergeContractDocs(
     functions: [...existing.functions, ...newFunctions],
   };
 }
+
+/** Look up the documentation entry for a single method by name. */
+export function getFunctionDoc(
+  doc: ContractRefDoc,
+  functionName: string,
+): FunctionDoc | undefined {
+  return doc.functions.find((f) => f.name === functionName);
+}
+
+/** True when a doc string has meaningful content worth rendering a panel for. */
+export function hasDocContent(doc?: string | null): boolean {
+  return typeof doc === "string" && doc.trim().length > 0;
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Render a contract doc string to safe HTML, allowing only bold, inline code,
+ * and http(s) links. Input is escaped first so no unsafe HTML can survive.
+ */
+export function renderDocString(doc: string): string {
+  let out = escapeHtml(doc.trim());
+  out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  return out;
+}
