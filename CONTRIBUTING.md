@@ -175,6 +175,28 @@ Verifies that:
 
 When the DevOps job runs in CI, a step summary is written to the GitHub Actions run page with a plain-English pass/fail status and remediation hints for each check. No need to dig through raw logs.
 
+### Changelog Generation (`npm run generate-changelog`)
+
+The root `CHANGELOG.md` is maintained in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. New entries are not edited by hand — the `scripts/generate-changelog.ts` script introspects merge commits via `git log --merges` and emits markdown grouped by Wave.
+
+```bash
+# Print merged PR titles since a date to stdout
+npm run generate-changelog -- --since 2026-07-01
+
+# Bound an explicit range
+npm run generate-changelog -- --since 2026-07-01 --until 2026-07-30
+
+# Append to a file (the script does not overwrite, just writes)
+npm run generate-changelog -- --since 2026-07-01 --output CHANGELOG.fragment.md
+```
+
+Exit codes:
+- `0` — output written
+- `1` — no merged PRs found in the given range (useful as a CI gate signal)
+- `2` — invalid arguments
+
+Run the command from the repository root so `git log` can read the history. Wave grouping is detected from the source branch name (e.g. `codex/wave7-...`), and unknown branches fall through to an "Other merged PRs" section at the end.
+
 ### Skipping the DevOps gate
 
 The DevOps job only runs when relevant files change (scripts, `runtime-defaults.ts`, docs, env examples, or lockfiles). If none of those files are touched, the job is skipped and the Required Checks gate treats a skip as a pass.
