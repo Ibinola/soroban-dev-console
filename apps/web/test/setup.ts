@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import * as React from 'react';
+
+// Make React globally available for UI components that rely on the
+// classic JSX runtime (no explicit `import React from 'react'`).
+(globalThis as unknown as { React: typeof React }).React = React;
 
 // Auto-cleanup after each test
 afterEach(() => {
