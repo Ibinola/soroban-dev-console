@@ -8,6 +8,7 @@ import {
   AlertCircle,
   CheckCircle2,
   FlaskConical,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -18,6 +19,7 @@ import { ContractEvents } from "@/components/contract-events";
 import { ContractStorage } from "@/components/contract-storage";
 import { ContractUpgradeModal } from "@/components/contract-upgrade-modal";
 import { TokenDashboard } from "@/components/token-dashboard";
+import { SourceVerificationFlow } from "@/components/source-verification-flow";
 import { fetchContractOverview, type ContractOverview } from "@/lib/contract-overview";
 import { useAbiStore } from "@/store/useAbiStore";
 import { useNetworkStore } from "@/store/useNetworkStore";
@@ -187,6 +189,10 @@ export default function ContractDetailPage() {
         </div>
 
         <div className="flex shrink-0 gap-2">
+          <Badge variant="outline" className="gap-1">
+            <ShieldCheck className="h-3 w-3" />
+            Source Verified
+          </Badge>
           <ContractUpgradeModal contractId={contractId} />
           <Button variant="outline" asChild>
             <a
@@ -236,6 +242,10 @@ export default function ContractDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
+          <SourceVerificationFlow
+            contractId={contractId}
+            wasmHash={overview?.wasmHash}
+          />
           <TokenDashboard contractId={contractId} />
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
