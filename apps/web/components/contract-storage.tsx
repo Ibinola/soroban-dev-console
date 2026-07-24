@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { rpc as SorobanRpc, xdr } from "@stellar/stellar-sdk";
 import {
   buildStorageQuery,
@@ -10,6 +10,7 @@ import {
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
+import { XdrTooltip } from "@devconsole/ui";
 import {
   Select,
   SelectContent,
@@ -25,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@devconsole/ui";
+import { decodeXdr } from "@devconsole/soroban-utils";
 import {
   Card,
   CardContent,
@@ -52,10 +54,27 @@ interface StorageEntry {
   error?: string;
 }
 
-export function ContractStorage({ contractId }: ContractStorageProps) {
-  const { getActiveNetworkConfig } = useNetworkStore();
+/** Per-row XdrTooltip that memoises decoding so we avoid running
+ * decodeXdr on every keystroke. */
+function StorageKeyXdrTooltip({
+  ledgerKeyXdr,
+  label,
+}: {
+  ledgerKeyXdr: string;
+  label: string;
+}) {
+  const decoded = useMemo(() => decodeXdr(ledgerKeyXdr), [ledgerKeyXdr]);
+  return (
+    <XdrTooltip value={ledgerKeyXdr} decoded={decoded} label={label}>
+      <span className="cursor-pointer text-[10px] text-muted-foreground/70 underline decoration-dotted">
+        XDR
+      </span>
+    </XdrTooltip>
+  );
+}
 
-  // Local state for the "Add Key" form
+export function ContractStorage({ contractId }: ContractStorageProps) {
+  const { getActiveNetworkConfig } = useNetworkStore();  // Local state for the "Add Key" form
   const [newKeyType, setNewKeyType] = useState<StorageKeyType>("symbol");
   const [newKeyValue, setNewKeyValue] = useState("");
 
@@ -246,7 +265,13 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
                 entries.map((entry) => (
                   <TableRow key={entry.id}>
                     <TableCell className="font-mono text-xs text-muted-foreground">
-                      {entry.keyType}
+                      <span className="inline-flex items-center gap-1">
+                        {entry.keyType}
+                        <StorageKeyXdrTooltip
+                          ledgerKeyXdr={entry.ledgerKeyXdr}
+                          label={`${entry.keyValue} ledger key`}
+                        />
+                      </span>
                     </TableCell>
                     <TableCell className="break-all font-mono text-xs font-medium">
                       {entry.keyValue}
