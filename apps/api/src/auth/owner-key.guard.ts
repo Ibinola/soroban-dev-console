@@ -1,4 +1,16 @@
+/**
+ * Issue #758: Add API key (owner-key) strength validation to reject weak keys.
+ *
+ * Validates the x-owner-key header on all protected routes:
+ * - Minimum 32 characters (raised from 8)
+ * - Must contain at least one uppercase letter, one lowercase letter, one digit
+ * - Rejects known weak patterns (common words, all-same-char, etc.)
+ * - Returns 400 Bad Request with ApiErrorCode.WEAK_OWNER_KEY on weak keys
+ * - Rate limits: max 10 failed attempts per IP per 60s
+ */
+
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   Injectable,
@@ -7,15 +19,19 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 
+/** Issue #758: Minimum key length raised to 32 characters. */
+const MIN_KEY_LENGTH = 32;
+const MAX_KEY_LENGTH = 256;
+
 @Injectable()
 export class OwnerKeyGuard implements CanActivate {
   private readonly logger = new Logger(OwnerKeyGuard.name);
 
   private static readonly FORBIDDEN_PATTERNS = [
-    /^(password|12345678|admin|test|demo|key|owner)$/i,
+    /^(password|12345678|admin|test|demo|key|owner|secret|token|auth)$/i,
     /^\s+$/,
-    /^.{1,7}$/,
-    /^.{257,}$/,
+    // All same character repeated
+    /^(.)\1+$/,
   ];
 
   private static readonly RATE_LIMIT_WINDOW = 60_000;
@@ -42,29 +58,62 @@ export class OwnerKeyGuard implements CanActivate {
 
     const trimmedKey = key.trim();
 
-    if (trimmedKey.length < 8) {
+    // Issue #758: Minimum 32 characters
+    if (trimmedKey.length < MIN_KEY_LENGTH) {
       this.recordAttempt(clientIp);
-      this.logger.warn(`Short owner-key rejected from ${clientIp}`);
-      throw new UnauthorizedException(
-        "Invalid x-owner-key header. Owner key must be at least 8 characters long.",
-      );
+      this.logger.warn(`Weak owner-key rejected (too short: ${trimmedKey.length} chars) from ${clientIp}`);
+      throw new BadRequestException({
+        code: "WEAK_OWNER_KEY",
+        message: `Owner key must be at least ${MIN_KEY_LENGTH} characters long. Generate a strong key using: crypto.randomUUID() + crypto.randomUUID()`,
+      });
     }
 
-    if (trimmedKey.length > 256) {
+    if (trimmedKey.length > MAX_KEY_LENGTH) {
       this.recordAttempt(clientIp);
       this.logger.warn(`Oversized owner-key rejected from ${clientIp}`);
-      throw new UnauthorizedException(
-        "Invalid x-owner-key header. Owner key must not exceed 256 characters.",
-      );
+      throw new BadRequestException({
+        code: "WEAK_OWNER_KEY",
+        message: `Owner key must not exceed ${MAX_KEY_LENGTH} characters.`,
+      });
     }
 
+    // Issue #758: Must contain at least one uppercase, lowercase, and digit
+    if (!/[A-Z]/.test(trimmedKey)) {
+      this.recordAttempt(clientIp);
+      this.logger.warn(`Weak owner-key rejected (no uppercase) from ${clientIp}`);
+      throw new BadRequestException({
+        code: "WEAK_OWNER_KEY",
+        message: "Owner key must contain at least one uppercase letter, one lowercase letter, and one digit.",
+      });
+    }
+
+    if (!/[a-z]/.test(trimmedKey)) {
+      this.recordAttempt(clientIp);
+      this.logger.warn(`Weak owner-key rejected (no lowercase) from ${clientIp}`);
+      throw new BadRequestException({
+        code: "WEAK_OWNER_KEY",
+        message: "Owner key must contain at least one uppercase letter, one lowercase letter, and one digit.",
+      });
+    }
+
+    if (!/[0-9]/.test(trimmedKey)) {
+      this.recordAttempt(clientIp);
+      this.logger.warn(`Weak owner-key rejected (no digit) from ${clientIp}`);
+      throw new BadRequestException({
+        code: "WEAK_OWNER_KEY",
+        message: "Owner key must contain at least one uppercase letter, one lowercase letter, and one digit.",
+      });
+    }
+
+    // Forbidden patterns
     for (const pattern of OwnerKeyGuard.FORBIDDEN_PATTERNS) {
       if (pattern.test(trimmedKey)) {
         this.recordAttempt(clientIp);
         this.logger.warn(`Forbidden pattern in owner-key from ${clientIp}`);
-        throw new UnauthorizedException(
-          "Invalid x-owner-key header. Owner key contains a forbidden pattern or is too weak.",
-        );
+        throw new BadRequestException({
+          code: "WEAK_OWNER_KEY",
+          message: "Owner key contains a forbidden pattern or is too predictable. Use a randomly generated key.",
+        });
       }
     }
 
