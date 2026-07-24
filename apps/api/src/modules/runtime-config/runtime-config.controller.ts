@@ -21,4 +21,10 @@ export class RuntimeConfigController {
   redistribute() {
     return this.service.redistribute();
   }
+
+  /** #776: Hot-reload feature flags without restarting the API. */
+  @Post("reload")
+  reload() {
+    return this.service.reload();
+  }
 }

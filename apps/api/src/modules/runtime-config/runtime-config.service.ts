@@ -112,6 +112,40 @@ export class RuntimeConfigService {
     return this.getConfig();
   }
 
+  /**
+   * #776: Hot-reload runtime config without restarting the API.
+   *
+   * Re-reads config from the environment, detects which feature flags changed
+   * versus the previously served config, and returns the new config alongside
+   * the changed keys. Emits a `config.reloaded` audit entry.
+   */
+  reload(actor = "system:runtime-config"): {
+    config: RuntimeConfig;
+    changedKeys: string[];
+    previousHash: string | null;
+  } {
+    const previous = this.cachedConfig;
+    this.cachedConfig = null;
+    const config = this.getConfig();
+
+    const changedKeys = previous
+      ? (Object.keys(config.flags) as (keyof FeatureFlags)[])
+          .filter((key) => previous.flags[key] !== config.flags[key])
+          .map((key) => `flags.${key}`)
+      : [];
+
+    void this.audit?.log({
+      actor,
+      action: "config.reloaded",
+      resourceType: "runtime_config",
+      resourceId: config.profile,
+      summary: `Runtime config reloaded (${changedKeys.length} flag change(s))`,
+      metadata: { changedKeys, previousHash: previous?.configHash ?? null, configHash: config.configHash },
+    });
+
+    return { config, changedKeys, previousHash: previous?.configHash ?? null };
+  }
+
   private computeConfigHash(profile: RuntimeProfile): string {
     const parts = [
       profile,

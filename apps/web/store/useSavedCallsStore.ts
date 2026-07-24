@@ -51,6 +51,25 @@ interface SavedCallsState {
   applyPresetToCart: (presetId: string, options?: { workspaceId?: string }) => SavedCall | null;
   /** FE-056: recover stale preset by switching network context */
   repairPresetNetwork: (presetId: string, network: string) => void;
+  /** #780: export saved calls (optionally scoped to a workspace) as portable JSON */
+  exportSavedCalls: (workspaceId?: string) => string;
+  /** #780: import saved calls from exported JSON, merging without overwriting duplicates */
+  importSavedCalls: (json: string) => { imported: number; skipped: number };
+}
+
+/** #780: portable export envelope for sharing saved call sequences. */
+interface SavedCallsExport {
+  type: "soroban-dev-console/saved-calls";
+  version: 1;
+  exportedAt: number;
+  calls: Array<Pick<SavedCall, "name" | "contractId" | "fnName" | "args" | "network">>;
+}
+
+/** #780: dedupe key for a saved call — matches on the call's meaningful fields. */
+function savedCallHash(
+  call: Pick<SavedCall, "contractId" | "fnName" | "network" | "args">,
+): string {
+  return JSON.stringify([call.contractId, call.fnName, call.network, call.args]);
 }
 
 export const useSavedCallsStore = create<SavedCallsState>()(
@@ -171,6 +190,83 @@ export const useSavedCallsStore = create<SavedCallsState>()(
             preset.id === presetId ? { ...preset, network } : preset,
           ),
         })),
+
+      exportSavedCalls: (workspaceId) => {
+        const calls = get().savedCalls.filter(
+          (c) => !workspaceId || c.workspaceId === workspaceId,
+        );
+        const payload: SavedCallsExport = {
+          type: "soroban-dev-console/saved-calls",
+          version: 1,
+          exportedAt: Date.now(),
+          calls: calls.map(({ name, contractId, fnName, args, network }) => ({
+            name,
+            contractId,
+            fnName,
+            args,
+            network,
+          })),
+        };
+        return JSON.stringify(payload, null, 2);
+      },
+
+      importSavedCalls: (json) => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(json);
+        } catch {
+          throw new Error("Invalid JSON: could not parse the import file.");
+        }
+
+        const envelope = parsed as Partial<SavedCallsExport>;
+        if (
+          !envelope ||
+          envelope.type !== "soroban-dev-console/saved-calls" ||
+          !Array.isArray(envelope.calls)
+        ) {
+          throw new Error("Unrecognized format: expected a saved-calls export file.");
+        }
+
+        const existing = new Set(get().savedCalls.map((c) => savedCallHash(c)));
+        let imported = 0;
+        let skipped = 0;
+        const additions: SavedCall[] = [];
+
+        for (const raw of envelope.calls) {
+          if (
+            !raw ||
+            typeof raw.contractId !== "string" ||
+            typeof raw.fnName !== "string" ||
+            typeof raw.network !== "string" ||
+            !Array.isArray(raw.args)
+          ) {
+            skipped++;
+            continue;
+          }
+          const hash = savedCallHash(raw);
+          if (existing.has(hash)) {
+            skipped++;
+            continue;
+          }
+          existing.add(hash);
+          additions.push({
+            id: crypto.randomUUID(),
+            name: typeof raw.name === "string" ? raw.name : raw.fnName,
+            contractId: raw.contractId,
+            fnName: raw.fnName,
+            args: raw.args,
+            network: raw.network,
+            createdAt: Date.now(),
+          });
+          imported++;
+        }
+
+        if (additions.length > 0) {
+          set((state) => ({ savedCalls: [...additions, ...state.savedCalls] }));
+        }
+
+        return { imported, skipped };
+      },
     }),
     { name: "soroban-saved-calls" },
   ),
