@@ -1,7 +1,8 @@
 import * as freighter from "@stellar/freighter-api";
 import albedo from "@albedo-link/intent";
+import { xBullWalletConnect } from "@creit.tech/xbull-wallet-connect";
 
-export type WalletProviderId = "freighter" | "albedo";
+export type WalletProviderId = "freighter" | "albedo" | "xbull";
 
 // FE-041: Capability matrix — explicit flags per provider
 export interface WalletCapabilities {
@@ -135,6 +136,37 @@ async function albedoRevalidate(): Promise<boolean> {
   return true;
 }
 
+async function connectXbull(): Promise<WalletSession> {
+  const bridge = new xBullWalletConnect();
+  try {
+    const publicKey = await bridge.connect({
+      canRequestPublicKey: true,
+      canRequestSign: true,
+    });
+    return { provider: "xbull", address: publicKey };
+  } finally {
+    bridge.closeConnections();
+  }
+}
+
+async function xbullSign(xdr: string, networkPassphrase: string): Promise<string> {
+  const bridge = new xBullWalletConnect();
+  try {
+    const result = await bridge.sign({ xdr, network: networkPassphrase });
+    return result;
+  } finally {
+    bridge.closeConnections();
+  }
+}
+
+async function xbullRevalidate(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  // xBull does not expose a persistent isConnected API.
+  // We optimistically return true; connect/sign will surface errors
+  // if the extension or webapp is unavailable.
+  return true;
+}
+
 export const walletProviders: Record<WalletProviderId, WalletProviderDefinition> = {
   freighter: {
     id: "freighter",
@@ -167,6 +199,22 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectAlbedo,
     signTransaction: albedoSign,
     revalidate: albedoRevalidate,
+  },
+  xbull: {
+    id: "xbull",
+    label: "xBull",
+    description: "Open source Stellar wallet with extension and webapp support",
+    accentClassName: "text-emerald-600",
+    capabilities: {
+      canSign: true,
+      canSignAuthEntries: false,
+      requiresExtension: true,
+      supportsTestnet: true,
+      supportsMainnet: true,
+    },
+    connect: connectXbull,
+    signTransaction: xbullSign,
+    revalidate: xbullRevalidate,
   },
 };
 
