@@ -26,9 +26,14 @@ export interface QueuedMutation {
 
 export type FlushStatus = "idle" | "flushing" | "error";
 
+/** 24 hours in ms — mutations older than this are considered stale */
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
 interface SyncQueueState {
   queue: QueuedMutation[];
   flushStatus: FlushStatus;
+  /** Issue #755: Whether a stale sync warning banner has been dismissed */
+  staleSyncWarningDismissed: boolean;
 
   enqueue: (mutation: Omit<QueuedMutation, "id" | "enqueuedAt" | "attempts">) => void;
   /** Remove a mutation by id (e.g. after successful flush) */
@@ -37,6 +42,10 @@ interface SyncQueueState {
   flush: (onCloudIdResolved?: (localId: string, cloudId: string) => void) => Promise<void>;
   clearQueue: () => void;
   pendingCount: () => number;
+  /** Issue #755: Returns true if there are mutations older than 24h that haven't been flushed */
+  hasStaleSync: () => boolean;
+  /** Issue #755: Dismiss the stale sync warning banner */
+  dismissStaleSyncWarning: () => void;
 }
 
 const MAX_ATTEMPTS = 5;
@@ -46,6 +55,7 @@ export const useSyncQueueStore = create<SyncQueueState>()(
     (set, get) => ({
       queue: [],
       flushStatus: "idle",
+      staleSyncWarningDismissed: false,
 
       enqueue: (mutation) => {
         const id = crypto.randomUUID();
@@ -54,6 +64,8 @@ export const useSyncQueueStore = create<SyncQueueState>()(
             ...state.queue,
             { ...mutation, id, enqueuedAt: Date.now(), attempts: 0 },
           ],
+          // Reset dismissed flag when new mutations are enqueued
+          staleSyncWarningDismissed: false,
         }));
       },
 
@@ -105,14 +117,24 @@ export const useSyncQueueStore = create<SyncQueueState>()(
         set({ flushStatus: "idle" });
       },
 
-      clearQueue: () => set({ queue: [], flushStatus: "idle" }),
+      clearQueue: () => set({ queue: [], flushStatus: "idle", staleSyncWarningDismissed: false }),
 
       pendingCount: () => get().queue.length,
+
+      /** Issue #755: Returns true if any mutation is older than 24h and still pending */
+      hasStaleSync: () => {
+        const { queue, staleSyncWarningDismissed } = get();
+        if (staleSyncWarningDismissed || queue.length === 0) return false;
+        const cutoff = Date.now() - STALE_THRESHOLD_MS;
+        return queue.some((m) => m.enqueuedAt < cutoff);
+      },
+
+      dismissStaleSyncWarning: () => set({ staleSyncWarningDismissed: true }),
     }),
     {
       name: "soroban-sync-queue",
       // Only persist the queue itself, not transient flush status
-      partialize: (state) => ({ queue: state.queue }),
+      partialize: (state) => ({ queue: state.queue, staleSyncWarningDismissed: state.staleSyncWarningDismissed }),
     },
   ),
 );

@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/command-palette";
 import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
+import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
 
 export const metadata: Metadata = {
@@ -54,6 +55,7 @@ export default async function RootLayout({
               <AppSidebar />
               <SidebarInset>
                 <SiteHeader />
+                <WalletNetworkMismatchBanner />
                 <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
                   {children}
                   <CommandPalette />
