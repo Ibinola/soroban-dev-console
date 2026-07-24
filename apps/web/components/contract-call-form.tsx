@@ -210,6 +210,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       (key) => key.toUpperCase() === normalizedConnectedAddress,
     );
 
+  const searchParams = useSearchParams();
+  const methodParam = searchParams.get("method");
+
   useEffect(() => {
     if (
       contractId ===
@@ -221,14 +224,15 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   }, [contractId, spec, setSpec]);
 
   useEffect(() => {
-    if (initialMethod && spec?.functions.some(f => f.name === initialMethod)) {
-      if (fnName !== initialMethod) {
-        setFnName(initialMethod);
-        const nextFunction = spec.functions.find((entry) => entry.name === initialMethod);
+    if (methodParam && spec?.functions.some((f) => f.name === methodParam)) {
+      if (fnName !== methodParam) {
+        setFnName(methodParam);
+        setSimulation(null);
+        const nextFunction = spec.functions.find((entry) => entry.name === methodParam);
         setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
       }
     }
-  }, [initialMethod, spec]);
+  }, [methodParam, spec, fnName]);
 
   const handleFnChange = (name: string) => {
     setFnName(name);

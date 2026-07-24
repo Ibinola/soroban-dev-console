@@ -20,6 +20,7 @@
     "release-evidence": "npx tsx scripts/generate-release-evidence.ts",
     "security:scan-staged": "npx tsx scripts/secret-scan-staged.ts",
     "prepare": "husky"
+    "generate-changelog": "npx tsx scripts/generate-changelog.ts"
   },
   "devDependencies": {
     "husky": "^9.1.7",

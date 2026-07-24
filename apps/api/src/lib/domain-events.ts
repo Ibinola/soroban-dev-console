@@ -65,6 +65,19 @@ export interface ShareRevokedEvent {
   workspaceId: string;
 }
 
+// ── Sync health events ────────────────────────────────────────────────────────
+
+export const WORKSPACE_SYNC_STALE = "workspace.sync.stale" as const;
+
+export interface WorkspaceSyncStaleEvent {
+  workspaceId: string;
+  ownerKey: string;
+  /** ISO timestamp of the last mutation attempt */
+  lastAttemptAt: string;
+  /** Number of pending mutations in the queue */
+  pendingMutations: number;
+}
+
 // ── RPC events ────────────────────────────────────────────────────────────────
 
 export const RPC_PROXIED = "rpc.proxied" as const;
