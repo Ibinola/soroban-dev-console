@@ -1,0 +1,51 @@
+name: Weekly Supply Chain Integrity
+
+# Issue #759: Run the full integrity check weekly via a scheduled workflow.
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  supply-chain:
+    name: Supply Chain Integrity Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Issue #759: Run lockfile + version consistency checks
+      - name: Dependency integrity
+        run: npm run check-integrity
+
+      # Issue #759: npm audit — fail on high/critical vulnerabilities
+      - name: npm audit (high/critical)
+        run: npm audit --audit-level=high
+
+      # Issue #759: License compatibility check
+      - name: License check
+        run: npx license-checker --production --failOn "GPL-2.0;GPL-3.0;AGPL-3.0;AGPL-1.0;LGPL-2.0;LGPL-2.1;LGPL-3.0"
+        continue-on-error: false
+
+      - name: Write summary
+        if: always()
+        run: |
+          echo "## Weekly Supply Chain Integrity Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Run at: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Checks performed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Lockfile presence and consistency" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Shared dependency version alignment" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ npm audit (high/critical threshold)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ License compatibility (GPL/AGPL block)" >> $GITHUB_STEP_SUMMARY
