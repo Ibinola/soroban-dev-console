@@ -330,6 +330,7 @@ export function DataManagement() {
   const [isImporting, setIsImporting] = useState(false);
   const [isGeneratingBundle, setIsGeneratingBundle] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importRaw, setImportRaw] = useState<unknown | null>(null);
   const [showPreImportReview, setShowPreImportReview] = useState(false);
 
   // FE-037: recovery state
@@ -405,7 +406,18 @@ export function DataManagement() {
     if (!file) return;
 
     setImportFile(file);
-    setShowPreImportReview(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        setImportRaw(parsed);
+      } catch {
+        setImportRaw({ invalidJson: true });
+      }
+      setShowPreImportReview(true);
+    };
+    reader.readAsText(file);
   };
 
   const handlePreImportConfirm = (selection: ImportSelection) => {
@@ -677,7 +689,7 @@ export function DataManagement() {
       </Card>
 
       {/* Pre-Import Review Modal */}
-      {showPreImportReview && importFile && (
+      {showPreImportReview && importRaw !== null && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
@@ -689,21 +701,22 @@ export function DataManagement() {
                   onClick={() => {
                     setShowPreImportReview(false);
                     setImportFile(null);
+                    setImportRaw(null);
                   }}
                 >
                   <XCircle className="h-4 w-4" />
                 </Button>
               </div>
               <PreImportReview
-                raw={importFile}
+                raw={importRaw}
                 onConfirm={(selection) => {
                   setShowPreImportReview(false);
-                  setImportFile(null);
                   handlePreImportConfirm(selection);
                 }}
                 onCancel={() => {
                   setShowPreImportReview(false);
                   setImportFile(null);
+                  setImportRaw(null);
                 }}
                 options={{ autoSelectAll: true, requireUserConfirmation: true }}
               />

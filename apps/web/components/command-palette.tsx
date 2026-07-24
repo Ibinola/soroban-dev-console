@@ -21,6 +21,7 @@ import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { useContractStore } from "@/store/useContractStore";
 import { useSavedCallsStore } from "@/store/useSavedCallsStore";
+import { useAbiStore } from "@/store/useAbiStore";
 
 // ── FE-030: Global search index types ────────────────────────────────────────
 
@@ -30,7 +31,8 @@ type SearchItemKind =
   | "saved-call"
   | "bookmark"
   | "artifact"
-  | "nav";
+  | "nav"
+  | "contract-method";
 
 interface SearchItem {
   id: string;
@@ -80,6 +82,7 @@ export function CommandPalette() {
   const { currentNetwork, setNetwork } = useNetworkStore();
   const { contracts } = useContractStore();
   const { savedCalls } = useSavedCallsStore();
+  const { specs } = useAbiStore();
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -168,6 +171,52 @@ export function CommandPalette() {
       });
     }
 
+    // Contract Methods
+    const activeBookmarks = getContractBookmarks(activeWorkspaceId);
+    const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
+    const targetContracts = new Map<string, { name: string; network: string }>();
+
+    for (const b of activeBookmarks) {
+      const contractObj = contracts.find((c) => c.id === b.contractId);
+      targetContracts.set(b.contractId, {
+        name: contractObj?.name || `Contract ${b.contractId.slice(0, 4)}`,
+        network: b.networkId || contractObj?.network || activeWs?.selectedNetwork || "testnet",
+      });
+    }
+    for (const cId of activeWs?.contractIds ?? []) {
+      if (!targetContracts.has(cId)) {
+        const contractObj = contracts.find((c) => c.id === cId);
+        targetContracts.set(cId, {
+          name: contractObj?.name || `Contract ${cId.slice(0, 4)}`,
+          network: contractObj?.network || activeWs?.selectedNetwork || "testnet",
+        });
+      }
+    }
+
+    for (const [contractId, info] of targetContracts.entries()) {
+      const spec = specs[contractId] ?? (contractId === "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" ? {
+        functions: [
+          { name: "balance", inputs: [{ name: "id", type: "address", required: true }] },
+          { name: "decimals", inputs: [] },
+          { name: "name", inputs: [] },
+        ]
+      } : undefined);
+
+      if (spec && Array.isArray(spec.functions)) {
+        for (const fn of spec.functions) {
+          const inputsSig = fn.inputs?.map((i) => `${i.name}: ${i.type}`).join(", ") ?? "";
+          const sig = `${fn.name}(${inputsSig})`;
+          items.push({
+            id: `contract-method:${contractId}:${fn.name}`,
+            kind: "contract-method",
+            label: `${info.name} > ${fn.name}`,
+            sublabel: `${info.network} · ${sig}`,
+            onSelect: () => router.push(`/contracts/${contractId}?method=${encodeURIComponent(fn.name)}`),
+          });
+        }
+      }
+    }
+
     // Saved calls
     for (const sc of savedCalls) {
       items.push({
@@ -215,6 +264,7 @@ export function CommandPalette() {
     workspaces,
     contracts,
     savedCalls,
+    specs,
     router,
     setActiveWorkspace,
     activeWorkspaceId,
@@ -247,6 +297,7 @@ export function CommandPalette() {
     bookmark: <Bookmark className="mr-2 h-4 w-4 text-muted-foreground" />,
     artifact: <Box className="mr-2 h-4 w-4 text-muted-foreground" />,
     nav: <Zap className="mr-2 h-4 w-4 text-muted-foreground" />,
+    "contract-method": <FileCode className="mr-2 h-4 w-4 text-muted-foreground" />,
   };
 
   const kindLabel: Record<SearchItemKind, string> = {
@@ -256,6 +307,7 @@ export function CommandPalette() {
     bookmark: "Bookmarks",
     artifact: "Artifacts",
     nav: "Navigation",
+    "contract-method": "Contract Methods",
   };
 
   // Group filtered items by kind

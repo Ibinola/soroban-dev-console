@@ -216,4 +216,58 @@ describe('useWorkspaceStore', () => {
       expect(migrated[0].artifactRefs).toEqual([]);
     });
   });
+
+  describe('workspace duplication (clone)', () => {
+    it('should clone workspace contracts, saved calls, and artifacts into new workspace', () => {
+      const { addContractToWorkspace, linkSavedCall, attachArtifact, duplicateWorkspace } =
+        useWorkspaceStore.getState();
+
+      addContractToWorkspace('default', 'contract-abc');
+      linkSavedCall('default', 'call-xyz');
+      attachArtifact('default', { kind: 'wasm', id: 'wasm-1' });
+
+      const cloned = duplicateWorkspace('default', 'Copy of Default Project');
+      expect(cloned).not.toBeNull();
+      expect(cloned?.name).toBe('Copy of Default Project');
+      expect(cloned?.contractIds).toEqual(['contract-abc']);
+      expect(cloned?.savedCallIds).toEqual(['call-xyz']);
+      expect(cloned?.artifactRefs).toHaveLength(1);
+      expect(cloned?.artifactRefs[0].id).toBe('wasm-1');
+
+      const { workspaces } = useWorkspaceStore.getState();
+      expect(workspaces).toHaveLength(2);
+    });
+
+    it('should fallback to "Copy of <Name>" when no custom name is supplied', () => {
+      const { duplicateWorkspace } = useWorkspaceStore.getState();
+      const cloned = duplicateWorkspace('default');
+      expect(cloned?.name).toBe('Copy of Default Project');
+    });
+  });
+
+  describe('workspace archive/restore', () => {
+    it('should mark workspace as archived and switch active workspace if needed', () => {
+      const { createWorkspace, archiveWorkspace } = useWorkspaceStore.getState();
+      createWorkspace('Workspace 2');
+
+      const { workspaces } = useWorkspaceStore.getState();
+      const idToArchive = workspaces[1].id;
+
+      archiveWorkspace(idToArchive);
+
+      const { workspaces: updatedWorkspaces } = useWorkspaceStore.getState();
+      const archived = updatedWorkspaces.find((w) => w.id === idToArchive);
+      expect(archived?.archived).toBe(true);
+    });
+
+    it('should restore an archived workspace via unarchiveWorkspace', () => {
+      const { archiveWorkspace, unarchiveWorkspace } = useWorkspaceStore.getState();
+
+      archiveWorkspace('default');
+      expect(useWorkspaceStore.getState().workspaces[0].archived).toBe(true);
+
+      unarchiveWorkspace('default');
+      expect(useWorkspaceStore.getState().workspaces[0].archived).toBe(false);
+    });
+  });
 });
