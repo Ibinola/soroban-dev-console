@@ -25,9 +25,9 @@ function detectMode(): RuntimeMode {
 const SERVER_REQUIRED: string[] = ["DATABASE_URL", "WEB_ORIGIN", "PORT"];
 
 const RPC_DEFAULTS: Record<string, string> = {
-  SOROBAN_RPC_TESTNET_URL: "https://soroban-testnet.stellar.org:443",
-  SOROBAN_RPC_FUTURENET_URL: "https://rpc-futurenet.stellar.org:443",
-  SOROBAN_RPC_LOCAL_URL: "http://localhost:8000/soroban/rpc",
+  RPC_ENDPOINTS_TESTNET: "https://soroban-testnet.stellar.org:443",
+  RPC_ENDPOINTS_FUTURENET: "https://rpc-futurenet.stellar.org:443",
+  RPC_ENDPOINTS_LOCAL: "http://localhost:8000/soroban/rpc",
 };
 
 /** RPC vars required in local mode (demo/ci treat them as optional). */
@@ -87,13 +87,13 @@ export function validateEnv(): void {
   if (mode === "local") {
     // In local mode apply defaults for missing optional RPC vars, then warn about mainnet
     applyDefaults(RPC_DEFAULTS);
-    if (!process.env["SOROBAN_RPC_MAINNET_URL"]) {
-      console.warn("[env:rpc] SOROBAN_RPC_MAINNET_URL is not set — mainnet RPC calls will fail.");
+    if (!process.env["RPC_ENDPOINTS_MAINNET"]) {
+      console.warn("[env:rpc] RPC_ENDPOINTS_MAINNET is not set — mainnet RPC calls will fail.");
     }
   } else {
     // demo / ci: apply defaults silently, warn about any still-missing RPC vars
     applyDefaults(RPC_DEFAULTS);
-    warnMissing([...RPC_REQUIRED_IN_LOCAL, "SOROBAN_RPC_MAINNET_URL"], "rpc");
+    warnMissing([...RPC_REQUIRED_IN_LOCAL, "RPC_ENDPOINTS_MAINNET"], "rpc");
   }
 
   // Contract fixtures — only required in local mode

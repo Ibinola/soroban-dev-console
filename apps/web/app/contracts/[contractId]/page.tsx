@@ -8,9 +8,10 @@ import {
   AlertCircle,
   CheckCircle2,
   FlaskConical,
+  Link as LinkIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { ContractCallForm } from "@/components/contract-call-form";
@@ -39,12 +40,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@devconsole/ui";
 
 export default function ContractDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const networkParam = searchParams?.get("network");
   const contractId = params.contractId as string;
-  const { getActiveNetworkConfig } = useNetworkStore();
+  const { getActiveNetworkConfig, getAllNetworks, setNetwork } = useNetworkStore();
   const { getSpec, setSpec } = useAbiStore();
   const { activeWorkspaceId, addContractToWorkspace } = useWorkspaceStore();
   const { isConnected, isSandboxMode, enterSandbox } = useWallet();
   const spec = getSpec(contractId);
+
+  useEffect(() => {
+    if (networkParam) {
+      const all = getAllNetworks();
+      const valid = all.some((n) => n.id === networkParam);
+      if (valid && getActiveNetworkConfig().id !== networkParam) {
+        setNetwork(networkParam);
+      }
+    }
+  }, [networkParam, getAllNetworks, getActiveNetworkConfig, setNetwork]);
 
   const [overview, setOverview] = useState<ContractOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,10 +200,24 @@ export default function ContractDetailPage() {
         </div>
 
         <div className="flex shrink-0 gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              const url = new URL(window.location.href);
+              const activeNetwork = getActiveNetworkConfig().id;
+              if (!url.searchParams.has("network")) {
+                url.searchParams.set("network", activeNetwork);
+              }
+              navigator.clipboard.writeText(url.toString());
+              toast.success("Shareable link copied to clipboard");
+            }}
+          >
+            <LinkIcon className="mr-1 h-4 w-4" /> Share Link
+          </Button>
           <ContractUpgradeModal contractId={contractId} />
           <Button variant="outline" asChild>
             <a
-              href={`https://stellar.expert/explorer/testnet/contract/${contractId}`}
+              href={`https://stellar.expert/explorer/${getActiveNetworkConfig().id}/contract/${contractId}`}
               target="_blank"
               rel="noreferrer"
             >

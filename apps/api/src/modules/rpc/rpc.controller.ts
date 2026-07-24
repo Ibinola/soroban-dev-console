@@ -1,7 +1,8 @@
-import { Body, Controller, Param, Post, Res, UseGuards } from "@nestjs/common";
-import type { Response } from "express";
+import { Body, Controller, Param, Post, Get, Res, Req, UseGuards, ForbiddenException } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { RpcRateLimitGuard } from "./rpc-rate-limit.guard.js";
 import { RpcService } from "./rpc.service.js";
+import { RpcFailoverService } from "./rpc-failover.service.js";
 import { TransactionNormalizerService } from "./transaction-normalizer.service.js";
 import {
   NormalizedTransactionResult,
@@ -15,7 +16,20 @@ export class RpcController {
   constructor(
     private readonly rpcService: RpcService,
     private readonly normalizer: TransactionNormalizerService,
+    private readonly failover: RpcFailoverService,
   ) {}
+
+  @Get("endpoints/status")
+  getEndpointStatus(@Req() req: Request) {
+    const ip = req.ip || req.socket?.remoteAddress;
+    if (ip !== "::1" && ip !== "127.0.0.1" && ip !== "::ffff:127.0.0.1") {
+      throw new ForbiddenException("Only internal localhost requests allowed");
+    }
+    return {
+      success: true,
+      data: this.failover.getStatus(),
+    };
+  }
 
   @Post(":network")
   async proxyRpc(
