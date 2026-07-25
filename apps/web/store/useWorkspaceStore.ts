@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { toast } from "sonner";
 import { useNetworkStore } from "./useNetworkStore";
 import type {
   WorkspaceArtifactRef,
@@ -317,14 +318,36 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           (workspace) => workspace.id === get().activeWorkspaceId,
         ),
 
-      deleteWorkspace: (id) =>
+      deleteWorkspace: (id) => {
+        // Issue #749: snapshot the workspace and surrounding state before deleting
+        // so the Undo action can restore it within the 5-second window.
+        const prev = get();
+        const target = prev.workspaces.find((w) => w.id === id);
+        if (!target) return;
+
+        const previousActiveId = prev.activeWorkspaceId;
+
         set((state) => ({
           workspaces: state.workspaces.filter((w) => w.id !== id),
           activeWorkspaceId:
             state.activeWorkspaceId === id
               ? "default"
               : state.activeWorkspaceId,
-        })),
+        }));
+
+        toast(`Workspace "${target.name}" deleted`, {
+          duration: 5000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              set((state) => ({
+                workspaces: [...state.workspaces, target],
+                activeWorkspaceId: previousActiveId,
+              }));
+            },
+          },
+        });
+      },
 
       duplicateWorkspace: (id, customName) => {
         const source = get().workspaces.find((w) => w.id === id);

@@ -67,7 +67,18 @@ export default async function RootLayout({
           </SidebarProvider>
         </ThemeProvider>
 
-        <Toaster richColors position="bottom-right" />
+        <Toaster
+          richColors
+          position="bottom-right"
+          // Issue #749: max 3 visible toasts; errors persist until dismissed
+          visibleToasts={3}
+          toastOptions={{
+            duration: 3000,
+            classNames: {
+              error: "sonner-error-persist",
+            },
+          }}
+        />
       </body>
     </html>
   );

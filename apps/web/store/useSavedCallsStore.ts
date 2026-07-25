@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { toast } from "sonner";
 import { ContractArg } from "@devconsole/soroban-utils";
 
 export interface SavedCall {
@@ -89,10 +90,27 @@ export const useSavedCallsStore = create<SavedCallsState>()(
         return savedCall;
       },
 
-      removeCall: (id) =>
+      removeCall: (id) => {
+        // Issue #749: capture the call before removal so Undo can restore it.
+        const target = get().savedCalls.find((c) => c.id === id);
+        if (!target) return;
+
         set((state) => ({
           savedCalls: state.savedCalls.filter((c) => c.id !== id),
-        })),
+        }));
+
+        toast(`Saved call "${target.name}" removed`, {
+          duration: 5000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              set((state) => ({
+                savedCalls: [target, ...state.savedCalls],
+              }));
+            },
+          },
+        });
+      },
 
       getCallsForContract: (contractId) =>
         get().savedCalls.filter((c) => c.contractId === contractId),
