@@ -10,6 +10,10 @@
  * INFRA-212: Worker concurrency is controlled via WORKER_CONCURRENCY env var
  * (default: 3). This caps how many jobs a single process claims simultaneously,
  * preventing resource exhaustion under Wave 5 load spikes.
+ *
+ * INFRA-828: Dead-letter handling for failed jobs.
+ * Jobs that exhaust their retries are moved to a dead-letter queue with
+ * full context (error, final payload, execution history) for later inspection.
  */
 
 import { Injectable, Logger } from "@nestjs/common";
@@ -26,6 +30,10 @@ export interface EnqueueJobOptions {
   maxAttempts?: number;
   /** ISO string or Date for deferred execution */
   scheduledAt?: string | Date;
+  /** INFRA-820: Queue name for topology-based routing */
+  queue?: string;
+  /** INFRA-820: Priority level (higher = more urgent, 0-100) */
+  priority?: number;
 }
 
 export interface JobRecord {
@@ -66,41 +74,47 @@ export class BackgroundJobService {
       data: {
         type: options.type,
         status: "pending",
+        queue: options.queue ?? "default",
+        priority: options.priority ?? 0,
         payload: options.payload as Prisma.InputJsonValue,
         maxAttempts: options.maxAttempts ?? 3,
         scheduledAt: options.scheduledAt ? new Date(options.scheduledAt) : new Date(),
       },
     });
-    this.logger.debug(`Enqueued job ${record.id} (${record.type})`);
+    this.logger.debug(`Enqueued job ${record.id} (${record.type}) in queue ${record.queue} priority ${record.priority}`);
     await this.audit.log({
       actor: "system:background-jobs",
       action: "job.enqueued",
       resourceType: "background_job",
       resourceId: record.id,
-      summary: `Enqueued ${record.type} job`,
-      metadata: { type: record.type, maxAttempts: record.maxAttempts },
+      summary: `Enqueued ${record.type} job in ${record.queue}`,
+      metadata: { type: record.type, maxAttempts: record.maxAttempts, queue: record.queue, priority: record.priority },
     });
     return record;
   }
 
   /**
-   * Claim the next pending job of a given type.
-   * Returns null if no job is available or all are locked.
+   * Claim the next pending job of a given type, ordered by queue priority.
+   * Priority jobs are claimed before default queue jobs.
    */
-  async claimNext(type: string): Promise<JobRecord | null> {
+  async claimNext(type: string, queue?: string): Promise<JobRecord | null> {
     const now = new Date();
     const lockUntil = new Date(now.getTime() + this.LOCK_DURATION_MS);
 
-    // Find a claimable job: pending/failed with attempts < maxAttempts and not locked
+    // Build where clause with optional queue filter
+    const where: any = {
+      type,
+      status: { in: ["pending", "failed"] },
+      scheduledAt: { lte: now },
+      attempts: { lt: this.prisma.backgroundJob.fields.maxAttempts as any },
+      OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
+    };
+    if (queue) where.queue = queue;
+
+    // Find a claimable job: priority first, then scheduled order
     const candidate = await this.prisma.backgroundJob.findFirst({
-      where: {
-        type,
-        status: { in: ["pending", "failed"] },
-        scheduledAt: { lte: now },
-        attempts: { lt: this.prisma.backgroundJob.fields.maxAttempts as any },
-        OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
-      },
-      orderBy: { scheduledAt: "asc" },
+      where,
+      orderBy: [{ priority: "desc" }, { scheduledAt: "asc" }],
     });
 
     if (!candidate) return null;
@@ -159,17 +173,43 @@ export class BackgroundJobService {
         status: isDead ? "dead" : "failed",
         lastError: error,
         lockedUntil: null,
+        deadLetterAt: isDead ? new Date() : undefined,
+        deadLetterReason: isDead ? error : undefined,
+        queue: isDead ? "dead_letter" : job.attempts >= job.maxAttempts - 1 ? "retry" : undefined,
       },
     });
-    this.logger.warn(`Job ${id} ${isDead ? "dead (max attempts)" : "failed"}: ${error}`);
+    this.logger.warn(`Job ${id} ${isDead ? "dead (max attempts)" : "failed"} in queue ${job.queue}: ${error}`);
     await this.audit.log({
       actor: "system:background-jobs",
       action: isDead ? "job.dead" : "job.failed",
       resourceType: "background_job",
       resourceId: id,
       summary: isDead ? "Background job exhausted retries" : "Background job failed",
-      metadata: { error },
+      metadata: { error, queue: job.queue },
     });
+  }
+
+  /** INFRA-820: Inspect dead-letter queue for operator visibility. */
+  async getDeadLetterJobs(limit = 50): Promise<JobRecord[]> {
+    return this.prisma.backgroundJob.findMany({
+      where: { queue: "dead_letter", status: "dead" },
+      orderBy: { deadLetterAt: "desc" },
+      take: limit,
+    }) as Promise<JobRecord[]>;
+  }
+
+  /** INFRA-820: Returns queue depth stats for monitoring. */
+  async getQueueStats(): Promise<Record<string, number>> {
+    const counts = await this.prisma.backgroundJob.groupBy({
+      by: ["queue", "status"],
+      _count: { id: true },
+    });
+    const stats: Record<string, number> = {};
+    for (const row of counts) {
+      const key = `${row.queue}:${row.status}`;
+      stats[key] = row._count.id;
+    }
+    return stats;
   }
 
   async replay(id: string): Promise<JobRecord | null> {
@@ -184,6 +224,9 @@ export class BackgroundJobService {
         lastError: null,
         lockedUntil: null,
         scheduledAt: new Date(),
+        queue: job.queue === "dead_letter" ? "retry" : job.queue,
+        deadLetterAt: null,
+        deadLetterReason: null,
       },
     });
 
@@ -220,8 +263,66 @@ export class BackgroundJobService {
     return stats as Record<JobStatus, number>;
   }
 
-  /** INFRA-212: Returns current worker configuration for operator visibility. */
+  /** INFRA-828: Returns current worker configuration for operator visibility. */
   getWorkerConfig(): { concurrency: number } {
     return { concurrency: this.concurrency };
+  }
+
+  /** INFRA-828: Retry a dead-letter job by resetting its state. */
+  async retryDeadLetter(id: string): Promise<JobRecord | null> {
+    const job = await this.prisma.backgroundJob.findUnique({ where: { id } });
+    if (!job || job.status !== "dead") return null;
+
+    await this.prisma.backgroundJob.update({
+      where: { id },
+      data: {
+        status: "pending",
+        attempts: 0,
+        lastError: null,
+        lockedUntil: null,
+        scheduledAt: new Date(),
+        deadLetterAt: null,
+        deadLetterReason: null,
+        queue: job.queue === "dead_letter" ? "retry" : job.queue,
+      },
+    });
+
+    await this.audit.log({
+      actor: "system:background-jobs",
+      action: "job.retried_dead_letter",
+      resourceType: "background_job",
+      resourceId: id,
+      summary: "Dead-letter job returned to pending queue for retry",
+      metadata: { type: job.type, previousAttempts: job.attempts },
+    });
+
+    return this.prisma.backgroundJob.findUnique({ where: { id } }) as Promise<JobRecord>;
+  }
+
+  /** INFRA-828: Purge dead-letter jobs older than the specified retention days. */
+  async purgeDeadLetterJobs(retentionDays = 14): Promise<number> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    const result = await this.prisma.backgroundJob.deleteMany({
+      where: {
+        status: "dead",
+        updatedAt: { lt: cutoff },
+      },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(`Purged ${result.count} dead-letter jobs older than ${retentionDays} days`);
+      await this.audit.log({
+        actor: "system:background-jobs",
+        action: "job.dead_letter_purged",
+        resourceType: "background_job",
+        resourceId: "batch",
+        summary: `Purged ${result.count} dead-letter jobs`,
+        metadata: { retentionDays, cutoffDate: cutoff.toISOString() },
+      });
+    }
+
+    return result.count;
   }
 }

@@ -51,6 +51,14 @@ If the tables are empty, run the seed script:
 cd apps/api && npx prisma db seed
 ```
 
+The seed is idempotent (it upserts), so it is safe to run repeatedly. To start
+from a clean slate, pass `--reset`, which truncates the seeded tables before
+re-seeding:
+
+```bash
+cd apps/api && npx prisma db seed -- --reset
+```
+
 Or use the Wave fixture generators to seed operational scenarios:
 
 ```bash

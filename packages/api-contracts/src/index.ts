@@ -115,6 +115,7 @@ export interface WorkspaceSummary {
   name: string;
   description: string | null;
   selectedNetwork: string;
+  archived?: boolean;
   /** BE-006: Current revision for optimistic concurrency control. */
   revision: number;
   createdAt: Date | string;
@@ -140,6 +141,7 @@ export interface UpdateWorkspacePayload {
   name?: string;
   description?: string;
   selectedNetwork?: string;
+  archived?: boolean;
   contracts?: WorkspaceContract[];
   interactions?: WorkspaceInteraction[];
   /** BE-006: Pass the current revision to enable optimistic concurrency control. */
@@ -403,6 +405,47 @@ export interface AppealTimingResult {
   appealDeadline: string;
 }
 
+// ── AI-210: Coordinated abuse pattern detection ───────────────────────────────
+
+export type AbuseEventKind =
+  | "appeal_submitted"
+  | "issue_claimed"
+  | "contributor_registered"
+  | "duplicate_submission"
+  | "rapid_resubmission";
+
+export type AbusePatternKind =
+  | "VELOCITY_CLUSTER"
+  | "APPEAL_FLOODING"
+  | "ISSUE_FARMING"
+  | "SHARED_METADATA"
+  | "DUPLICATE_APPEAL_CLUSTER";
+
+export type CoordinatedRiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface AbuseEventPayload {
+  contributorId: string;
+  issueRef: string;
+  kind: AbuseEventKind;
+  occurredAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DetectedPatternSummary {
+  kind: AbusePatternKind;
+  contributorIds: string[];
+  issueRefs: string[];
+  description: string;
+}
+
+export interface CoordinatedAbuseReportResponse {
+  analysedEventCount: number;
+  patterns: DetectedPatternSummary[];
+  overallRisk: CoordinatedRiskLevel;
+  requiresHumanReview: boolean;
+  generatedAt: string;
+}
+
 // ── Budget Accounting (BE-201, BE-202, BE-203, BE-204) ───────────────────────────
 
 export type BudgetEventType = 
@@ -481,6 +524,106 @@ export interface GetBudgetMetricsQuery {
   includeEvents?: boolean;
 }
 
+// ── AI-201: Prompt & Policy Registry ─────────────────────────────────────────
+
+export type PromptPolicyKind = "prompt" | "policy" | "threshold" | "model_version";
+
+export interface PromptPolicyEntrySummary {
+  id: string;
+  key: string;
+  version: number;
+  kind: PromptPolicyKind;
+  content: string;
+  isActive: boolean;
+  publishedBy: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface CreatePromptPolicyPayload {
+  key: string;
+  kind: PromptPolicyKind;
+  content: string;
+  notes?: string;
+  publishedBy?: string;
+}
+
+export interface ActivatePromptPolicyPayload {
+  publishedBy?: string;
+}
+
+// ── AI-202: Review Context AI Preprocessor ───────────────────────────────────
+
+export type ReviewSignal = "strong_approval" | "approval" | "neutral" | "changes_requested" | "rejected";
+
+export interface AIReadyReviewContext {
+  pullRequestId: string;
+  repositoryId: string;
+  signal: ReviewSignal;
+  confidence: number;
+  reviewerCount: number;
+  approvalCount: number;
+  changesRequestedCount: number;
+  totalComments: number;
+  totalRequestedChanges: number;
+  latestMergeStatus: string;
+  humanOverrideRecommended: boolean;
+  preprocessedAt: string;
+}
+
+// ── INFRA-213: Data Retention ─────────────────────────────────────────────────
+
+export interface RetentionPolicy {
+  resource: string;
+  retentionDays: number;
+  description: string;
+}
+
+export interface RetentionRunResult {
+  resource: string;
+  deletedCount: number;
+  cutoffDate: string;
+  dryRun: boolean;
+}
+
+export interface RetentionRunSummary {
+  ranAt: string;
+  dryRun: boolean;
+  results: RetentionRunResult[];
+  totalDeleted: number;
+}
+
+// ── INFRA-214: Feature Flag & Config Distribution ────────────────────────────
+
+export type WaveFeatureKey =
+  | "wave5_ai_appeals"
+  | "wave5_budget_accounting"
+  | "wave5_contributor_verification"
+  | "wave5_point_ledger"
+  | "wave5_notifications"
+  | "wave5_review_context"
+  | "wave5_data_retention";
+
+export interface WaveFeatureFlag {
+  key: WaveFeatureKey;
+  enabled: boolean;
+  rolloutPercent: number;
+  overriddenBy: string | null;
+  updatedAt: string;
+}
+
+export interface WaveRuntimeControls {
+  flags: WaveFeatureFlag[];
+  version: number;
+  generatedAt: string;
+}
+
+export interface SetFeatureFlagPayload {
+  enabled: boolean;
+  rolloutPercent?: number;
+  overriddenBy?: string;
+}
+
 export interface SetOrganizationBudgetPayload {
   organizationId: string;
   capPoints: number;
@@ -501,4 +644,59 @@ export interface ReleaseReservationPayload {
 export interface ReconcileBudgetPayload {
   organizationId: string;
   dryRun?: boolean;
+}
+
+// ── AI Appeal Pipeline (AI-203, AI-207) ───────────────────────────────────────
+
+export interface EvidencePackInput {
+  appealId: string;
+  pullRequestId: string;
+  workflowContext?: Record<string, unknown>;
+}
+
+export interface ReviewEvidencePack {
+  appealId: string;
+  issueRef: string;
+  pullRequestId: string;
+  assembledAt: string;
+  appeal: {
+    reason: string;
+    status: string;
+    createdAt: string;
+    resolvedAt: string | null;
+    resolution: string | null;
+    evidenceJson: Record<string, unknown> | null;
+  };
+  reviewSummary: {
+    totalReviews: number;
+    approvalCount: number;
+    changesRequestedCount: number;
+    totalComments: number;
+    latestMergeStatus: string;
+    reviewTimeline: Array<{
+      reviewerId: string;
+      decision: string;
+      commentCount: number;
+      reviewedAt: string;
+    }>;
+  };
+  priorDecisions: Array<{
+    outcome: string;
+    modelVersion: string | null;
+    humanOverride: boolean;
+    rationaleSummary: string | null;
+    decidedAt: string;
+  }>;
+  workflowContext: Record<string, unknown> | null;
+}
+
+export interface AppealExplanation {
+  appealId: string;
+  outcome: "approved" | "rejected" | "escalated";
+  confidence: "high" | "medium" | "low";
+  requiresHumanReview: boolean;
+  headline: string;
+  detail: string;
+  nextSteps: string[];
+  generatedAt: string;
 }

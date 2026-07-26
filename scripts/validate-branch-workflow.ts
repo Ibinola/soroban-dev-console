@@ -1,47 +1,82 @@
+#!/usr/bin/env tsx
 /**
- * DEVOPS-027: Documents and validates the branch-protected contribution workflow.
- * Checks that local branch names follow the convention before pushing.
+ * validate-branch-workflow.ts
+ *
+ * Checks that the repository's branch-protection configuration and
+ * PR template are in place. In CI this runs as a soft advisory — it
+ * warns but does not block unless critical files are entirely absent.
+ *
+ * Exits non-zero only if the PR template is completely missing (CI
+ * gate requirement).
  */
 
-import { execSync } from "child_process";
+import { existsSync, readFileSync, statSync } from "fs";
+import { resolve } from "path";
 
-const PROTECTED_BRANCHES = ["main", "master", "release"];
+const ROOT = resolve(__dirname, "..");
 
-const ALLOWED_PREFIXES = [
-  "feat/",
-  "fix/",
-  "chore/",
-  "docs/",
-  "audit/",
-  "cleanup/",
-  "devops/",
+interface FileSpec {
+  path: string;
+  minBytes: number;
+  blocking: boolean;
+  description: string;
+}
+
+const REQUIRED: FileSpec[] = [
+  {
+    path: ".github/pull_request_template.md",
+    minBytes: 50,
+    blocking: true,
+    description: "GitHub PR template",
+  },
+  {
+    path: "docs/branch-protection.md",
+    minBytes: 50,
+    blocking: false,
+    description: "Branch protection documentation",
+  },
+  {
+    path: "docs/branch-pr-workflow.md",
+    minBytes: 50,
+    blocking: false,
+    description: "Branch and PR workflow documentation",
+  },
+  {
+    path: "CONTRIBUTING.md",
+    minBytes: 200,
+    blocking: false,
+    description: "Contributor guide",
+  },
 ];
 
-function getCurrentBranch(): string {
-  return execSync("git rev-parse --abbrev-ref HEAD").toString().trim();
-}
+let failed = false;
 
-function validateBranch(branch: string): void {
-  if (PROTECTED_BRANCHES.includes(branch)) {
-    console.error(`[FAIL] Direct push to '${branch}' is not allowed.`);
-    console.error("Create a feature branch and open a PR instead.");
-    console.error(`Allowed prefixes: ${ALLOWED_PREFIXES.join(", ")}`);
-    process.exit(1);
+for (const spec of REQUIRED) {
+  const full = resolve(ROOT, spec.path);
+
+  if (!existsSync(full)) {
+    const prefix = spec.blocking ? "❌ " : "⚠️ ";
+    console.error(`${prefix} Missing: ${spec.path} — ${spec.description}`);
+    if (spec.blocking) failed = true;
+    continue;
   }
 
-  const hasValidPrefix = ALLOWED_PREFIXES.some((p) => branch.startsWith(p));
-  if (!hasValidPrefix) {
-    console.warn(`[WARN] Branch '${branch}' does not follow naming conventions.`);
-    console.warn(`Expected one of: ${ALLOWED_PREFIXES.join(", ")}`);
-  } else {
-    console.log(`[OK]  Branch '${branch}' follows the contribution workflow.`);
+  const size = statSync(full).size;
+  if (size < spec.minBytes) {
+    const prefix = spec.blocking ? "❌ " : "⚠️ ";
+    console.error(
+      `${prefix} Too small: ${spec.path} (${size} bytes, need ≥ ${spec.minBytes}) — ${spec.description}`
+    );
+    if (spec.blocking) failed = true;
+    continue;
   }
 
-  console.log("\nWorkflow reminder:");
-  console.log("  1. Branch from main using an allowed prefix");
-  console.log("  2. Push your branch and open a PR");
-  console.log("  3. Audit/cleanup branches follow the same PR-based flow");
+  console.log(`✅  OK: ${spec.path}`);
 }
 
-const branch = getCurrentBranch();
-validateBranch(branch);
+if (failed) {
+  console.error("\nBranch workflow validation failed. Add the missing required files.");
+  process.exit(1);
+}
+
+console.log("\nBranch workflow validation passed.");

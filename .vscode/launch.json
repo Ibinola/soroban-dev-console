@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // ── Next.js Web App ───────────────────────────────────────────────────────
+    {
+      "name": "Next.js: debug web app",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/apps/web",
+      "env": {
+        "NODE_OPTIONS": "--inspect"
+      },
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "- Local:.*?(http://\\S+)",
+        "uriFormat": "%s"
+      },
+      "console": "integratedTerminal"
+    },
+    // ── NestJS API ────────────────────────────────────────────────────────────
+    {
+      "name": "NestJS: debug API",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start:debug"],
+      "cwd": "${workspaceFolder}/apps/api",
+      "env": {
+        "NODE_OPTIONS": "--inspect"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    // ── Vitest unit tests (web) ───────────────────────────────────────────────
+    {
+      "name": "Vitest: run web tests",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test:run"],
+      "cwd": "${workspaceFolder}/apps/web",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ],
+  // ── Compound: start full stack ─────────────────────────────────────────────
+  "compounds": [
+    {
+      "name": "Full Stack: web + API",
+      "configurations": ["Next.js: debug web app", "NestJS: debug API"]
+    }
+  ]
+}

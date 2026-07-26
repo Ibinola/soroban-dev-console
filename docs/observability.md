@@ -1,141 +1,155 @@
-# Observability: Dashboards and Service-Level Signals
+# Observability Guide
 
-> DEVOPS-207 — Baseline observability for Wave 5 operators.
+This document describes the observability features built into the Soroban DevConsole — what is instrumented, how to access it, and how to extend it.
 
-## Overview
+---
 
-This document defines the baseline set of dashboards, metrics, and health signals for the Soroban DevConsole platform. It covers the API backend, web frontend, RPC proxy, and job queues so Wave 5 operators have a shared view of platform health.
+## Table of Contents
 
-## Service-Level Signals
+1. [Request Tracing](#1-request-tracing)
+2. [Audit Logging](#2-audit-logging)
+3. [Health Endpoints](#3-health-endpoints)
+4. [Network Health Monitoring](#4-network-health-monitoring)
+5. [Local Telemetry Setup](#5-local-telemetry-setup)
+6. [Error Tracking](#6-error-tracking)
+7. [Performance Budgets](#7-performance-budgets)
+8. [Adding Instrumentation](#8-adding-instrumentation)
 
-### API Backend (`apps/api`, port 4000)
+---
 
-| Signal | Source | Healthy Threshold |
-|--------|--------|-------------------|
-| HTTP 5xx rate | Access logs / NestJS interceptor | < 1% of requests over 5 min |
-| P95 response latency | Request timing middleware | < 500 ms |
-| Database query time | Prisma query events | < 200 ms P95 |
-| RPC proxy error rate | `apps/api/src/modules/rpc` | < 5% of proxied calls |
-| Active workspace count | `GET /health` endpoint | Informational |
-| Job queue depth | `apps/api/src/modules/jobs` | < 100 pending |
-| Audit log write failures | `apps/api/src/modules/point-ledger` | 0 per hour |
+## 1. Request Tracing
 
-### Web Frontend (`apps/web`, port 3000)
+Every API request receives a correlation ID via the `CorrelationInterceptor` (`apps/api/src/lib/correlation.interceptor.ts`).
 
-| Signal | Source | Healthy Threshold |
-|--------|--------|-------------------|
-| SSR error rate | Next.js error boundary / logs | < 0.5% of page renders |
-| Core Web Vitals (LCP) | Browser RUM | < 2.5 s |
-| API fetch failure rate | Client-side fetch wrapper | < 2% of calls |
-| Build success | CI `web` job | 100% on `main` |
+- **Request header:** `x-request-id` (client-supplied or auto-generated)
+- **Response header:** `x-request-id` (echoed back on all responses)
+- **Log format:** Every log line emitted during the request lifetime includes the correlation ID
 
-### Soroban RPC Proxy
+The frontend (`apps/web/lib/api/workspaces.ts`, `rpc-gateway.ts`) automatically generates and attaches `x-request-id` on every `fetch` call.
 
-| Signal | Source | Healthy Threshold |
-|--------|--------|-------------------|
-| Upstream RPC availability | `scripts/check-service-health.sh` | ≥ 1 endpoint reachable |
-| Cache hit rate | RPC module cache layer | > 40% |
-| Rate-limit rejections | RPC module | < 10/min per workspace |
-| Failover activations | RPC module logs | Alert on any activation |
+**To trace a request end-to-end:**
 
-### Job Queues
+1. Note the `x-request-id` from the browser's network tab or response headers.
+2. Search API logs for that correlation ID.
 
-| Signal | Source | Healthy Threshold |
-|--------|--------|-------------------|
-| Queue depth | `apps/api/src/modules/jobs` | < 100 |
-| Failed job count | Job module error handler | 0 per 15 min window |
-| Job processing latency | Job module timing | < 30 s P95 |
+---
 
-## Dashboards
+## 2. Audit Logging
 
-### Recommended Dashboard Layout
+All workspace and share mutations are recorded in the `AuditLog` Prisma table.
 
-Operators should configure their observability tool (Grafana, Datadog, CloudWatch, etc.) with the following panels:
+**Schema fields:** `id`, `actor`, `action`, `resourceType`, `resourceId`, `summary`, `metadata`, `createdAt`
 
-**Row 1 — Platform Health**
-- API health check status (pass/fail)
-- RPC endpoint reachability (testnet / mainnet / futurenet / local)
-- Active DB connections
+**Reading audit logs:**
 
-**Row 2 — Traffic**
-- HTTP request rate (req/s) by status code family (2xx, 4xx, 5xx)
-- P50 / P95 / P99 API response latency
-- Web SSR render rate
-
-**Row 3 — Errors**
-- API 5xx count (time series)
-- RPC proxy error count (time series)
-- Job failure count (time series)
-
-**Row 4 — Queues & Background Work**
-- Job queue depth
-- Job processing latency histogram
-- Audit log write rate
-
-### Minimal Local Dashboard (CLI)
-
-Run the health check script to get a quick snapshot without a full observability stack:
-
-```bash
-bash scripts/check-service-health.sh
+```
+GET /api/audit
+GET /api/audit?actor=<actor>&action=<action>&resourceType=workspace&skip=0&take=50
 ```
 
-The script checks:
-1. API `/health` endpoint reachability
-2. Database connectivity (via API health response)
-3. Each configured Soroban RPC endpoint
-4. Job queue depth (if API is reachable)
+Sensitive values in `summary` and `metadata` are automatically redacted by `RedactionService` (`apps/api/src/modules/security/services/redaction.service.ts`) before storage.
 
-Exit codes:
-- `0` — all checks passed
-- `1` — one or more checks failed (details printed to stdout)
+**Redacted patterns include:** Stellar secret keys (`S...`), private keys, auth tokens, passwords, and connection strings.
 
-## Alerting Thresholds
+---
 
-See [docs/runbooks.md](./runbooks.md) for the full alert routing and escalation policy. The thresholds below map directly to runbook entries.
+## 3. Health Endpoints
 
-| Alert | Condition | Severity |
-|-------|-----------|----------|
-| API down | Health check fails 3× in 5 min | P1 |
-| High 5xx rate | > 5% of requests over 10 min | P2 |
-| RPC all endpoints down | All configured RPC URLs unreachable | P1 |
-| Job queue backed up | Depth > 500 for > 10 min | P2 |
-| DB slow queries | P95 > 1 s for > 5 min | P2 |
-| Build failure on main | CI `web` or `api` job fails | P3 |
+| Endpoint | Description |
+|---|---|
+| `GET /api/health` | Basic service liveness check |
+| `GET /api/version` | Service version |
+| `GET /api/health/networks` | Aggregated health for all configured networks |
+| `GET /api/health/networks/:network` | Health for a specific network (testnet / mainnet / futurenet) |
 
-## Instrumentation Points
-
-### API Health Endpoint
-
-The API exposes `GET /health` (module: `apps/api/src/modules/health`). The response includes:
+**Example response (`/api/health`):**
 
 ```json
 {
-  "status": "ok",
-  "db": "ok",
-  "rpc": { "testnet": "ok", "mainnet": "degraded" },
-  "uptime": 3600
+  "ok": true,
+  "service": "api",
+  "version": "0.1.0",
+  "timestamp": "2026-07-23T10:00:00.000Z"
 }
 ```
 
-### Structured Logging
+---
 
-All API modules emit structured JSON logs. Key fields:
+## 4. Network Health Monitoring
 
-| Field | Description |
-|-------|-------------|
-| `level` | `info` / `warn` / `error` |
-| `correlationId` | `x-request-id` header value |
-| `module` | NestJS module name |
-| `durationMs` | Request or operation duration |
-| `statusCode` | HTTP status (request logs only) |
+The `NetworkHealthService` (`apps/api/src/modules/health/network-health.service.ts`) polls each configured Soroban RPC endpoint.
 
-### RPC Correlation IDs
+The frontend `NetworkHealth` component (`apps/web/components/network-health.tsx`) polls `/api/health/networks` and surfaces degraded/offline networks in the UI.
 
-The RPC proxy attaches `x-request-id` to every upstream call. Use this to correlate API logs with Soroban RPC provider logs.
+The `NetworkDegradedBanner` component displays a top-of-page warning when the active network is degraded.
 
-## Maintenance
+---
 
-- Review thresholds quarterly or after each Wave launch.
-- Update this document when new modules are added to `apps/api/src/modules/`.
-- Run `bash scripts/check-service-health.sh` as part of pre-Wave validation (`npm run wave-prep`).
+## 5. Local Telemetry Setup
+
+See `docs/local-telemetry.md` for detailed setup instructions.
+
+**Quick start:**
+
+The `telemetry-bootstrap.sh` script is no longer maintained after the strip commit. Basic local observability can be achieved by:
+
+1. Pointing the API at a local Soroban RPC node.
+2. Watching API logs for correlation-ID-tagged request traces.
+3. Using the browser's DevTools network tab to inspect `x-request-id` headers.
+
+---
+
+## 6. Error Tracking
+
+Errors are surfaced in three places:
+
+1. **API logs:** `ApiErrorFilter` (`apps/api/src/lib/api-error.filter.ts`) catches all unhandled exceptions, logs them with correlation ID, and returns a structured `ApiEnvelope<never>` error response.
+
+2. **Frontend error boundary:** `apps/web/app/error.tsx` catches React rendering errors and displays a recovery UI.
+
+3. **Transaction result panel:** `TransactionResult` component (`apps/web/components/transaction-result.tsx`) decodes and displays Soroban simulation errors and on-chain failure codes.
+
+**Error response shape:**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "...",
+    "details": {}
+  }
+}
+```
+
+---
+
+## 7. Performance Budgets
+
+The web app has a performance budget enforced at build time:
+
+- Script: `apps/web/scripts/performance-budget.js`
+- npm command: `npm run check-budget --workspace=web`
+- CI step: `Check performance budgets` in the `web` job
+
+The budget file checks that Next.js bundle chunks do not exceed configured size thresholds. Update thresholds in `performance-budget.js` when adding significant new dependencies.
+
+---
+
+## 8. Adding Instrumentation
+
+### API side
+
+1. Inject `AuditService` to record mutations.
+2. Use `CorrelationInterceptor` (already global) — no additional setup needed.
+3. For new health probes, add a method to `NetworkHealthService` and expose it via `HealthController`.
+
+### Frontend side
+
+1. Use `apiFetch` from `apps/web/lib/api/workspaces.ts` (already injects `x-request-id`).
+2. Use `sonner` toasts for user-visible error surfaces.
+3. For long-running operations, use `BackgroundJobModule` on the API and poll via the background job endpoint.
+
+---
+
+*Last updated: 2026-07-23*

@@ -164,3 +164,88 @@ export function scanAllStores(): Record<string, CorruptionReport> {
   }
   return results;
 }
+
+/**
+ * FE-037b: Pre-flight deploy validation.
+ *
+ * Runs a set of cheap client-side checks before a deploy transaction is
+ * submitted so common misconfigurations surface in a checklist rather than
+ * as an on-chain failure. Pure and side-effect free for easy testing.
+ */
+export interface DeployPreflightInput {
+  walletConnected: boolean;
+  walletNetwork?: string;
+  appNetwork: string;
+  accountBalanceXlm: number;
+  estimatedFeeXlm: number;
+  wasmUploaded: boolean;
+  constructorArgsValid: boolean;
+  bookmarkedContractIds?: string[];
+  targetContractId?: string;
+}
+
+export type PreflightStatus = "pass" | "warning" | "fail";
+
+export interface PreflightItem {
+  id: string;
+  label: string;
+  status: PreflightStatus;
+  detail?: string;
+}
+
+export function validateDeployPreflight(input: DeployPreflightInput): PreflightItem[] {
+  const items: PreflightItem[] = [];
+
+  items.push(
+    input.walletConnected && input.walletNetwork === input.appNetwork
+      ? { id: "network", label: "Wallet on correct network", status: "pass" }
+      : {
+          id: "network",
+          label: "Wallet on correct network",
+          status: "fail",
+          detail: input.walletConnected
+            ? `Wallet is on ${input.walletNetwork ?? "unknown"}, app is on ${input.appNetwork}`
+            : "Wallet is not connected",
+        },
+  );
+
+  items.push(
+    input.accountBalanceXlm >= input.estimatedFeeXlm
+      ? { id: "balance", label: "Sufficient XLM for fees", status: "pass" }
+      : {
+          id: "balance",
+          label: "Sufficient XLM for fees",
+          status: "fail",
+          detail: `Balance ${input.accountBalanceXlm} XLM is below estimated fee ${input.estimatedFeeXlm} XLM`,
+        },
+  );
+
+  items.push({
+    id: "wasm",
+    label: "WASM uploaded and hashed",
+    status: input.wasmUploaded ? "pass" : "fail",
+  });
+
+  items.push({
+    id: "args",
+    label: "Constructor arguments valid",
+    status: input.constructorArgsValid ? "pass" : "fail",
+  });
+
+  const conflict =
+    input.targetContractId &&
+    (input.bookmarkedContractIds ?? []).includes(input.targetContractId);
+  items.push({
+    id: "conflict",
+    label: "No conflicting bookmarked contract ID",
+    status: conflict ? "warning" : "pass",
+    detail: conflict ? "This contract ID is already bookmarked in the workspace" : undefined,
+  });
+
+  return items;
+}
+
+/** True when no check failed (warnings are allowed to proceed). */
+export function canProceedWithDeploy(items: PreflightItem[]): boolean {
+  return items.every((item) => item.status !== "fail");
+}

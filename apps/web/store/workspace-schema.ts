@@ -17,6 +17,7 @@ export interface WorkspaceSnapshot {
   savedCallIds: string[];
   artifactRefs: WorkspaceArtifactRef[];
   selectedNetwork: string;
+  archived?: boolean;
   createdAt: number;
   updatedAt: number;
 }

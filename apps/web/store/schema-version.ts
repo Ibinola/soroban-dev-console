@@ -15,18 +15,16 @@ export const API_SNAPSHOT_VERSION = 2 as const;
 export type SupportedVersion = typeof STORE_SCHEMA_VERSION;
 
 /** Versions we can migrate from. Anything outside this set is unsupported. */
-export const SUPPORTED_LEGACY_VERSIONS = [1] as const;
+export const SUPPORTED_LEGACY_VERSIONS = [0, 1] as const;
 
 export function assertSupportedVersion(
   version: unknown,
   context: string,
 ): asserts version is SupportedVersion {
-  if (version !== STORE_SCHEMA_VERSION) {
-    const isLegacy = (SUPPORTED_LEGACY_VERSIONS as readonly unknown[]).includes(
-      version,
-    );
+  const num = Number(version);
+  if (!Number.isFinite(num) || num !== STORE_SCHEMA_VERSION) {
+    const isLegacy = (SUPPORTED_LEGACY_VERSIONS as readonly unknown[]).includes(version);
     if (isLegacy) {
-      // Caller should migrate, not throw.
       return;
     }
     throw new Error(
