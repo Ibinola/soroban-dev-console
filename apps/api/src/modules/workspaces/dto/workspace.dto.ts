@@ -8,6 +8,7 @@ import {
   IsObject,
   IsInt,
   Min,
+  Max,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -147,6 +148,10 @@ export class ListWorkspacesDto {
   @IsOptional()
   @IsString()
   network?: string;
+
+  @IsOptional()
+  @IsString()
+  tag?: string;
 }
 
 /** BE-005: Pagination response envelope */
@@ -157,4 +162,37 @@ export interface PaginatedResponse<T> {
     skip: number;
     take: number;
   };
+}
+
+export class SearchWorkspacesDto {
+  @IsString()
+  q!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  take?: number;
+
+  @IsOptional()
+  @IsIn(["updatedAt", "createdAt", "name"])
+  sortBy?: "updatedAt" | "createdAt" | "name";
+
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  sortOrder?: "asc" | "desc";
+}
+
+export class UpdateWorkspaceTagsDto {
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @Max(20)
+  tags!: string[];
 }

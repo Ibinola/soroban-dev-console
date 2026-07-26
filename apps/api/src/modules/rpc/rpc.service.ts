@@ -22,6 +22,7 @@ import {
   buildMethodNotAllowedError,
 } from "./rpc-method-policy.js";
 import { getCorrelationId } from "../../lib/request-context.js";
+import { validateJsonDepth } from "../../lib/json-validation.js";
 
 const networkSchema = z.enum(["mainnet", "testnet", "futurenet", "local"]);
 
@@ -43,6 +44,8 @@ type RpcNetwork = z.infer<typeof networkSchema>;
 
 const MAX_BATCH_REQUESTS = 25;
 const MAX_PAYLOAD_BYTES = 50_000;
+const RPC_MAX_JSON_DEPTH = Number(process.env.RPC_MAX_JSON_DEPTH) || 10;
+const RPC_MAX_STRING_LENGTH = Number(process.env.RPC_MAX_STRING_LENGTH) || 10_000;
 
 export type ProxiedRpcResponse = {
   statusCode: number;
@@ -106,6 +109,8 @@ export class RpcService {
         };
       }
     }
+
+    validateJsonDepth(parsedPayload.data, RPC_MAX_JSON_DEPTH, RPC_MAX_STRING_LENGTH);
 
     const serializedPayload = JSON.stringify(parsedPayload.data);
     if (serializedPayload.length > MAX_PAYLOAD_BYTES) {

@@ -1,9 +1,13 @@
 import { Controller, Get, Param } from "@nestjs/common";
 import { NetworkHealthService } from "./network-health.service.js";
+import { RpcMetricsService } from "../rpc/rpc-metrics.service.js";
 
 @Controller()
 export class HealthController {
-  constructor(private readonly networkHealth: NetworkHealthService) {}
+  constructor(
+    private readonly networkHealth: NetworkHealthService,
+    private readonly rpcMetrics: RpcMetricsService,
+  ) {}
 
   @Get("health")
   getHealth() {
@@ -33,5 +37,10 @@ export class HealthController {
   @Get("health/networks/:network")
   async getNetworkHealthByName(@Param("network") network: string) {
     return this.networkHealth.getHealth(network);
+  }
+
+  @Get("health/rpc")
+  getRpcMetrics() {
+    return this.rpcMetrics.getMetrics();
   }
 }
