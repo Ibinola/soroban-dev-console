@@ -14,6 +14,7 @@ import {
   SHARE_CREATED,
   SHARE_RESOLVED,
   SHARE_REVOKED,
+  WORKSPACE_CREATED,
 } from "../../lib/domain-events.js";
 import { AuditService } from "../../lib/audit.service.js";
 import { randomBytes } from "crypto";
@@ -35,6 +36,7 @@ function sortJsonKeys(obj: any): any {
 
 import { IsString, IsOptional, IsObject, IsInt, Min, IsIn } from "class-validator";
 import { Type } from "class-transformer";
+import { PrismaService } from "../../lib/prisma.service.js";
 
 export class CreateShareDto {
   @IsString()
@@ -75,6 +77,12 @@ export class ListSharesDto {
   sortOrder?: "asc" | "desc";
 }
 
+export class ForkShareDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
 // DEVOPS-002: Security constants for share validation
 const MAX_EXPIRY_YEARS = 1;
 const MAX_SNAPSHOT_SIZE_BYTES = 500_000; // 500KB limit
@@ -97,6 +105,7 @@ interface PublicShareView {
   snapshotJson: Prisma.JsonValue;
   expiresAt: Date | null;
   createdAt: Date;
+  viewCount: number;
 }
 
 @Injectable()
@@ -106,6 +115,7 @@ export class SharesService {
     private readonly workspacesRepository: WorkspacesRepository,
     private readonly events: DomainEventBus,
     private readonly audit: AuditService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /** BE-003: create requires the caller to own the target workspace. */
@@ -167,7 +177,7 @@ export class SharesService {
     this.events.emit(SHARE_CREATED, {
       shareId: share.id,
       workspaceId: dto.workspaceId,
-      tokenHint: token.slice(0, 6) + "…",
+      tokenHint: token.slice(0, 6) + "\u2026",
       correlationId,
     });
     void this.audit.log({
@@ -186,7 +196,7 @@ export class SharesService {
    * Internal fields (id, workspaceId) are not exposed.
    */
   @MapDbErrors()
-  async resolve(token: string): Promise<PublicShareView> {
+  async resolve(token: string, ip?: string, userAgent?: string): Promise<PublicShareView> {
     const share = await this.repository.findUnique({ where: { token } });
     if (!share) throw new NotFoundException("Share link not found");
 
@@ -196,6 +206,21 @@ export class SharesService {
     if (share.expiresAt && share.expiresAt < new Date()) {
       throw new GoneException("Share link has expired");
     }
+
+    // Increment view count and log access
+    await this.prisma.$transaction([
+      this.prisma.shareLink.update({
+        where: { token },
+        data: { viewCount: { increment: 1 } },
+      }),
+      this.prisma.shareAccessLog.create({
+        data: {
+          shareId: share.id,
+          ip: ip ?? null,
+          userAgent: userAgent ?? null,
+        },
+      }),
+    ]);
 
     this.events.emit(SHARE_RESOLVED, {
       shareId: share.id,
@@ -209,6 +234,7 @@ export class SharesService {
       snapshotJson: share.snapshotJson,
       expiresAt: share.expiresAt,
       createdAt: share.createdAt,
+      viewCount: share.viewCount + 1,
     };
   }
 
@@ -273,6 +299,7 @@ export class SharesService {
       expiresAt: true,
       revokedAt: true,
       createdAt: true,
+      viewCount: true,
     };
 
     const [data, total] = await Promise.all([
@@ -287,6 +314,96 @@ export class SharesService {
     ]);
 
     return { data, pagination: { total, skip, take } };
+  }
+
+  @MapDbErrors()
+  async stats(token: string, ownerKey: string) {
+    const share = await this.repository.findUnique({ where: { token } });
+    if (!share) throw new NotFoundException("Share link not found");
+
+    const workspace = await this.workspacesRepository.findUnique({
+      where: { id: share.workspaceId },
+    });
+    if (!workspace || workspace.ownerKey !== ownerKey) {
+      throw new ForbiddenException("You do not own this workspace");
+    }
+
+    const accessLogs = await this.prisma.shareAccessLog.findMany({
+      where: { shareId: share.id },
+      orderBy: { accessedAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        accessedAt: true,
+        ip: true,
+        userAgent: true,
+      },
+    });
+
+    return {
+      shareId: share.id,
+      token: share.token,
+      viewCount: share.viewCount,
+      accessLogs,
+    };
+  }
+
+  @MapDbErrors()
+  async fork(token: string, ownerKey: string, dto: ForkShareDto) {
+    const share = await this.repository.findUnique({ where: { token } });
+    if (!share) throw new NotFoundException("Share link not found");
+
+    if (share.revokedAt) {
+      throw new ForbiddenException("Share link has been revoked");
+    }
+    if (share.expiresAt && share.expiresAt < new Date()) {
+      throw new GoneException("Share link has expired");
+    }
+
+    const snapshot = share.snapshotJson as Record<string, any>;
+    const workspaceName = dto.name ?? `${snapshot.name ?? "Shared"} (fork)`;
+
+    const workspace = await this.workspacesRepository.create({
+      data: {
+        ownerKey,
+        name: workspaceName,
+        selectedNetwork: snapshot.selectedNetwork ?? "testnet",
+        savedContracts: Array.isArray(snapshot.contractIds)
+          ? {
+              create: snapshot.contractIds.map((contractId: string) => ({
+                contractId,
+                network: snapshot.selectedNetwork ?? "testnet",
+              })),
+            }
+          : undefined,
+        savedInteractions: Array.isArray(snapshot.savedCallIds)
+          ? {
+              create: snapshot.savedCallIds.map((id: string) => ({
+                functionName: "unknown",
+                argumentsJson: {},
+                network: snapshot.selectedNetwork ?? "testnet",
+              })),
+            }
+          : undefined,
+      },
+    });
+
+    this.events.emit(WORKSPACE_CREATED, {
+      workspaceId: workspace.id,
+      ownerKey,
+      name: workspace.name,
+      selectedNetwork: workspace.selectedNetwork,
+    });
+    void this.audit.log({
+      actor: ownerKey,
+      action: "share.forked",
+      resourceType: "share",
+      resourceId: share.id,
+      summary: `Forked share ${token.slice(0, 6)}\u2026 to workspace ${workspace.id}`,
+      metadata: { newWorkspaceId: workspace.id },
+    });
+
+    return workspace;
   }
 
   @MapDbErrors()
