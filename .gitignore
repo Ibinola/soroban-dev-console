@@ -26,8 +26,7 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# IDE / Editor
-.vscode
+# IDE / Editor — personal settings; .vscode/ is intentionally tracked (workspace config)
 .idea
 
 # Turbopack
