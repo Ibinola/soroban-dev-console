@@ -10,6 +10,6 @@ import { WorkspacesRepository } from "../workspaces/workspaces.repository.js";
 @Module({
   controllers: [SharesController],
   providers: [SharesService, SharesRepository, WorkspacesRepository, PrismaService, DomainEventBus, AuditService],
-  exports: [SharesService, SharesRepository],
+  exports: [SharesService, SharesRepository, WorkspacesRepository],
 })
 export class SharesModule {}

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
@@ -12,7 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
-import { SharesService, CreateShareDto, ListSharesDto } from "./shares.service.js";
+import { SharesService, CreateShareDto, ForkShareDto, ListSharesDto } from "./shares.service.js";
 
 type OwnerKeyRequest = Request & { ownerKey: string };
 
@@ -29,8 +30,10 @@ export class SharesController {
 
   /** GET /shares/:token — public read-only resolve, returns snapshot data only */
   @Get(":token")
-  resolve(@Param("token") token: string) {
-    return this.sharesService.resolve(token);
+  resolve(@Param("token") token: string, @Req() req: Request) {
+    const ip = req.ip ?? req.socket.remoteAddress;
+    const userAgent = req.headers["user-agent"];
+    return this.sharesService.resolve(token, ip, userAgent);
   }
 
   /** DELETE /shares/:token — revoke (requires ownership of the workspace) */
@@ -54,6 +57,25 @@ export class SharesController {
       (req as OwnerKeyRequest).ownerKey,
       query,
     );
+  }
+
+  /** GET /shares/:token/stats — view count and recent access logs (owner only) */
+  @Get(":token/stats")
+  @UseGuards(OwnerKeyGuard)
+  stats(@Param("token") token: string, @Req() req: Request) {
+    return this.sharesService.stats(token, (req as OwnerKeyRequest).ownerKey);
+  }
+
+  /** POST /shares/:token/fork — fork share snapshot into a new workspace (owner only) */
+  @Post(":token/fork")
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(OwnerKeyGuard)
+  fork(
+    @Param("token") token: string,
+    @Body() dto: ForkShareDto,
+    @Req() req: Request,
+  ) {
+    return this.sharesService.fork(token, (req as OwnerKeyRequest).ownerKey, dto);
   }
 
   /** DELETE /shares/cleanup — purge expired and revoked share records */
