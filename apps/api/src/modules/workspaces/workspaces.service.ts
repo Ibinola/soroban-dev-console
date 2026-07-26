@@ -22,6 +22,7 @@ import type {
   ImportWorkspaceDto,
   ListWorkspacesDto,
   PaginatedResponse,
+  SearchWorkspacesDto,
   UpdateWorkspaceDto,
 } from "./workspace.dto.js";
 import { ZipArchive } from "archiver";
@@ -42,11 +43,16 @@ export class WorkspacesService {
     const sortBy = query.sortBy ?? "updatedAt";
     const sortOrder = query.sortOrder ?? "desc";
 
-    const where = {
+    const where: any = {
       ownerKey,
       ...(query.network ? { selectedNetwork: query.network } : {}),
       ...(query.includeArchived ? {} : { archived: false }),
     };
+
+    if (query.tag) {
+      // SQLite JSON field: tags is stored as JSON array string
+      where.tags = { contains: `"${query.tag}"` };
+    }
 
     const select = {
       id: true,
@@ -55,6 +61,7 @@ export class WorkspacesService {
       selectedNetwork: true,
       archived: true,
       revision: true,
+      tags: true,
       createdAt: true,
       updatedAt: true,
     };
@@ -247,6 +254,91 @@ export class WorkspacesService {
     );
   }
 
+
+  @MapDbErrors()
+  async search(ownerKey: string, query: SearchWorkspacesDto): Promise<PaginatedResponse<any>> {
+    const skip = query.skip ?? 0;
+    const take = query.take ?? 20;
+    const sortBy = query.sortBy ?? "updatedAt";
+    const sortOrder = query.sortOrder ?? "desc";
+    const q = query.q.trim();
+
+    const where = {
+      ownerKey,
+      OR: [
+        { name: { contains: q, mode: "insensitive" as const } },
+        { description: { contains: q, mode: "insensitive" as const } },
+      ],
+    };
+
+    const select = {
+      id: true,
+      name: true,
+      description: true,
+      selectedNetwork: true,
+      revision: true,
+      tags: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
+    const [data, total] = await Promise.all([
+      this.repository.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        select,
+        skip,
+        take,
+      }),
+      this.repository.count({ where }),
+    ]);
+
+    return { data, pagination: { total, skip, take } };
+  }
+
+  @MapDbErrors()
+  async updateTags(id: string, ownerKey: string, tags: string[]) {
+    await this.get(id, ownerKey);
+    const deduped = [...new Set(tags)];
+    if (deduped.length > 20) {
+      throw new BadRequestException("A workspace can have at most 20 tags");
+    }
+    for (const tag of deduped) {
+      if (tag.length > 50) {
+        throw new BadRequestException(`Tag "${tag}" exceeds max length of 50 characters`);
+      }
+    }
+    const workspace = await this.repository.update({
+      where: { id },
+      data: { tags: deduped },
+    });
+    void this.audit.log({
+      actor: ownerKey,
+      action: "workspace.tags_updated",
+      resourceType: "workspace",
+      resourceId: id,
+      summary: `Updated tags`,
+      metadata: { tags: deduped } as any,
+    });
+    return workspace;
+  }
+
+  @MapDbErrors()
+  async getAllTags(ownerKey: string): Promise<string[]> {
+    const workspaces = await this.repository.findMany({
+      where: { ownerKey, tags: { not: Prisma.DbNull } },
+      select: { tags: true },
+    });
+    const tagSet = new Set<string>();
+    for (const ws of workspaces) {
+      if (Array.isArray(ws.tags)) {
+        for (const tag of ws.tags) {
+          if (typeof tag === "string") tagSet.add(tag);
+        }
+      }
+    }
+    return [...tagSet].sort();
+  }
 
   @MapDbErrors()
   async import(ownerKey: string, dto: ImportWorkspaceDto) {

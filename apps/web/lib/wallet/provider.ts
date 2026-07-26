@@ -44,6 +44,8 @@ export interface WalletProviderDefinition {
   // W7-FE-002 / #675: best-effort lookup of the wallet's active network
   // passphrase without re-prompting the user.
   getNetworkPassphrase?: () => Promise<string | null>;
+  // #674: Disconnect — deauthorize the provider and clear local session state.
+  disconnect: () => Promise<void>;
 }
 
 /**
@@ -182,6 +184,17 @@ async function freighterRevalidate(): Promise<RevalidationResult> {
   }
 }
 
+// #674: Freighter disconnect — deauthorize the extension.
+async function disconnectFreighter(): Promise<void> {
+  if (freighter.setAllowed) {
+    try {
+      await freighter.setAllowed(false);
+    } catch {
+      // best-effort
+    }
+  }
+}
+
 // W7-FE-002 / #651: albedoRevalidate now attempts a session probe via
 // publicKey({}). A rejection (user revoked access or session expired)
 // yields `isValid: false` so the wallet store clears itself.
@@ -194,6 +207,23 @@ async function albedoRevalidate(): Promise<RevalidationResult> {
     };
   } catch {
     return { isValid: false };
+  }
+}
+
+// #674: Albedo disconnect — best-effort cleanup of stored intent tokens.
+async function disconnectAlbedo(): Promise<void> {
+  try {
+    if (typeof window !== "undefined") {
+      Object.keys(window.localStorage)
+        .filter(
+          (key) =>
+            key.toLowerCase().includes("albedo") ||
+            key.toLowerCase().includes("intent"),
+        )
+        .forEach((key) => window.localStorage.removeItem(key));
+    }
+  } catch {
+    // best-effort
   }
 }
 
@@ -228,6 +258,15 @@ async function xbullRevalidate(): Promise<boolean> {
   return true;
 }
 
+async function disconnectXbull(): Promise<void> {
+  try {
+    const bridge = new xBullWalletConnect();
+    bridge.closeConnections();
+  } catch {
+    // best-effort
+  }
+}
+
 export const walletProviders: Record<WalletProviderId, WalletProviderDefinition> = {
   freighter: {
     id: "freighter",
@@ -245,6 +284,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     signTransaction: freighterSign,
     revalidate: freighterRevalidate,
     getNetworkPassphrase: freighterGetNetworkPassphrase,
+    disconnect: disconnectFreighter,
   },
   albedo: {
     id: "albedo",
@@ -261,6 +301,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectAlbedo,
     signTransaction: albedoSign,
     revalidate: albedoRevalidate,
+    disconnect: disconnectAlbedo,
   },
   xbull: {
     id: "xbull",
@@ -277,6 +318,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectXbull,
     signTransaction: xbullSign,
     revalidate: xbullRevalidate,
+    disconnect: disconnectXbull,
   },
 };
 

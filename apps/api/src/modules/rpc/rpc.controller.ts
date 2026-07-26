@@ -1,8 +1,9 @@
-import { Body, Controller, Param, Post, Get, Res, Req, Sse, MessageEvent, UseGuards, ForbiddenException } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, Req, Sse, MessageEvent, UseGuards, ForbiddenException } from "@nestjs/common";
 import { Observable, interval, Subject, takeUntil } from "rxjs";
 import type { Request, Response } from "express";
 import { RpcRateLimitGuard } from "./rpc-rate-limit.guard.js";
 import { RpcService } from "./rpc.service.js";
+import { RpcCacheService } from "./rpc-cache.service.js";
 import { RpcFailoverService } from "./rpc-failover.service.js";
 import { TransactionNormalizerService } from "./transaction-normalizer.service.js";
 import {
@@ -16,6 +17,7 @@ import {
 export class RpcController {
   constructor(
     private readonly rpcService: RpcService,
+    private readonly rpcCache: RpcCacheService,
     private readonly normalizer: TransactionNormalizerService,
     private readonly failover: RpcFailoverService,
   ) {}
@@ -109,6 +111,55 @@ export class RpcController {
     return {
       success: true,
       data: normalized,
+    };
+  }
+
+  // ── Issue #691: Cache TTL config & invalidation ─────────────────────────────
+
+  @Get("cache/config")
+  getCacheConfig() {
+    return {
+      success: true,
+      data: this.rpcCache.getTtlConfig(),
+    };
+  }
+
+  @Patch("cache/config")
+  updateCacheConfig(
+    @Body() body: { method: string; ttlMs: number },
+  ) {
+    this.rpcCache.setTtl(body.method, body.ttlMs);
+    return {
+      success: true,
+      data: this.rpcCache.getTtlConfig(),
+    };
+  }
+
+  @Delete("cache/all")
+  flushAllCache() {
+    this.rpcCache.flushAll();
+    return { success: true, message: "Cache flushed" };
+  }
+
+  @Delete("cache")
+  invalidateCache(
+    @Query("method") method?: string,
+    @Query("network") network?: string,
+  ) {
+    const count = this.rpcCache.invalidate(method, network);
+    return {
+      success: true,
+      data: { invalidated: count },
+    };
+  }
+
+  // ── Issue #693: Dedup stats ─────────────────────────────────────────────────
+
+  @Get("dedup/stats")
+  getDedupStats() {
+    return {
+      success: true,
+      data: this.rpcCache.getDedupStats(),
     };
   }
 

@@ -125,6 +125,8 @@ interface WorkspaceState {
   repairBookmarkNetwork: (workspaceId: string, bookmarkId: string, networkId: string) => void;
   /** FE-054: Retrieve workspace bookmarks (favorites first) */
   getContractBookmarks: (workspaceId: string) => ContractBookmark[];
+  /** #674: Reset cloud sync state after wallet disconnect */
+  resetSyncState: () => void;
 }
 
 function createWorkspaceSnapshot(
@@ -718,8 +720,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           return false;
         }
       },
-
       clearSyncError: () => set({ syncError: null, syncState: "idle" }),
+
+      resetSyncState: () =>
+        set({ syncState: "idle", syncError: null, pendingConflict: null }),
+
     }),
     {
       name: "soroban-workspaces",

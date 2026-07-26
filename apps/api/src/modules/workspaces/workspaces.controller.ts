@@ -19,7 +19,9 @@ import {
   CreateWorkspaceDto,
   ImportWorkspaceDto,
   ListWorkspacesDto,
+  SearchWorkspacesDto,
   UpdateWorkspaceDto,
+  UpdateWorkspaceTagsDto,
 } from "./workspace.dto.js";
 import { WorkspacesService } from "./workspaces.service.js";
 
@@ -33,6 +35,16 @@ export class WorkspacesController {
   @Get()
   list(@Req() req: Request, @Query() query: ListWorkspacesDto) {
     return this.workspacesService.list((req as OwnerKeyRequest).ownerKey, query);
+  }
+
+  @Get("search")
+  search(@Req() req: Request, @Query() query: SearchWorkspacesDto) {
+    return this.workspacesService.search((req as OwnerKeyRequest).ownerKey, query);
+  }
+
+  @Get("tags")
+  getAllTags(@Req() req: Request) {
+    return this.workspacesService.getAllTags((req as OwnerKeyRequest).ownerKey);
   }
 
   @Get(":id")
@@ -56,6 +68,19 @@ export class WorkspacesController {
       id,
       (req as OwnerKeyRequest).ownerKey,
       dto,
+    );
+  }
+
+  @Patch(":id/tags")
+  updateTags(
+    @Param("id") id: string,
+    @Body() dto: UpdateWorkspaceTagsDto,
+    @Req() req: Request,
+  ) {
+    return this.workspacesService.updateTags(
+      id,
+      (req as OwnerKeyRequest).ownerKey,
+      dto.tags,
     );
   }
 
