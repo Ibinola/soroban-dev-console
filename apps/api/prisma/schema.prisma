@@ -109,6 +109,24 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// BE-0703: Dead-letter queue for failed async jobs.
+model DeadLetterJob {
+  id            String    @id @default(cuid())
+  jobType       String    @map("job_type")
+  payload       Json
+  error         String?
+  retryCount    Int       @default(0) @map("retry_count")
+  maxRetries    Int       @default(3) @map("max_retries")
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  processedAt   DateTime? @map("processed_at")
+
+  @@index([status])
+  @@index([jobType])
+  @@index([createdAt])
+  @@map("dead_letter_jobs")
+}
+
 /// Durable background job record for retry-safe execution.
 model BackgroundJob {
   id          String    @id @default(cuid())
