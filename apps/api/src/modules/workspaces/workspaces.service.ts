@@ -24,6 +24,8 @@ import type {
   PaginatedResponse,
   UpdateWorkspaceDto,
 } from "./workspace.dto.js";
+import { ZipArchive } from "archiver";
+import { PassThrough } from "stream";
 
 @Injectable()
 export class WorkspacesService {
@@ -356,5 +358,170 @@ export class WorkspacesService {
     );
 
     return snapshot;
+  }
+
+  @MapDbErrors()
+  async exportZip(id: string, ownerKey: string): Promise<PassThrough> {
+    const workspace = await this.repository.findFirst({
+      where: { id, ownerKey },
+      include: {
+        savedContracts: true,
+        savedInteractions: true,
+        artifacts: true,
+      },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException("Workspace not found");
+    }
+
+    const snapshot = {
+      version: API_SNAPSHOT_VERSION,
+      id: workspace.id,
+      name: workspace.name,
+      selectedNetwork: workspace.selectedNetwork,
+      contractIds: workspace.savedContracts.map((contract) => contract.contractId),
+      savedCallIds: workspace.savedInteractions.map((interaction) => interaction.id),
+      artifactRefs: workspace.artifacts.map((artifact) => ({
+        kind: artifact.kind,
+        id: artifact.hash || artifact.name,
+      })),
+      createdAt: workspace.createdAt.getTime(),
+      updatedAt: workspace.updatedAt.getTime(),
+    };
+
+    const contracts = workspace.savedContracts.map((c) => ({
+      id: c.id,
+      contractId: c.contractId,
+      network: c.network,
+      label: c.label,
+      createdAt: c.createdAt,
+    }));
+
+    const interactions = workspace.savedInteractions.map((i) => ({
+      id: i.id,
+      contractId: i.contractId,
+      functionName: i.functionName,
+      name: i.name,
+      network: i.network,
+      argumentsJson: i.argumentsJson,
+      createdAt: i.createdAt,
+    }));
+
+    const artifacts = workspace.artifacts.map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      name: a.name,
+      network: a.network,
+      hash: a.hash,
+      metadata: a.metadata,
+      createdAt: a.createdAt,
+    }));
+
+    this.events.emit(WORKSPACE_EXPORTED, { workspaceId: id, ownerKey });
+    void this.audit.log({
+      actor: ownerKey,
+      action: "workspace.exported_zip",
+      resourceType: "workspace",
+      resourceId: id,
+    });
+
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    const stream = new PassThrough();
+
+    archive.pipe(stream);
+
+    archive.append(JSON.stringify(snapshot, null, 2), { name: "workspace.json" });
+    archive.append(JSON.stringify(contracts, null, 2), { name: "contracts.json" });
+    archive.append(JSON.stringify(interactions, null, 2), { name: "interactions.json" });
+    archive.append(JSON.stringify(artifacts, null, 2), { name: "artifacts.json" });
+
+    archive.finalize();
+
+    return stream;
+  }
+
+  @MapDbErrors()
+  async replayInteraction(id: string, interactionId: string, ownerKey: string) {
+    const workspace = await this.repository.findFirst({
+      where: { id, ownerKey },
+      include: { savedInteractions: true },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException("Workspace not found");
+    }
+
+    const interaction = workspace.savedInteractions.find((i) => i.id === interactionId);
+    if (!interaction) {
+      throw new NotFoundException("Interaction not found");
+    }
+
+    return {
+      interactionId: interaction.id,
+      functionName: interaction.functionName,
+      network: interaction.network,
+      contractId: interaction.contractId,
+      argumentsJson: interaction.argumentsJson,
+      createdAt: interaction.createdAt,
+    };
+  }
+
+  @MapDbErrors()
+  async diffInteractions(
+    id: string,
+    interactionId: string,
+    compareId: string,
+    ownerKey: string,
+  ) {
+    const workspace = await this.repository.findFirst({
+      where: { id, ownerKey },
+      include: { savedInteractions: true },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException("Workspace not found");
+    }
+
+    const a = workspace.savedInteractions.find((i) => i.id === interactionId);
+    const b = workspace.savedInteractions.find((i) => i.id === compareId);
+
+    if (!a) throw new NotFoundException(`Interaction ${interactionId} not found`);
+    if (!b) throw new NotFoundException(`Interaction ${compareId} not found`);
+
+    const argsA = (a.argumentsJson as Record<string, unknown>) ?? {};
+    const argsB = (b.argumentsJson as Record<string, unknown>) ?? {};
+
+    const allKeys = new Set([...Object.keys(argsA), ...Object.keys(argsB)]);
+
+    const changed: Record<string, { from: unknown; to: unknown }> = {};
+    const added: Record<string, unknown> = {};
+    const removed: Record<string, unknown> = {};
+
+    for (const key of allKeys) {
+      const inA = key in argsA;
+      const inB = key in argsB;
+
+      if (inA && inB) {
+        const valA = JSON.stringify(argsA[key]);
+        const valB = JSON.stringify(argsB[key]);
+        if (valA !== valB) {
+          changed[key] = { from: argsA[key], to: argsB[key] };
+        }
+      } else if (inA && !inB) {
+        removed[key] = argsA[key];
+      } else {
+        added[key] = argsB[key];
+      }
+    }
+
+    return {
+      interactionA: { id: a.id, functionName: a.functionName },
+      interactionB: { id: b.id, functionName: b.functionName },
+      changed,
+      added,
+      removed,
+      identical: Object.keys(changed).length === 0 && Object.keys(added).length === 0 && Object.keys(removed).length === 0,
+    };
   }
 }
