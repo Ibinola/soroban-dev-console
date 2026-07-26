@@ -16,12 +16,6 @@ export class ApiResponseInterceptor<T>
     context: ExecutionContext,
     next: CallHandler,
   ): Observable<ApiResponse<T>> {
-    const response = context.switchToHttp().getResponse();
-    const statusCode = response.statusCode;
-
-    // Don't wrap if it's already an error or some other special case
-    // NestJS handles errors through ExceptionFilters
-    
     return next.handle().pipe(
       map((data) => ({
         success: true,

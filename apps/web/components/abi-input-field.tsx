@@ -16,7 +16,7 @@ export function AbiInputField({ arg, onChange }: AbiInputFieldProps) {
   return (
     <div className="flex-1 space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label className="text-[10px] font-bold uppercase text-muted-foreground">
+        <Label htmlFor={arg.id} className="text-[10px] font-bold uppercase text-muted-foreground">
           {arg.name || "Argument"}
           <span className="ml-1 font-mono lowercase opacity-60">
             ({arg.type})
@@ -26,6 +26,7 @@ export function AbiInputField({ arg, onChange }: AbiInputFieldProps) {
 
       {isComplex ? (
         <Textarea
+          id={arg.id}
           placeholder={
             arg.type === "vec" ? "[item1, item2]" : '{"key": "value"}'
           }
@@ -35,6 +36,7 @@ export function AbiInputField({ arg, onChange }: AbiInputFieldProps) {
         />
       ) : (
         <Input
+          id={arg.id}
           type={arg.type === "i32" ? "number" : "text"}
           placeholder={`Enter ${arg.type}...`}
           value={arg.value}

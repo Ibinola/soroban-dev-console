@@ -128,9 +128,9 @@ export function VerificationGate({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" inert={true}>
       <div className="pointer-events-none opacity-40 select-none">{children}</div>
-      <div className="absolute inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-auto">
         <div className="flex items-center gap-1.5 rounded-full bg-background/90 border px-3 py-1.5 text-xs font-medium shadow-sm">
           <ShieldOff className="h-3.5 w-3.5 text-amber-500" />
           <span>{reasonMap[status]}</span>

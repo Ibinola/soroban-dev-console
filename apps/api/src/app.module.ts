@@ -6,6 +6,8 @@ import { RuntimeConfigModule } from "./modules/runtime-config/runtime-config.mod
 import { FixtureManifestModule } from "./modules/fixture-manifest/fixture-manifest.module.js";
 import { SharesModule } from "./modules/shares/shares.module.js";
 import { WorkspacesModule } from "./modules/workspaces/workspaces.module.js";
+import { BackgroundJobModule } from "./modules/jobs/background-job.module.js";
+import { AuditModule } from "./modules/audit/audit.module.js";
 
 @Module({
   imports: [
@@ -18,7 +20,9 @@ import { WorkspacesModule } from "./modules/workspaces/workspaces.module.js";
     RuntimeConfigModule,
     FixtureManifestModule,
     SharesModule,
-    WorkspacesModule
+    WorkspacesModule,
+    BackgroundJobModule,
+    AuditModule,
   ]
 })
-export class AppModule {}
+export class AppModule { }

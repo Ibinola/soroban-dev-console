@@ -26,8 +26,7 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# IDE / Editor
-.vscode
+# IDE / Editor — personal settings; .vscode/ is intentionally tracked (workspace config)
 .idea
 
 # Turbopack
@@ -38,3 +37,11 @@ Thumbs.db
 
 # Optional: coverage
 coverage
+.backups/
+
+# Rust build artifacts
+contracts/**/target/
+
+# DEVOPS-216: release evidence bundles (generated locally or in CI)
+release-evidence/
+release-evidence-bundle.tar.gz

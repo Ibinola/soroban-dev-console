@@ -52,9 +52,9 @@ export default function GlobalError({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-md bg-muted p-3">
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {error.message || "An unknown error occurred"}
+          <div className="rounded-md bg-muted p-3">
+            <p className="text-sm text-muted-foreground">
+              Please try reloading the page. If the problem persists, you can copy the diagnostic report and contact support.
             </p>
           </div>
         </CardContent>

@@ -1,0 +1,21 @@
+{
+  "recommendations": [
+    // ── TypeScript / JavaScript ─────────────────────────────────────────────
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+
+    // ── Styling ─────────────────────────────────────────────────────────────
+    "bradlc.vscode-tailwindcss",
+
+    // ── Database ─────────────────────────────────────────────────────────────
+    "Prisma.prisma",
+
+    // ── Rust ─────────────────────────────────────────────────────────────────
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+
+    // ── Git & Productivity ──────────────────────────────────────────────────
+    "eamodio.gitlens",
+    "EditorConfig.EditorConfig"
+  ]
+}
