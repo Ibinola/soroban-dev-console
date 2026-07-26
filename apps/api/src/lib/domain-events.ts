@@ -70,6 +70,8 @@ export interface ShareRevokedEvent {
 export const RPC_PROXIED = "rpc.proxied" as const;
 export const RPC_CACHE_HIT = "rpc.cache_hit" as const;
 export const RPC_UPSTREAM_ERROR = "rpc.upstream_error" as const;
+export const RPC_DEDUP_HIT = "rpc.dedup_hit" as const;
+export const RPC_CACHE_INVALIDATED = "rpc.cache_invalidated" as const;
 
 export interface RpcProxiedEvent {
   network: string;
@@ -88,4 +90,17 @@ export interface RpcUpstreamErrorEvent {
   network: string;
   method: string;
   errorName: string;
+}
+
+export interface RpcDedupHitEvent {
+  network: string;
+  method: string;
+  key: string;
+  waitersBefore: number;
+}
+
+export interface RpcCacheInvalidatedEvent {
+  network?: string;
+  method?: string;
+  all: boolean;
 }
