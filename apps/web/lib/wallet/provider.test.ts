@@ -9,6 +9,7 @@ vi.mock('@stellar/freighter-api', () => ({
   isConnected: vi.fn(() => false),
   isAllowed: vi.fn(() => true),
   getAddress: vi.fn(() => ({})),
+  setAllowed: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('@creit.tech/xbull-wallet-connect', () => {
   xBullWalletConnectMock = vi.fn();
@@ -187,6 +188,82 @@ describe('xBull wallet provider', () => {
       expect(result).toBe(false);
 
       global.window = originalWindow;
+    });
+  });
+
+  describe('disconnect', () => {
+    it('freighter disconnect should call setAllowed(false) when available', async () => {
+      const { walletProviders } = await import('./provider');
+      const setAllowed = vi.fn(() => Promise.resolve());
+      vi.doMock('@stellar/freighter-api', () => ({
+        isConnected: vi.fn(() => true),
+        isAllowed: vi.fn(() => true),
+        getAddress: vi.fn(() => ({ address: 'GABC' })),
+        setAllowed,
+      }));
+
+      await walletProviders['freighter'].disconnect();
+      expect(setAllowed).toHaveBeenCalledWith(false);
+
+      vi.doUnmock('@stellar/freighter-api');
+    });
+
+    it('freighter disconnect should not throw when setAllowed is missing', async () => {
+      const { walletProviders } = await import('./provider');
+      delete (await import('@stellar/freighter-api')).setAllowed;
+
+      await expect(walletProviders['freighter'].disconnect()).resolves.toBeUndefined();
+    });
+
+    it('albedo disconnect should clear localStorage keys containing albedo and intent', async () => {
+      const { walletProviders } = await import('./provider');
+      const mockStorage: Record<string, string> = {
+        'albedo_token': 'abc',
+        'some_intent': 'def',
+        'other_key': 'ghi',
+      };
+      const removeItem = vi.fn((key: string) => {
+        delete mockStorage[key];
+      });
+      vi.stubGlobal('localStorage', {
+        getItem: vi.fn((key: string) => mockStorage[key] ?? null),
+        setItem: vi.fn(),
+        removeItem,
+        clear: vi.fn(),
+        get length() {
+          return Object.keys(mockStorage).length;
+        },
+        key: vi.fn(),
+      } as any);
+
+      await walletProviders['albedo'].disconnect();
+      expect(removeItem).toHaveBeenCalledWith('albedo_token');
+      expect(removeItem).toHaveBeenCalledWith('some_intent');
+      expect(removeItem).not.toHaveBeenCalledWith('other_key');
+    });
+
+    it('xbull disconnect should call closeConnections on xbull bridge', async () => {
+      const { walletProviders } = await import('./provider');
+      const Bridge = getXbullBridge();
+      const closeMock = vi.fn();
+      Bridge.mockImplementation(() => ({
+        connect: vi.fn(),
+        sign: vi.fn(),
+        closeConnections: closeMock,
+      }));
+
+      await walletProviders['xbull'].disconnect();
+      expect(closeMock).toHaveBeenCalled();
+    });
+
+    it('xbull disconnect should not throw when bridge instantiation fails', async () => {
+      const { walletProviders } = await import('./provider');
+      const Bridge = getXbullBridge();
+      Bridge.mockImplementation(() => {
+        throw new Error('boom');
+      });
+
+      await expect(walletProviders['xbull'].disconnect()).resolves.toBeUndefined();
     });
   });
 });

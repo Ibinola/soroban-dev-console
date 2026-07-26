@@ -7,6 +7,7 @@ import {
   type WalletProviderId,
 } from "@/lib/wallet/provider";
 import { useNetworkStore } from "@/store/useNetworkStore";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 
 // FE-042: Session revalidation state
 export type SessionStatus = "valid" | "stale" | "mismatch" | "disconnected";
@@ -21,11 +22,12 @@ interface WalletState {
   // FE-043: sandbox mode
   isSandboxMode: boolean;
   // W7-FE-002 / #675: network passphrase captured at connect time so we
-  // can detect a wallet-vs-app network mismatch after re-hydration.
+  // can detect a mismatch if the user changes networks later.
   networkPassphraseAtConnect: string | null;
 
   connect: (provider: WalletProviderId) => Promise<void>;
-  disconnect: () => void;
+  // #674: disconnect action — calls provider disconnect then resets store + workspace sync state
+  disconnectWallet: () => Promise<void>;
   // FE-041: capability-aware sign abstraction
   signTransaction: (xdr: string, networkPassphrase: string) => Promise<string>;
   getCapabilities: () => WalletCapabilities | null;
@@ -66,7 +68,15 @@ export const useWallet = create<WalletState>()(
         }
       },
 
-      disconnect: () => {
+      disconnectWallet: async () => {
+        const { walletType, isConnected } = get();
+        if (isConnected && walletType) {
+          try {
+            await walletProviders[walletType].disconnect();
+          } catch {
+            // best-effort provider cleanup
+          }
+        }
         set({
           isConnected: false,
           address: null,
@@ -76,6 +86,7 @@ export const useWallet = create<WalletState>()(
           isSandboxMode: false,
           networkPassphraseAtConnect: null,
         });
+        useWorkspaceStore.getState().resetSyncState();
       },
 
       // FE-041: unified signing abstraction with capability guard
@@ -118,7 +129,7 @@ export const useWallet = create<WalletState>()(
         if (!revalidateResult?.isValid) {
           // W7-FE-002 / #651: failed revalidation clears the wallet store
           // and surfaces the connect prompt.
-          get().disconnect();
+          get().disconnectWallet();
           return "disconnected";
         }
 

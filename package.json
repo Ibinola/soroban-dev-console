@@ -19,7 +19,7 @@
     "check-drift": "npx tsx scripts/check-runtime-drift.ts",
     "release-evidence": "npx tsx scripts/generate-release-evidence.ts",
     "security:scan-staged": "npx tsx scripts/secret-scan-staged.ts",
-    "prepare": "husky"
+    "prepare": "husky",
     "generate-changelog": "npx tsx scripts/generate-changelog.ts"
   },
   "devDependencies": {

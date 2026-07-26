@@ -31,7 +31,7 @@ export function ConnectWalletButton() {
     walletType,
     sessionStatus,
     connect,
-    disconnect,
+    disconnectWallet,
     revalidateSession,
     getCapabilities,
   } = useWallet();
@@ -158,7 +158,7 @@ export function ConnectWalletButton() {
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={disconnect}
+            onClick={disconnectWallet}
             className="cursor-pointer text-red-600"
           >
             <LogOut className="mr-2 h-4 w-4" />
