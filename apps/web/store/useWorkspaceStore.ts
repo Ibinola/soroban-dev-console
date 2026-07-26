@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { toast } from "sonner";
 import { useNetworkStore } from "./useNetworkStore";
 import type {
   WorkspaceArtifactRef,
@@ -106,6 +107,9 @@ interface WorkspaceState {
   resolveConflict: (strategy: MergeStrategy) => void;
   /** FE-029: Dismiss the pending conflict without resolving */
   dismissConflict: () => void;
+  archiveWorkspace: (id: string) => void;
+  unarchiveWorkspace: (id: string) => void;
+  duplicateWorkspace: (id: string, customName?: string) => WorkspaceSnapshot | null;
   /** FE-054: Save contract bookmark with network/source context */
   bookmarkContract: (
     workspaceId: string,
@@ -314,14 +318,128 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           (workspace) => workspace.id === get().activeWorkspaceId,
         ),
 
-      deleteWorkspace: (id) =>
+      deleteWorkspace: (id) => {
+        // Issue #749: snapshot the workspace and surrounding state before deleting
+        // so the Undo action can restore it within the 5-second window.
+        const prev = get();
+        const target = prev.workspaces.find((w) => w.id === id);
+        if (!target) return;
+
+        const previousActiveId = prev.activeWorkspaceId;
+
         set((state) => ({
           workspaces: state.workspaces.filter((w) => w.id !== id),
           activeWorkspaceId:
             state.activeWorkspaceId === id
               ? "default"
               : state.activeWorkspaceId,
-        })),
+        }));
+
+        toast(`Workspace "${target.name}" deleted`, {
+          duration: 5000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              set((state) => ({
+                workspaces: [...state.workspaces, target],
+                activeWorkspaceId: previousActiveId,
+              }));
+            },
+          },
+        });
+      },
+
+      duplicateWorkspace: (id, customName) => {
+        const source = get().workspaces.find((w) => w.id === id);
+        if (!source) return null;
+
+        const now = Date.now();
+        const newId = crypto.randomUUID();
+        const name = customName?.trim() || `Copy of ${source.name}`;
+
+        const duplicate: WorkspaceSnapshot = {
+          version: STORE_SCHEMA_VERSION,
+          id: newId,
+          name,
+          contractIds: [...source.contractIds],
+          savedCallIds: [...source.savedCallIds],
+          artifactRefs: source.artifactRefs.map((ref) => ({ ...ref })),
+          selectedNetwork: source.selectedNetwork,
+          archived: false,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        set((state) => {
+          const sourceBookmarks = state.contractBookmarks[id] ?? [];
+          const clonedBookmarks = sourceBookmarks.map((bm) => ({
+            ...bm,
+            id: crypto.randomUUID(),
+            workspaceId: newId,
+            createdAt: now,
+          }));
+
+          return {
+            workspaces: [...state.workspaces, duplicate],
+            contractBookmarks: clonedBookmarks.length > 0
+              ? { ...state.contractBookmarks, [newId]: clonedBookmarks }
+              : state.contractBookmarks,
+          };
+        });
+
+        // Sync cloned workspace to cloud API if synced
+        const contractRefs = duplicate.contractIds.map((cId) => ({
+          contractId: cId,
+          network: duplicate.selectedNetwork,
+        }));
+        const interactionRefs = duplicate.savedCallIds.map((sId) => ({
+          functionName: sId,
+          argumentsJson: {},
+        }));
+        workspacesApi
+          .create({
+            name: duplicate.name,
+            contracts: contractRefs,
+            interactions: interactionRefs,
+          })
+          .catch(() => {});
+
+        return duplicate;
+      },
+
+      archiveWorkspace: (id) =>
+        set((state) => {
+          const updated = state.workspaces.map((w) =>
+            w.id === id ? { ...w, archived: true, updatedAt: Date.now() } : w,
+          );
+          const activeId = state.activeWorkspaceId;
+          const remainingNonArchived = updated.filter((w) => !w.archived);
+          const nextActiveId =
+            activeId === id
+              ? (remainingNonArchived[0]?.id ?? "default")
+              : activeId;
+
+          if (state.cloudId && id === activeId) {
+            workspacesApi.update(state.cloudId, { archived: true }).catch(() => {});
+          }
+
+          return {
+            workspaces: updated,
+            activeWorkspaceId: nextActiveId,
+          };
+        }),
+
+      unarchiveWorkspace: (id) =>
+        set((state) => {
+          if (state.cloudId) {
+            workspacesApi.update(state.cloudId, { archived: false }).catch(() => {});
+          }
+          return {
+            workspaces: state.workspaces.map((w) =>
+              w.id === id ? { ...w, archived: false, updatedAt: Date.now() } : w,
+            ),
+          };
+        }),
 
       // ── FE-031: Checkpoints ──────────────────────────────────────────────────
 
@@ -405,6 +523,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           case "merge-additive":
             resolved = mergeAdditive(local, pendingConflict.remoteSnapshot);
             break;
+          default:
+            resolved = { ...local, updatedAt: Date.now() };
         }
         set((state) => ({
           workspaces: state.workspaces.map((w) =>
@@ -607,6 +727,34 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // FE-036: use the shared migration framework
       migrate: createMigrateFn(
         buildMigrations<WorkspaceState>([
+          {
+            fromVersion: 0,
+            toVersion: 1,
+            migrate: (persisted) => {
+              const raw = persisted as Record<string, unknown> | undefined;
+              const workspaces = raw?.workspaces as Array<Record<string, unknown>> | undefined;
+              return {
+                workspaces: (workspaces?.map((w) => ({
+                  version: STORE_SCHEMA_VERSION,
+                  id: (w.id as string) ?? crypto.randomUUID(),
+                  name: (w.name as string) ?? "Migrated Workspace",
+                  contractIds: (w.contractIds as string[]) ?? [],
+                  savedCallIds: ((w.savedCalls ?? w.savedCallIds) as string[]) ?? [],
+                  artifactRefs: [],
+                  selectedNetwork: "testnet",
+                  createdAt: (w.createdAt as number) ?? Date.now(),
+                  updatedAt: (w.updatedAt as number) ?? Date.now(),
+                })) ?? [defaultWorkspace]) as WorkspaceSnapshot[],
+                activeWorkspaceId: raw?.activeWorkspaceId as string | undefined,
+                cloudId: null,
+                syncState: "idle" as const,
+                syncError: null,
+                checkpoints: {},
+                pendingConflict: null,
+                contractBookmarks: {},
+              };
+            },
+          },
           {
             fromVersion: 1,
             toVersion: 2,

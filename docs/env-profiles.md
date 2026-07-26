@@ -10,6 +10,12 @@ Three curated env profiles cover the common contributor, maintainer, and operato
 
 Standard local development. Connects to Stellar testnet and runs a local SQLite database.
 
+**Workflows supported:**
+- `npm run dev` — full-stack dev server
+- `npm run lint / typecheck / build` — CI-equivalent local checks
+- `npm run test:run -w web` / `npm run test -w api` — test suites
+- `npm run wave-prep` — pre-commit gate
+
 **`apps/api/.env`**
 ```
 PORT=4000
@@ -41,6 +47,12 @@ NEXT_PUBLIC_PASSPHRASE_LOCAL=Standalone Network ; February 2017
 
 Used for staging deployments, preview links, and live demos. Points at a persistent demo database and a deployed API.
 
+**Workflows supported:**
+- `npm run build` — production build
+- `npm run dev` — preview server
+- `bash scripts/deploy-test-suite.sh` — contract deployment
+- `npm run release-evidence` — generate release bundle
+
 **`apps/api/.env`**
 ```
 PORT=4000
@@ -71,6 +83,13 @@ NEXT_PUBLIC_PASSPHRASE_LOCAL=Standalone Network ; February 2017
 ## Profile 3 — Operator
 
 Full all-network configuration for maintainers who need to reproduce mainnet, futurenet, and local-node issues.
+
+**Workflows supported:**
+- `npm run check-drift` — verify runtime defaults
+- `npm run check-integrity` — dependency consistency
+- `bash scripts/verify-migrations.sh` — migration verification
+- `npx playwright test` — E2E tests across networks
+- `bash scripts/telemetry-bootstrap.sh start` — local observability
 
 **`apps/api/.env`**
 ```
@@ -108,6 +127,23 @@ cp apps/web/.env.example apps/web/.env.local
 # Then edit to match the profile you need.
 ```
 
+## Switching profiles
+
+```bash
+# After changing .env files, always run:
+npm run check-drift          # verify runtime defaults match docs
+bash scripts/check-env-parity.sh  # verify variables are consistent
+```
+
 ## Validation
 
-Run `bash scripts/check-env-parity.sh` after switching profiles to verify all required variables are present and consistent.
+Run `bash scripts/check-env-parity.sh` after switching profiles to verify all required variables are present and consistent. The script checks that every documented variable exists and that RPC URLs and passphrases are paired correctly per network.
+
+## Common troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| API returns 502 | `NEXT_PUBLIC_API_URL` does not match API `PORT` | Run `npm run check-drift` |
+| Contract calls fail | Missing or wrong `SOROBAN_RPC_*` URL | Verify the RPC URL in your profile |
+| Wallet won't connect | Wrong passphrase for the network | Check `NEXT_PUBLIC_PASSPHRASE_*` matches the network |
+| DB migration errors | `DATABASE_URL` points to a stale file | Delete the `.db` file and run `npx prisma db push` |

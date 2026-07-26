@@ -7,17 +7,22 @@ import {
   CloudOff,
   Loader2,
   LayoutTemplate,
-  ChevronDown,
+  MoreVertical,
+  Copy,
+  Archive,
+  ArchiveRestore,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@devconsole/ui";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
@@ -61,6 +66,9 @@ export function WorkspaceSwitcher() {
     syncToCloud,
     syncState,
     cloudId,
+    duplicateWorkspace,
+    archiveWorkspace,
+    unarchiveWorkspace,
   } = useWorkspaceStore();
 
   const { currentNetwork } = useNetworkStore();
@@ -71,17 +79,22 @@ export function WorkspaceSwitcher() {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [duplicateNameInput, setDuplicateNameInput] = useState("");
 
-  // FE-030: Recent workspaces
+  const activeWorkspaces = workspaces.filter((w) => !w.archived);
+  const archivedWorkspaces = workspaces.filter((w) => Boolean(w.archived));
+
+  // FE-030: Recent workspaces (only active ones)
   const recentIds = loadRecentWorkspaceIds();
   const recentWorkspaces = recentIds
-    .map((id) => workspaces.find((w) => w.id === id))
-    .filter(Boolean) as typeof workspaces;
+    .map((id) => activeWorkspaces.find((w) => w.id === id))
+    .filter(Boolean) as typeof activeWorkspaces;
 
   const handleCreate = () => {
     if (newName.trim()) {
       createWorkspace(newName, currentNetwork);
-      // FE-035: record activity
       const created = useWorkspaceStore.getState().workspaces.at(-1);
       if (created) record(created.id, "workspace_created", `Workspace "${newName}" created`);
       setNewName("");
@@ -94,13 +107,44 @@ export function WorkspaceSwitcher() {
     pushRecentWorkspaceId(id);
   };
 
-  // FE-032: Create from template
   const handleCreateFromTemplate = (templateKey: string) => {
     const template = WORKSPACE_TEMPLATES.find((t) => t.key === templateKey);
     if (!template) return;
     createWorkspaceFromTemplate(template, currentNetwork);
     setShowTemplates(false);
     toast.success(`Workspace created from template: ${template.name}`);
+  };
+
+  const handleDuplicate = (id: string) => {
+    const ws = workspaces.find((w) => w.id === id);
+    if (!ws) return;
+    setDuplicatingId(id);
+    setDuplicateNameInput(`Copy of ${ws.name}`);
+  };
+
+  const confirmDuplicate = () => {
+    if (!duplicatingId) return;
+    const cloned = duplicateWorkspace(duplicatingId, duplicateNameInput);
+    if (cloned) {
+      toast.success(`Workspace "${cloned.name}" duplicated`, {
+        action: {
+          label: "Switch",
+          onClick: () => handleSelectWorkspace(cloned.id),
+        },
+      });
+    }
+    setDuplicatingId(null);
+    setDuplicateNameInput("");
+  };
+
+  const handleArchive = (id: string) => {
+    archiveWorkspace(id);
+    toast.success("Workspace archived");
+  };
+
+  const handleUnarchive = (id: string) => {
+    unarchiveWorkspace(id);
+    toast.success("Workspace restored");
   };
 
   const handleSync = async () => {
@@ -170,7 +214,6 @@ export function WorkspaceSwitcher() {
         </div>
       </div>
 
-      {/* FE-032: Template picker */}
       {showTemplates && (
         <div className="rounded-md border bg-muted/40 p-2">
           <p className="mb-1 text-xs font-medium text-muted-foreground">Starter templates</p>
@@ -184,6 +227,27 @@ export function WorkspaceSwitcher() {
               <span className="text-xs text-muted-foreground">{t.description}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {duplicatingId && (
+        <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 p-2">
+          <p className="text-xs font-medium text-muted-foreground">Duplicate Workspace</p>
+          <Input
+            autoFocus
+            value={duplicateNameInput}
+            onChange={(e) => setDuplicateNameInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && confirmDuplicate()}
+            className="h-8 text-sm"
+          />
+          <div className="flex justify-end gap-1">
+            <Button size="sm" variant="ghost" onClick={() => setDuplicatingId(null)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={confirmDuplicate}>
+              Duplicate
+            </Button>
+          </div>
         </div>
       )}
 
@@ -203,49 +267,140 @@ export function WorkspaceSwitcher() {
         </div>
       ) : (
         <div className="flex flex-col gap-0.5">
-          {/* FE-030: Recent workspaces section */}
           {recentWorkspaces.length > 0 && (
             <>
               <p className="px-1 text-xs text-muted-foreground">Recent</p>
               {recentWorkspaces.map((w) => (
-                <button
+                <div
                   key={`recent-${w.id}`}
-                  onClick={() => handleSelectWorkspace(w.id)}
-                  className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm ${
+                  className={`group flex items-center justify-between rounded px-2 py-1 text-sm ${
                     activeWorkspaceId === w.id
                       ? "bg-accent font-medium"
                       : "hover:bg-accent/50"
                   }`}
                 >
-                  <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{w.name}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {w.selectedNetwork}
-                  </span>
-                </button>
+                  <button
+                    onClick={() => handleSelectWorkspace(w.id)}
+                    className="flex flex-1 items-center gap-2 text-left truncate min-w-0"
+                  >
+                    <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{w.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {w.selectedNetwork}
+                    </span>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                      >
+                        <MoreVertical className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleDuplicate(w.id)}>
+                        <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleArchive(w.id)}>
+                        <Archive className="mr-2 h-3.5 w-3.5" /> Archive
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               ))}
               <div className="my-1 border-t" />
             </>
           )}
 
-          {/* All workspaces */}
-          {workspaces.map((w) => (
-            <button
+          {activeWorkspaces.map((w) => (
+            <div
               key={w.id}
-              onClick={() => handleSelectWorkspace(w.id)}
-              className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm ${
+              className={`group flex items-center justify-between rounded px-2 py-1 text-sm ${
                 activeWorkspaceId === w.id
                   ? "bg-accent font-medium"
                   : "hover:bg-accent/50"
               }`}
             >
-              <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="truncate">{w.name}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {w.selectedNetwork}
-              </span>
-            </button>
+              <button
+                onClick={() => handleSelectWorkspace(w.id)}
+                className="flex flex-1 items-center gap-2 text-left truncate min-w-0"
+              >
+                <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{w.name}</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {w.selectedNetwork}
+                </span>
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                  >
+                    <MoreVertical className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleDuplicate(w.id)}>
+                    <Copy className="mr-2 h-3.5 w-3.5" /> Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => handleArchive(w.id)}>
+                    <Archive className="mr-2 h-3.5 w-3.5" /> Archive
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           ))}
+
+          {archivedWorkspaces.length > 0 && (
+            <div className="mt-2 border-t pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between px-2 text-xs text-muted-foreground"
+                onClick={() => setShowArchived(!showArchived)}
+              >
+                <span className="flex items-center gap-1">
+                  {showArchived ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  Show archived ({archivedWorkspaces.length})
+                </span>
+              </Button>
+
+              {showArchived && (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {archivedWorkspaces.map((w) => (
+                    <div
+                      key={w.id}
+                      className="group flex items-center justify-between rounded px-2 py-1 text-sm text-muted-foreground hover:bg-accent/40"
+                    >
+                      <span className="truncate">{w.name} (archived)</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                          >
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleUnarchive(w.id)}>
+                            <ArchiveRestore className="mr-2 h-3.5 w-3.5" /> Unarchive
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

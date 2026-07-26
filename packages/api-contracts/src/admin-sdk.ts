@@ -1,20 +1,8 @@
-// packages/api-contracts/src/admin-sdk.ts
-// DX-207: Typed internal admin SDK for operational tooling.
-//
-// Lightweight typed wrapper over internal Wave 5 operational APIs.
-// Scripts and dashboards import from here instead of duplicating
-// request/response parsing logic.
-
-// ── Config ────────────────────────────────────────────────────────────────────
-
 export interface AdminSdkConfig {
   baseUrl: string;
-  /** Bearer token or owner-key header value */
   token?: string;
   timeoutMs?: number;
 }
-
-// ── Shared types ──────────────────────────────────────────────────────────────
 
 export interface BudgetScopeSummary {
   id: string;
@@ -68,7 +56,28 @@ export interface WaveStateSummary {
   asOf: string;
 }
 
-// ── SDK class ─────────────────────────────────────────────────────────────────
+export interface AuditLogEntry {
+  id: string;
+  actor: string;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  summary: string | null;
+  createdAt: string;
+}
+
+export interface RuntimeConfigEntry {
+  key: string;
+  value: string;
+  updatedAt: string;
+}
+
+export interface HealthStatus {
+  status: "ok" | "degraded" | "down";
+  uptime: number;
+  dbConnected: boolean;
+  version: string;
+}
 
 export class AdminSdk {
   private readonly baseUrl: string;
@@ -121,6 +130,47 @@ export class AdminSdk {
     }
   }
 
+  private async put<T>(path: string, body: unknown): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: this.headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`AdminSdk PUT ${path} failed: ${res.status} ${text}`);
+      }
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async del<T>(path: string): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: this.headers,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`AdminSdk DELETE ${path} failed: ${res.status} ${text}`);
+      }
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // ── Budgets ────────────────────────────────────────────────────────────────
 
   async getBudgetScopes(params?: { orgId?: string; repoId?: string }): Promise<BudgetScopeSummary[]> {
@@ -128,6 +178,10 @@ export class AdminSdk {
     if (params?.orgId) qs.set("orgId", params.orgId);
     if (params?.repoId) qs.set("repoId", params.repoId);
     return this.get<BudgetScopeSummary[]>(`/admin/budgets?${qs}`);
+  }
+
+  async getBudgetScope(scopeId: string): Promise<BudgetScopeSummary> {
+    return this.get<BudgetScopeSummary>(`/admin/budgets/${scopeId}`);
   }
 
   async getReservations(params?: { status?: ReservationSummary["status"] }): Promise<ReservationSummary[]> {
@@ -152,12 +206,20 @@ export class AdminSdk {
     return this.post(`/admin/ledger/verify-integrity`, {});
   }
 
+  async repairLedger(dryRun = true): Promise<{ repairedCount: number; dryRun: boolean }> {
+    return this.post(`/admin/ledger/repair`, { dryRun });
+  }
+
   // ── Verifications ──────────────────────────────────────────────────────────
 
   async getVerifications(params?: { status?: VerificationRecord["status"] }): Promise<VerificationRecord[]> {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     return this.get<VerificationRecord[]>(`/admin/verifications?${qs}`);
+  }
+
+  async getVerification(id: string): Promise<VerificationRecord> {
+    return this.get<VerificationRecord>(`/admin/verifications/${id}`);
   }
 
   // ── Appeals ────────────────────────────────────────────────────────────────
@@ -168,14 +230,41 @@ export class AdminSdk {
     return this.get<AppealRecord[]>(`/admin/appeals?${qs}`);
   }
 
+  async getAppeal(id: string): Promise<AppealRecord> {
+    return this.get<AppealRecord>(`/admin/appeals/${id}`);
+  }
+
+  // ── Audit Log ──────────────────────────────────────────────────────────────
+
+  async getAuditLogs(params?: { resourceType?: string; resourceId?: string }): Promise<AuditLogEntry[]> {
+    const qs = new URLSearchParams();
+    if (params?.resourceType) qs.set("resourceType", params.resourceType);
+    if (params?.resourceId) qs.set("resourceId", params.resourceId);
+    return this.get<AuditLogEntry[]>(`/admin/audit?${qs}`);
+  }
+
+  // ── Runtime Config ─────────────────────────────────────────────────────────
+
+  async getRuntimeConfig(): Promise<RuntimeConfigEntry[]> {
+    return this.get<RuntimeConfigEntry[]>("/admin/config");
+  }
+
+  async setRuntimeConfig(key: string, value: string): Promise<RuntimeConfigEntry> {
+    return this.put<RuntimeConfigEntry>(`/admin/config/${key}`, { value });
+  }
+
+  // ── Health ─────────────────────────────────────────────────────────────────
+
+  async healthCheck(): Promise<HealthStatus> {
+    return this.get<HealthStatus>("/admin/health");
+  }
+
   // ── Summary ────────────────────────────────────────────────────────────────
 
   async getWaveStateSummary(): Promise<WaveStateSummary> {
-    return this.get<WaveStateSummary>(`/admin/wave/summary`);
+    return this.get<WaveStateSummary>("/admin/wave/summary");
   }
 }
-
-// ── Factory ───────────────────────────────────────────────────────────────────
 
 export function createAdminSdk(config: AdminSdkConfig): AdminSdk {
   return new AdminSdk(config);

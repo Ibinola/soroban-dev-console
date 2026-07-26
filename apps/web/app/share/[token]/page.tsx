@@ -16,6 +16,7 @@ import { importWorkspace, type SerializedWorkspace } from "@/lib/workspace-seria
 import { useAbiStore } from "@/store/useAbiStore";
 import { useWasmStore } from "@/store/useWasmStore";
 import { DependencyDiagnostics } from "@/components/dependency-diagnostics";
+import { ReadOnlyBanner } from "@/components/read-only-banner";
 import {
   Card,
   CardContent,
@@ -29,7 +30,6 @@ import {
   AlertTriangle,
   Ban,
   Clock,
-  Eye,
   FileCode,
   GitFork,
   Loader2,
@@ -133,17 +133,7 @@ export default function SharedWorkspacePage() {
   return (
     <div className="container mx-auto max-w-3xl space-y-6 p-6">
       {/* Read-only banner */}
-      <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
-        <span className="flex items-center gap-2">
-          <Eye className="h-4 w-4 shrink-0" />
-          <span>
-            <strong>Read-only</strong> shared workspace — editing is disabled.
-          </span>
-        </span>
-        {isExpired && (
-          <Badge variant="destructive" className="shrink-0">Expired</Badge>
-        )}
-      </div>
+      <ReadOnlyBanner isExpired={!!isExpired} />
 
       {/* Dependency Diagnostics */}
       <DependencyDiagnostics

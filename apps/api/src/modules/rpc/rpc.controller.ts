@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
-import type { Response } from "express";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, Req, Sse, MessageEvent, UseGuards, ForbiddenException } from "@nestjs/common";
+import { Observable, interval, Subject, takeUntil } from "rxjs";
+import type { Request, Response } from "express";
 import { RpcRateLimitGuard } from "./rpc-rate-limit.guard.js";
 import { RpcService } from "./rpc.service.js";
 import { RpcCacheService } from "./rpc-cache.service.js";
+import { RpcFailoverService } from "./rpc-failover.service.js";
 import { TransactionNormalizerService } from "./transaction-normalizer.service.js";
 import {
   NormalizedTransactionResult,
@@ -17,7 +19,20 @@ export class RpcController {
     private readonly rpcService: RpcService,
     private readonly rpcCache: RpcCacheService,
     private readonly normalizer: TransactionNormalizerService,
+    private readonly failover: RpcFailoverService,
   ) {}
+
+  @Get("endpoints/status")
+  getEndpointStatus(@Req() req: Request) {
+    const ip = req.ip || req.socket?.remoteAddress;
+    if (ip !== "::1" && ip !== "127.0.0.1" && ip !== "::ffff:127.0.0.1") {
+      throw new ForbiddenException("Only internal localhost requests allowed");
+    }
+    return {
+      success: true,
+      data: this.failover.getStatus(),
+    };
+  }
 
   @Post(":network")
   async proxyRpc(
@@ -146,5 +161,75 @@ export class RpcController {
       success: true,
       data: this.rpcCache.getDedupStats(),
     };
+  }
+
+  /**
+   * Issue #735: SSE endpoint for real-time transaction status streaming.
+   *
+   * GET /api/rpc/:network/tx/:hash/status
+   *
+   * Streams MessageEvents with the latest NormalizedTransactionResult until
+   * the transaction finalizes (status "success" or "failed") or 120 s elapses.
+   * The client can close the connection at any time.
+   */
+  @Sse(":network/tx/:hash/status")
+  streamTxStatus(
+    @Param("network") network: string,
+    @Param("hash") hash: string,
+    @Req() _req: Request,
+  ): Observable<MessageEvent> {
+    const POLL_INTERVAL_MS = 2_000;
+    const TIMEOUT_MS = 120_000;
+    const stop$ = new Subject<void>();
+
+    // Automatically stop streaming after the timeout
+    const timeoutHandle = setTimeout(() => stop$.next(), TIMEOUT_MS);
+
+    const source$ = new Observable<MessageEvent>((subscriber) => {
+      const tick = async () => {
+        try {
+          const proxied = await this.rpcService.proxy(network, {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "getTransaction",
+            params: { hash },
+          });
+
+          const body = proxied.body as any;
+          const normalized = this.normalizer.normalizeGetTransaction(
+            body?.result ?? body,
+          );
+
+          subscriber.next({
+            data: JSON.stringify({ success: true, data: normalized }),
+            type: "message",
+          } as MessageEvent);
+
+          // Close the stream once the transaction has reached a terminal state
+          if (normalized.status === "success" || normalized.status === "failed") {
+            clearTimeout(timeoutHandle);
+            stop$.next();
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          subscriber.next({
+            data: JSON.stringify({ success: false, error: message }),
+            type: "error",
+          } as MessageEvent);
+        }
+      };
+
+      // Emit immediately, then on every interval tick
+      void tick();
+      const sub = interval(POLL_INTERVAL_MS).subscribe(() => void tick());
+
+      return () => {
+        sub.unsubscribe();
+        clearTimeout(timeoutHandle);
+        stop$.complete();
+      };
+    });
+
+    return source$.pipe(takeUntil(stop$));
   }
 }

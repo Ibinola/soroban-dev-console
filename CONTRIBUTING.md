@@ -103,6 +103,17 @@ npm run lint
 npm run format
 ```
 
+### Security
+
+A **pre-commit hook** is installed automatically when you run `npm install`. It uses [husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged) to scan staged files for secrets (AWS keys, Stellar secret keys, API tokens, JWTs, connection strings, etc.) before each commit.
+
+- If a secret pattern is detected, the commit is **blocked** and you must remove the secret before retrying.
+- The scanner runs `scripts/secret-scan-staged.ts`, a lightweight variant of `scripts/secret-scan.ts` that only checks files in the commit.
+- To run a full repository scan manually: `npm run security:scan`
+- To bypass the hook in an emergency (not recommended): `git commit --no-verify`
+
+**Supported secret patterns:** Stellar secret keys (`S...`), AWS keys, GitHub PATs (`ghp_`), npm tokens (`npm_`), JWTs (`eyJ...`), bearer tokens, API keys, and database connection strings.
+
 ### Testing
 
 Write tests for new features and bug fixes:
@@ -174,6 +185,28 @@ Verifies that:
 ### Job Summary
 
 When the DevOps job runs in CI, a step summary is written to the GitHub Actions run page with a plain-English pass/fail status and remediation hints for each check. No need to dig through raw logs.
+
+### Changelog Generation (`npm run generate-changelog`)
+
+The root `CHANGELOG.md` is maintained in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. New entries are not edited by hand — the `scripts/generate-changelog.ts` script introspects merge commits via `git log --merges` and emits markdown grouped by Wave.
+
+```bash
+# Print merged PR titles since a date to stdout
+npm run generate-changelog -- --since 2026-07-01
+
+# Bound an explicit range
+npm run generate-changelog -- --since 2026-07-01 --until 2026-07-30
+
+# Append to a file (the script does not overwrite, just writes)
+npm run generate-changelog -- --since 2026-07-01 --output CHANGELOG.fragment.md
+```
+
+Exit codes:
+- `0` — output written
+- `1` — no merged PRs found in the given range (useful as a CI gate signal)
+- `2` — invalid arguments
+
+Run the command from the repository root so `git log` can read the history. Wave grouping is detected from the source branch name (e.g. `codex/wave7-...`), and unknown branches fall through to an "Other merged PRs" section at the end.
 
 ### Skipping the DevOps gate
 
