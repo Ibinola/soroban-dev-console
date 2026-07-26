@@ -3,28 +3,120 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "!dist/**/*.map"],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        "public/**",
+        "next.config.*",
+        "tsconfig*.json",
+        "tailwind.config.*",
+        "postcss.config.*",
+        "package.json"
+      ]
     },
     "lint": {
-      "dependsOn": ["^lint"],
-      "outputs": []
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        ".eslintrc*",
+        "eslint.config.*",
+        "tsconfig*.json",
+        "package.json"
+      ]
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"],
-      "outputs": []
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        "tsconfig*.json",
+        "package.json"
+      ]
     },
     "test": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"],
-      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "**/*.test.{ts,tsx}"]
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "test/**/*.ts",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "vitest.config.*",
+        "jest.config.*",
+        "package.json"
+      ]
+    },
+    "test:run": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "test/**/*.ts",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "vitest.config.*",
+        "package.json"
+      ]
     },
     "test:e2e": {
       "dependsOn": ["build"],
       "outputs": ["playwright-report/**", "test-results/**"],
       "cache": false
     },
+    "check-drift": {
+      "outputs": [],
+      "inputs": [
+        "scripts/check-runtime-drift.ts",
+        "packages/api-contracts/src/runtime-defaults.ts",
+        "apps/api/.env.example",
+        "apps/web/.env.example",
+        "README.md",
+        "docs/architecture.md"
+      ]
+    },
+    "check-integrity": {
+      "outputs": [],
+      "inputs": [
+        "scripts/check-dependency-integrity.ts",
+        "**/package.json",
+        "package-lock.json"
+      ]
+    },
+    "audit": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "**/*.test.{ts,tsx}",
+        "package.json"
+      ]
+    },
+    "wave-prep": {
+      "dependsOn": ["build", "check-drift", "check-integrity"],
+      "outputs": [],
+      "inputs": [
+        "scripts/**",
+        "packages/api-contracts/src/runtime-defaults.ts",
+        "**/package.json",
+        "package-lock.json",
+        "turbo.json"
+      ]
+    },
     "dev": {
-      "dependsOn": ["^dev"],
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     }

@@ -21,8 +21,15 @@ import {
   Eye,
   AlertCircle,
   Download,
+  ChevronDown,
+  ChevronUp,
+  ListOrdered,
+  GripVertical,
+  PlayCircle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useSavedCallsStore, SavedCall } from "@/store/useSavedCallsStore";
@@ -39,6 +46,7 @@ import {
 import { signTransaction } from "@stellar/freighter-api";
 import { SavedCallsSheet } from "./saved-calls-sheet";
 import { AbiInputField } from "./abi-input-field";
+import { SimulationExplainerDisplay } from "./simulation-explainer-display";
 import { useAbiStore } from "@/store/useAbiStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
@@ -68,12 +76,24 @@ import {
   DialogTrigger,
 } from "@devconsole/ui";
 import { ActionGuard } from "./action-guard";
+import { StateDiffViewer } from "./state-diff-viewer";
 import { toast } from "sonner";
 import { useResultBundlesStore } from "@/store/useResultBundlesStore";
 import { exportResultBundle } from "@/lib/result-bundles";
+import { stateChangesToDiffs } from "@/lib/diff-utils";
 
 interface ContractCallFormProps {
   contractId: string;
+}
+
+// #688: Batch invocation types
+interface BatchCallItem {
+  id: string;
+  fnName: string;
+  args: ContractArg[];
+  status: "pending" | "running" | "success" | "error";
+  result?: string;
+  error?: string;
 }
 
 const DEFAULT_TOKEN_SPEC: NormalizedContractSpec = {
@@ -144,11 +164,15 @@ function toContractArg(field: NonNullable<NormalizedContractSpec["functions"][nu
 
 export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialMethod = searchParams?.get("method");
+  
   const genId = () => Math.random().toString(36).substring(2, 9);
   const { isConnected, address, isSandboxMode, enterSandbox, exitSandbox } = useWallet();
   const { getActiveNetworkConfig } = useNetworkStore();
 
-  const [fnName, setFnName] = useState("");
+  const [fnName, setFnName] = useState(initialMethod || "");
   const [args, setArgs] = useState<ContractArg[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -170,6 +194,12 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [customFee, setCustomFee] = useState("100");
   const [customCpuLimit, setCustomCpuLimit] = useState("");
   const [customMemLimit, setCustomMemLimit] = useState("");
+  // #737: state diff viewer collapsible state
+  const [isDiffOpen, setIsDiffOpen] = useState(false);
+  // #688: batch invocation state
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [batchQueue, setBatchQueue] = useState<BatchCallItem[]>([]);
+  const [isBatchRunning, setIsBatchRunning] = useState(false);
 
   // FE-044: validate overrides before use
   const feeOverride = (() => {
@@ -205,6 +235,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       (key) => key.toUpperCase() === normalizedConnectedAddress,
     );
 
+  const searchParams = useSearchParams();
+  const methodParam = searchParams.get("method");
+
   useEffect(() => {
     if (
       contractId ===
@@ -215,12 +248,28 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     }
   }, [contractId, spec, setSpec]);
 
+  useEffect(() => {
+    if (methodParam && spec?.functions.some((f) => f.name === methodParam)) {
+      if (fnName !== methodParam) {
+        setFnName(methodParam);
+        setSimulation(null);
+        const nextFunction = spec.functions.find((entry) => entry.name === methodParam);
+        setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
+      }
+    }
+  }, [methodParam, spec, fnName]);
+
   const handleFnChange = (name: string) => {
     setFnName(name);
     setSimulation(null);
     const nextFunction = spec?.functions.find((entry) => entry.name === name);
 
     setArgs(nextFunction?.inputs.map(toContractArg) ?? []);
+    
+    const url = new URL(window.location.href);
+    url.searchParams.set("method", name);
+    url.searchParams.set("network", getActiveNetworkConfig().id);
+    router.replace(url.pathname + url.search, { scroll: false });
   };
 
   const addArg = () => {
@@ -466,6 +515,108 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     toast.success("Result bundle exported");
   };
 
+  // #688: Add current call config to batch queue
+  const handleAddToBatch = () => {
+    if (!fnName) return;
+    const item: BatchCallItem = {
+      id: crypto.randomUUID(),
+      fnName,
+      args: args.map((a) => ({ ...a, id: crypto.randomUUID() })),
+      status: "pending",
+    };
+    setBatchQueue((q) => [...q, item]);
+    toast.success(`Added "${fnName}" to batch queue`);
+  };
+
+  const handleRemoveFromBatch = (id: string) => {
+    setBatchQueue((q) => q.filter((item) => item.id !== id));
+  };
+
+  const handleMoveBatchItem = (id: string, direction: "up" | "down") => {
+    setBatchQueue((q) => {
+      const idx = q.findIndex((item) => item.id === id);
+      if (idx < 0) return q;
+      const newIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= q.length) return q;
+      const next = [...q];
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const handleExecuteBatch = async () => {
+    if (batchQueue.length === 0) return;
+    setIsBatchRunning(true);
+
+    const network = getActiveNetworkConfig();
+    const server = new SorobanRpc.Server(network.rpcUrl);
+    const source = address || "GBZXN7PIRZGNMHGA7MUUUFFAUYVSF74BWXME4R37P2N6F5N4AUM5546F";
+
+    for (let i = 0; i < batchQueue.length; i++) {
+      const item = batchQueue[i];
+      // Mark as running
+      setBatchQueue((q) =>
+        q.map((qItem) => qItem.id === item.id ? { ...qItem, status: "running" } : qItem),
+      );
+
+      try {
+        const contract = new Contract(contractId);
+        const scArgs = item.args.map((a) => convertToScVal(a.type, a.value));
+        const operation = contract.call(item.fnName, ...scArgs);
+        const account = await server.getAccount(source).catch(() => null);
+        const sequence = account ? account.sequenceNumber() : "0";
+
+        const tx = new TransactionBuilder(
+          {
+            accountId: () => source,
+            sequenceNumber: () => sequence,
+            incrementSequenceNumber: () => {},
+          },
+          { fee: feeOverride, networkPassphrase: network.networkPassphrase },
+        )
+          .addOperation(operation)
+          .setTimeout(TimeoutInfinite)
+          .build();
+
+        const sim = await server.simulateTransaction(tx);
+        const normalized = normalizeSimulationResult(sim);
+
+        setBatchQueue((q) =>
+          q.map((qItem) =>
+            qItem.id === item.id
+              ? {
+                  ...qItem,
+                  status: normalized.ok ? "success" : "error",
+                  result: normalized.ok ? `Simulation OK — ${normalized.stateChangesCount} state change(s)` : undefined,
+                  error: normalized.ok ? undefined : normalized.error,
+                }
+              : qItem,
+          ),
+        );
+      } catch (e: any) {
+        setBatchQueue((q) =>
+          q.map((qItem) =>
+            qItem.id === item.id ? { ...qItem, status: "error", error: e.message } : qItem,
+          ),
+        );
+      }
+    }
+
+    // Persist batch results to saved interactions
+    const batchResults = batchQueue.map((item) => ({ fnName: item.fnName, args: item.args }));
+    const savedCall = saveCall({
+      name: `Batch (${batchQueue.length} calls) · ${new Date().toLocaleTimeString()}`,
+      contractId,
+      fnName: batchQueue.map((b) => b.fnName).join(", "),
+      args: batchQueue[0]?.args ?? [],
+      network: network.id,
+    });
+    linkSavedCall(activeWorkspaceId, savedCall.id);
+
+    setIsBatchRunning(false);
+    toast.success("Batch execution complete");
+  };
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -513,7 +664,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           <Label>Function Name</Label>
           {spec ? (
             <Select value={fnName} onValueChange={handleFnChange}>
-              <SelectTrigger>
+              <SelectTrigger aria-describedby={selectedFunction?.doc ? "method-description" : undefined}>
                 <SelectValue placeholder="Select a function..." />
               </SelectTrigger>
               <SelectContent>
@@ -541,6 +692,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
                   variant="outline"
                   size="icon"
                   title="Save Interaction"
+                  aria-label="Save Interaction"
                   disabled={!fnName}
                 >
                   <Save className="h-4 w-4" />
@@ -550,6 +702,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
                 variant="outline"
                 size="sm"
                 title="Save reusable operation preset"
+                aria-label="Save reusable operation preset"
                 disabled={!fnName}
                 onClick={handleSavePreset}
               >
@@ -587,7 +740,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           </div>
 
           {selectedFunction?.doc && (
-            <p className="text-sm text-muted-foreground">{selectedFunction.doc}</p>
+            <p id="method-description" className="text-sm text-muted-foreground">{selectedFunction.doc}</p>
           )}
 
           {args.length === 0 && selectedFunction && (
@@ -630,6 +783,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
                   size="icon"
                   variant="ghost"
                   className="text-destructive"
+                  aria-label={`Remove argument ${arg.name || "unnamed"}`}
                   onClick={() => removeArg(arg.id)}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -639,14 +793,15 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           ))}
         </div>
 
-        {result && (
-          <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
-            {result}
-          </div>
-        )}
+        <div aria-live="polite" className="space-y-4 w-full">
+          {result && (
+            <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
+              {result}
+            </div>
+          )}
 
-        {simulation && (
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4">
+          {simulation && (
+            <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={simulation.ok ? "default" : "destructive"}>
                 {simulation.ok ? "Simulation Succeeded" : "Simulation Failed"}
@@ -759,6 +914,43 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
             )}
           </div>
         )}
+        </div>
+
+        {/* Simulation Explainer - Human-readable auth requirements */}
+        {simulation && (
+          <SimulationExplainerDisplay
+            rawSimulation={simulation}
+            connectedAddress={address}
+          />
+        )}
+
+        {/* #737: State Diff Viewer — collapsible section */}
+        {simulation && simulation.ok && (
+          <div className="rounded-md border border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted/30 transition-colors"
+              onClick={() => setIsDiffOpen((v) => !v)}
+              aria-expanded={isDiffOpen}
+            >
+              <span>
+                State Changes ({simulation.stateChangesCount})
+              </span>
+              {isDiffOpen ? (
+                <ChevronUp className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+            </button>
+            {isDiffOpen && (
+              <div className="border-t px-4 py-3">
+                <StateDiffViewer
+                  diffs={stateChangesToDiffs(simulation.stateChanges)}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-3 pt-2">
           {/* FE-044: fee/resource tuning toggle */}
@@ -829,11 +1021,13 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               className="w-full"
               onClick={handleSimulate}
               disabled={isLoading || !fnName}
+              aria-label={isSandboxMode ? "Simulate Contract Call in Sandbox" : "Simulate Contract Call"}
+              aria-busy={isLoading}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Terminal className="mr-2 h-4 w-4" />
+                <Terminal className="mr-2 h-4 w-4" aria-hidden="true" />
               )}
               {isSandboxMode ? "Simulate (Sandbox)" : "Simulate"}
             </Button>
@@ -844,16 +1038,153 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               className="w-full"
               onClick={handleSend}
               disabled={isLoading || !fnName}
+              aria-label="Send Transaction"
+              aria-busy={isLoading}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Send className="mr-2 h-4 w-4" />
+                <Send className="mr-2 h-4 w-4" aria-hidden="true" />
               )}
               Send Transaction
             </Button>
           </ActionGuard>
         </div>
+
+        {/* #688: Batch mode toggle */}
+        <div className="flex items-center justify-between rounded-md border border-dashed px-3 py-2">
+          <div className="flex items-center gap-2">
+            <ListOrdered className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Batch Mode</span>
+            {isBatchMode && batchQueue.length > 0 && (
+              <Badge variant="secondary" className="text-[10px]">
+                {batchQueue.length} queued
+              </Badge>
+            )}
+          </div>
+          <Button
+            variant={isBatchMode ? "default" : "ghost"}
+            size="sm"
+            className="h-6 text-xs"
+            onClick={() => {
+              setIsBatchMode((v) => !v);
+              if (isBatchMode) setBatchQueue([]);
+            }}
+          >
+            {isBatchMode ? "Exit Batch" : "Enable"}
+          </Button>
+        </div>
+
+        {/* #688: Batch queue panel */}
+        {isBatchMode && (
+          <div className="space-y-3 rounded-md border border-violet-500/30 bg-violet-500/5 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                Batch Queue ({batchQueue.length})
+              </p>
+              {batchQueue.length > 0 && (
+                <Button
+                  size="sm"
+                  onClick={handleExecuteBatch}
+                  disabled={isBatchRunning || batchQueue.length === 0}
+                >
+                  {isBatchRunning ? (
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  ) : (
+                    <PlayCircle className="mr-1 h-3 w-3" />
+                  )}
+                  Execute Batch
+                </Button>
+              )}
+            </div>
+
+            {batchQueue.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                Configure a function call above and click "Add to Batch" to queue it.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {batchQueue.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2 rounded-md border bg-background/70 px-3 py-2 text-xs"
+                  >
+                    <GripVertical className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="flex-1 font-mono font-medium">
+                      {item.fnName}({item.args.map((a) => a.value || `<${a.type}>`).join(", ")})
+                    </span>
+                    {item.status === "running" && (
+                      <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
+                    )}
+                    {item.status === "success" && (
+                      <span title={item.result}>
+                        <CheckCircle2 className="h-3 w-3 text-green-500" />
+                      </span>
+                    )}
+                    {item.status === "error" && (
+                      <span title={item.error}>
+                        <XCircle className="h-3 w-3 text-destructive" />
+                      </span>
+                    )}
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5"
+                        disabled={idx === 0}
+                        onClick={() => handleMoveBatchItem(item.id, "up")}
+                        title="Move up"
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5"
+                        disabled={idx === batchQueue.length - 1}
+                        onClick={() => handleMoveBatchItem(item.id, "down")}
+                        title="Move down"
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5 text-destructive"
+                        onClick={() => handleRemoveFromBatch(item.id)}
+                        title="Remove"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Per-call result details */}
+            {batchQueue.some((item) => item.status === "success" || item.status === "error") && (
+              <div className="space-y-1 border-t pt-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Results</p>
+                {batchQueue.map((item) =>
+                  item.result || item.error ? (
+                    <div
+                      key={`result-${item.id}`}
+                      className={`rounded-md px-2 py-1 font-mono text-[10px] ${
+                        item.status === "success"
+                          ? "bg-green-500/10 text-green-700"
+                          : "bg-red-500/10 text-destructive"
+                      }`}
+                    >
+                      <span className="font-semibold">{item.fnName}: </span>
+                      {item.result ?? item.error}
+                    </div>
+                  ) : null,
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {result && (
           <ActionGuard action="submit">
             <div className="flex gap-2">

@@ -9,6 +9,10 @@
  *
  * Missing required vars fail fast with actionable diagnostics.
  * Missing optional vars get defaults and emit a warning.
+ *
+ * Issue #754: Uses structured logger instead of console.warn/info.
+ * Issue #753: LOG_LEVEL configures verbosity (default: info, production: warn).
+ * Issue #752: WEBHOOK_TARGET_URL and WEBHOOK_SECRET validated here.
  */
 
 export type RuntimeMode = "local" | "demo" | "ci";
@@ -25,9 +29,9 @@ function detectMode(): RuntimeMode {
 const SERVER_REQUIRED: string[] = ["DATABASE_URL", "WEB_ORIGIN", "PORT"];
 
 const RPC_DEFAULTS: Record<string, string> = {
-  SOROBAN_RPC_TESTNET_URL: "https://soroban-testnet.stellar.org:443",
-  SOROBAN_RPC_FUTURENET_URL: "https://rpc-futurenet.stellar.org:443",
-  SOROBAN_RPC_LOCAL_URL: "http://localhost:8000/soroban/rpc",
+  RPC_ENDPOINTS_TESTNET: "https://soroban-testnet.stellar.org:443",
+  RPC_ENDPOINTS_FUTURENET: "https://rpc-futurenet.stellar.org:443",
+  RPC_ENDPOINTS_LOCAL: "http://localhost:8000/soroban/rpc",
 };
 
 /** RPC vars required in local mode (demo/ci treat them as optional). */
@@ -61,7 +65,7 @@ function applyDefaults(defaults: Record<string, string>): void {
   for (const [key, fallback] of Object.entries(defaults)) {
     if (!process.env[key]) {
       process.env[key] = fallback;
-      console.warn(`[env] ${key} not set — using default: ${fallback}`);
+      structuredWarn(`[env] ${key} not set — using default: ${fallback}`);
     }
   }
 }
@@ -69,16 +73,48 @@ function applyDefaults(defaults: Record<string, string>): void {
 function warnMissing(vars: string[], boundary: string): void {
   for (const key of vars) {
     if (!process.env[key]) {
-      console.warn(`[env:${boundary}] ${key} is not set — related features will be unavailable.`);
+      structuredWarn(`[env:${boundary}] ${key} is not set — related features will be unavailable.`);
     }
   }
+}
+
+/**
+ * Emit a structured warning log. Used here before the logger module is
+ * fully initialised, so we write directly to stderr as JSON.
+ */
+function structuredWarn(message: string): void {
+  const entry = JSON.stringify({
+    level: "warn",
+    timestamp: new Date().toISOString(),
+    context: "EnvValidation",
+    correlationId: "system",
+    message,
+  });
+  console.warn(entry);
+}
+
+function structuredInfo(message: string): void {
+  const entry = JSON.stringify({
+    level: "info",
+    timestamp: new Date().toISOString(),
+    context: "EnvValidation",
+    correlationId: "system",
+    message,
+  });
+  console.log(entry);
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function validateEnv(): void {
   const mode = detectMode();
-  console.info(`[env] Runtime mode: ${mode}`);
+  structuredInfo(`[env] Runtime mode: ${mode}`);
+
+  // Issue #754: LOG_LEVEL defaults to info, set to warn in production
+  if (!process.env["LOG_LEVEL"]) {
+    process.env["LOG_LEVEL"] = "info";
+    structuredInfo("[env] LOG_LEVEL not set — defaulting to 'info'");
+  }
 
   // Server boundary — always required
   assertPresent(SERVER_REQUIRED, "server");
@@ -87,18 +123,25 @@ export function validateEnv(): void {
   if (mode === "local") {
     // In local mode apply defaults for missing optional RPC vars, then warn about mainnet
     applyDefaults(RPC_DEFAULTS);
-    if (!process.env["SOROBAN_RPC_MAINNET_URL"]) {
-      console.warn("[env:rpc] SOROBAN_RPC_MAINNET_URL is not set — mainnet RPC calls will fail.");
+    if (!process.env["RPC_ENDPOINTS_MAINNET"]) {
+      structuredWarn("[env:rpc] RPC_ENDPOINTS_MAINNET is not set — mainnet RPC calls will fail.");
     }
   } else {
     // demo / ci: apply defaults silently, warn about any still-missing RPC vars
     applyDefaults(RPC_DEFAULTS);
-    warnMissing([...RPC_REQUIRED_IN_LOCAL, "SOROBAN_RPC_MAINNET_URL"], "rpc");
+    warnMissing([...RPC_REQUIRED_IN_LOCAL, "RPC_ENDPOINTS_MAINNET"], "rpc");
   }
 
   // Contract fixtures — only required in local mode
   if (mode === "local") {
     warnMissing(CONTRACT_FIXTURE_VARS, "contracts");
+  }
+
+  // Issue #752: Webhook delivery — optional, silently skip if not configured
+  if (!process.env["WEBHOOK_TARGET_URL"]) {
+    structuredInfo("[env:webhooks] WEBHOOK_TARGET_URL is not set — outbound webhook delivery disabled.");
+  } else if (!process.env["WEBHOOK_SECRET"]) {
+    structuredWarn("[env:webhooks] WEBHOOK_SECRET is not set — webhook payloads will not be signed.");
   }
 
   // Feature flags — always optional, no warning needed (defaults to enabled)

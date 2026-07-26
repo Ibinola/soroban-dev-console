@@ -1,0 +1,122 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`<XdrTooltip /> > renders an inline trigger that surfaces a hover affordance 1`] = `
+<button
+  aria-expanded="false"
+  aria-haspopup="dialog"
+  aria-label="XDR value — press to decode"
+  class="inline-flex cursor-pointer items-center gap-1 rounded border border-transparent bg-transparent p-0 transition-colors hover:border-primary/40 focus:border-primary/60 focus:outline-none"
+  data-slot="popover-trigger"
+  data-state="closed"
+  type="button"
+>
+  <span>
+    preview trigger
+  </span>
+  <svg
+    aria-hidden="true"
+    class="lucide lucide-triangle-alert h-3 w-3 shrink-0 text-yellow-500"
+    fill="none"
+    height="24"
+    stroke="currentColor"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+    width="24"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+    />
+    <path
+      d="M12 9v4"
+    />
+    <path
+      d="M12 17h.01"
+    />
+  </svg>
+</button>
+`;
+
+exports[`<XdrTooltip /> > renders an unrecognised fallback when no decoded payload is provided 1`] = `
+<div>
+  <button
+    aria-expanded="false"
+    aria-haspopup="dialog"
+    aria-label="XDR value — press to decode"
+    class="inline-flex cursor-pointer items-center gap-1 rounded border border-transparent bg-transparent p-0 transition-colors hover:border-primary/40 focus:border-primary/60 focus:outline-none"
+    data-slot="popover-trigger"
+    data-state="closed"
+    type="button"
+  >
+    <span>
+      opaque trigger
+    </span>
+    <svg
+      aria-hidden="true"
+      class="lucide lucide-triangle-alert h-3 w-3 shrink-0 text-yellow-500"
+      fill="none"
+      height="24"
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+      width="24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+      />
+      <path
+        d="M12 9v4"
+      />
+      <path
+        d="M12 17h.01"
+      />
+    </svg>
+  </button>
+</div>
+`;
+
+exports[`<XdrTooltip /> > renders decoded JSON inside the popover when valid XDR is supplied 1`] = `
+<div>
+  <button
+    aria-expanded="false"
+    aria-haspopup="dialog"
+    aria-label="XDR value — press to decode"
+    class="inline-flex cursor-pointer items-center gap-1 rounded border border-transparent bg-transparent p-0 transition-colors hover:border-primary/40 focus:border-primary/60 focus:outline-none"
+    data-slot="popover-trigger"
+    data-state="closed"
+    type="button"
+  >
+    <em>
+      scval preview
+    </em>
+    <svg
+      aria-hidden="true"
+      class="lucide lucide-triangle-alert h-3 w-3 shrink-0 text-yellow-500"
+      fill="none"
+      height="24"
+      stroke="currentColor"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="2"
+      viewBox="0 0 24 24"
+      width="24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+      />
+      <path
+        d="M12 9v4"
+      />
+      <path
+        d="M12 17h.01"
+      />
+    </svg>
+  </button>
+</div>
+`;

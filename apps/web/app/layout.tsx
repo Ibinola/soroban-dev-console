@@ -6,6 +6,8 @@ import { SiteHeader } from "@/components/site-header";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/command-palette";
+import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
+import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
 
 export const metadata: Metadata = {
@@ -27,7 +29,17 @@ export default async function RootLayout({
         <script
           id="__runtime_config__"
           type="application/json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(runtimeConfigResult).replace(/<\//g, '<\\/') }}
+        />
+        {/*
+          Issue #748: Prevent flash of incorrect theme (FOIT) on page load.
+          Reads from localStorage using the sdc:theme:v1 key and applies the
+          theme class to <html> before React hydration.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('sdc:theme:v1');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+          }}
         />
       </head>
       <body>
@@ -36,22 +48,37 @@ export default async function RootLayout({
           defaultTheme="system"
           disableTransitionOnChange
           enableSystem
+          storageKey="sdc:theme:v1"
         >
           <SidebarProvider>
             <TooltipProvider>
               <AppSidebar />
               <SidebarInset>
                 <SiteHeader />
+                <WalletNetworkMismatchBanner />
                 <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
                   {children}
                   <CommandPalette />
+                  {/* Issue #750: Keyboard shortcuts modal — global, responds to ? key */}
+                  <KeyboardShortcutsModal />
                 </div>
               </SidebarInset>
             </TooltipProvider>
           </SidebarProvider>
         </ThemeProvider>
 
-        <Toaster richColors position="bottom-right" />
+        <Toaster
+          richColors
+          position="bottom-right"
+          // Issue #749: max 3 visible toasts; errors persist until dismissed
+          visibleToasts={3}
+          toastOptions={{
+            duration: 3000,
+            classNames: {
+              error: "sonner-error-persist",
+            },
+          }}
+        />
       </body>
     </html>
   );

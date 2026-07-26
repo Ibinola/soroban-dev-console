@@ -103,6 +103,17 @@ npm run lint
 npm run format
 ```
 
+### Security
+
+A **pre-commit hook** is installed automatically when you run `npm install`. It uses [husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged) to scan staged files for secrets (AWS keys, Stellar secret keys, API tokens, JWTs, connection strings, etc.) before each commit.
+
+- If a secret pattern is detected, the commit is **blocked** and you must remove the secret before retrying.
+- The scanner runs `scripts/secret-scan-staged.ts`, a lightweight variant of `scripts/secret-scan.ts` that only checks files in the commit.
+- To run a full repository scan manually: `npm run security:scan`
+- To bypass the hook in an emergency (not recommended): `git commit --no-verify`
+
+**Supported secret patterns:** Stellar secret keys (`S...`), AWS keys, GitHub PATs (`ghp_`), npm tokens (`npm_`), JWTs (`eyJ...`), bearer tokens, API keys, and database connection strings.
+
 ### Testing
 
 Write tests for new features and bug fixes:
@@ -145,10 +156,79 @@ soroban-dev-console/
 
 ### Backend (apps/api)
 
-- `/src/modules` - Feature modules (workspaces, rpc, shares, etc.)
+- `/src/modules` - Feature modules (workspaces, rpc, shares, verification, budget, support-tickets)
 - `/src/lib` - Shared utilities and services
-- `/src/auth` - Authentication guards
+- `/src/auth` - Authentication guards (including `OwnerKeyGuard` and `VerificationGuard`)
 - `/prisma` - Database schema, migrations, and seeds
+
+## CI Gates
+
+Every pull request must pass the **Required Checks** gate before it can be merged. This gate depends on the **DevOps** job, which runs two mandatory checks:
+
+### Runtime Drift Check (`npm run check-drift`)
+
+Verifies that all documented ports and URLs (in `README.md`, `docs/architecture.md`, `apps/api/.env.example`, and `apps/web/.env.example`) match the canonical values in `packages/api-contracts/src/runtime-defaults.ts`.
+
+**If it fails**: run `npm run check-drift` locally. The output will identify exactly which file and value is out of sync. Update the drifted file to match `runtime-defaults.ts` (or update `runtime-defaults.ts` if the canonical value itself changed).
+
+### Dependency Integrity Check (`npm run check-integrity`)
+
+Verifies that:
+1. `package-lock.json` is consistent with `package.json` (no lockfile drift).
+2. Workspace packages reference each other at consistent versions.
+3. Critical shared dependencies (`react`, `next`, `@stellar/stellar-sdk`, etc.) use the same version across all packages.
+
+**If it fails**: run `npm run check-integrity` locally. The output will identify the specific package and version mismatch. Common fixes:
+- Run `npm install` and commit the updated `package-lock.json`.
+- Align mismatched workspace dependency versions.
+
+### Job Summary
+
+When the DevOps job runs in CI, a step summary is written to the GitHub Actions run page with a plain-English pass/fail status and remediation hints for each check. No need to dig through raw logs.
+
+### Changelog Generation (`npm run generate-changelog`)
+
+The root `CHANGELOG.md` is maintained in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. New entries are not edited by hand — the `scripts/generate-changelog.ts` script introspects merge commits via `git log --merges` and emits markdown grouped by Wave.
+
+```bash
+# Print merged PR titles since a date to stdout
+npm run generate-changelog -- --since 2026-07-01
+
+# Bound an explicit range
+npm run generate-changelog -- --since 2026-07-01 --until 2026-07-30
+
+# Append to a file (the script does not overwrite, just writes)
+npm run generate-changelog -- --since 2026-07-01 --output CHANGELOG.fragment.md
+```
+
+Exit codes:
+- `0` — output written
+- `1` — no merged PRs found in the given range (useful as a CI gate signal)
+- `2` — invalid arguments
+
+Run the command from the repository root so `git log` can read the history. Wave grouping is detected from the source branch name (e.g. `codex/wave7-...`), and unknown branches fall through to an "Other merged PRs" section at the end.
+
+### Skipping the DevOps gate
+
+The DevOps job only runs when relevant files change (scripts, `runtime-defaults.ts`, docs, env examples, or lockfiles). If none of those files are touched, the job is skipped and the Required Checks gate treats a skip as a pass.
+## Branch Protection and Required Checks
+
+The `main` branch is fully protected. **Direct pushes are rejected** — all changes must go through a pull request.
+
+A PR cannot be merged until all applicable CI jobs pass:
+
+| Job | Runs when |
+|-----|-----------|
+| `Web` | `apps/web/**` or `packages/ui/**` changed |
+| `API` | `apps/api/**` or `packages/api-contracts/**` changed |
+| `Package Validation` | `packages/**` changed |
+| `Contracts` | `contracts/**` changed |
+| `DevOps` | `scripts/**`, `.env.example`, `README.md`, or `docs/architecture.md` changed |
+| `E2E Tests` | `apps/web/e2e/**` changed or when `Web` runs |
+
+At least **1 approving review** is required. Reviews are dismissed when new commits are pushed.
+
+See [docs/branch-protection.md](./docs/branch-protection.md) for the full reference including the release process and hotfix workflow.
 
 ## Pull Request Process
 
@@ -180,10 +260,9 @@ soroban-dev-console/
    - Add screenshots for UI changes
    - Note any breaking changes
 
-Direct pushes to `main` may be blocked by branch protection. If that happens,
-push your branch and open a PR instead of trying to bypass the protection.
-
 7. **Address review feedback** promptly
+
+> **Merge strategy**: Squash merge is preferred for feature and fix branches to keep `main` history linear. See [docs/branch-protection.md](./docs/branch-protection.md) for the full merge and release discipline.
 
 ## Areas We Need Help
 
@@ -245,6 +324,19 @@ If a template doesn't fit, you can still open a regular issue with:
 - Expected vs actual behavior
 - Environment details (OS, Node version, browser)
 - Screenshots if applicable
+
+## Governance
+
+This project follows a documented governance model covering issue scoping, CI budget monitoring, verification-sensitive flows, and fairness escalation during Stellar Wave windows.
+
+See [docs/governance.md](./docs/governance.md) for the full reference, including:
+
+- How to scope and size issues correctly
+- CI minute budget targets and how to diagnose overruns
+- Runbook for verification-sensitive flows (drift check, integrity check, migrations, wave-prep)
+- Fairness concerns and the appeals process
+- Maintainer checklist for wave windows
+- **Verification Abuse Threat Model:** Review `docs/threat-models/verification-abuse.md` before approving issues, overrides, or support tickets.
 
 ## Code of Conduct
 

@@ -11,6 +11,7 @@ import {
   BookmarkPlus,
   Star,
   Wrench,
+  Network,
 } from "lucide-react";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
@@ -91,6 +92,12 @@ export default function ContractsPage() {
             Manage and interact with your Soroban smart contracts.
           </p>
         </div>
+        <Link href="/contracts/graph">
+          <Button variant="outline" className="gap-2">
+            <Network className="h-4 w-4" />
+            Dependency Graph
+          </Button>
+        </Link>
       </div>
 
       {/* Add Contract Card */}

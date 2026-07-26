@@ -8,6 +8,7 @@ import { FixtureManifestModule } from "./modules/fixture-manifest/fixture-manife
 import { SharesModule } from "./modules/shares/shares.module.js";
 import { WorkspacesModule } from "./modules/workspaces/workspaces.module.js";
 import { DeadLetterModule } from "./modules/dead-letter/dead-letter.module.js";
+import { BackgroundJobModule } from "./modules/jobs/background-job.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
 
 @Module({
@@ -24,7 +25,8 @@ import { AuditModule } from "./modules/audit/audit.module.js";
     SharesModule,
     WorkspacesModule,
     DeadLetterModule,
-    AuditModule
+    BackgroundJobModule,
+    AuditModule,
   ]
 })
-export class AppModule {}
+export class AppModule { }

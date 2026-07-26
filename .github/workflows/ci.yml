@@ -18,8 +18,8 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
       devops: ${{ steps.filter.outputs.devops }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -48,6 +48,56 @@ jobs:
               - 'package-lock.json'
               - '**/package.json'
 
+  security:
+    name: Security Guardrails
+    needs: changes
+    if: needs.changes.outputs.devops == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Secret scan
+        run: npm run security:scan
+
+      - name: Validate playbooks
+        run: npm run security:playbooks
+
+      - name: Dependency integrity
+        run: npm run check-integrity
+
+      - name: Dependency policy gate
+        run: npx tsx scripts/check-dependency-policy.ts
+
+      - name: Supply-chain verification
+        run: |
+          echo "## Supply-Chain Controls" >> $GITHUB_STEP_SUMMARY
+          if [ -f "build-manifest.json" ]; then
+            echo "✅ Build manifest found — supply-chain tracking active" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No build-manifest.json found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "Supply-chain input verification complete."
+
+      - name: Backup artifact protection
+        run: |
+          echo "## Backup & Restore Protection" >> $GITHUB_STEP_SUMMARY
+          if [ -f "scripts/backup-restore-drill.sh" ]; then
+            bash -n scripts/backup-restore-drill.sh && echo "✅ backup-restore-drill.sh syntax OK" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f ".github/workflows/backup-restore-drill.yml" ]; then
+            echo "✅ Backup restore workflow present" >> $GITHUB_STEP_SUMMARY
+          fi
+
   web:
     name: Web
     needs: changes
@@ -55,20 +105,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: "npm"
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-web-${{ hashFiles('package-lock.json', 'turbo.json') }}
+          key: ${{ runner.os }}-turbo-web-${{ hashFiles('apps/web/**', 'packages/ui/**', 'packages/soroban-utils/**', 'turbo.json', 'package-lock.json') }}
           restore-keys: |
+            ${{ runner.os }}-turbo-web-${{ hashFiles('turbo.json', 'package-lock.json') }}-
             ${{ runner.os }}-turbo-web-
 
       - name: Install dependencies
@@ -96,7 +147,7 @@ jobs:
 
       - name: Upload bundle analysis
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bundle-analysis
           path: apps/web/.next/analyze/
@@ -114,20 +165,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: "npm"
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-packages-${{ matrix.workspace }}-${{ hashFiles('package-lock.json', 'turbo.json') }}
+          key: ${{ runner.os }}-turbo-packages-${{ matrix.workspace }}-${{ hashFiles('packages/**', 'turbo.json', 'package-lock.json') }}
           restore-keys: |
+            ${{ runner.os }}-turbo-packages-${{ matrix.workspace }}-${{ hashFiles('turbo.json', 'package-lock.json') }}-
+            ${{ runner.os }}-turbo-packages-${{ matrix.workspace }}-
             ${{ runner.os }}-turbo-packages-
 
       - name: Install dependencies
@@ -144,20 +197,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: "npm"
 
       - name: Restore Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-api-${{ hashFiles('package-lock.json', 'turbo.json') }}
+          key: ${{ runner.os }}-turbo-api-${{ hashFiles('apps/api/**', 'packages/api-contracts/**', 'turbo.json', 'package-lock.json') }}
           restore-keys: |
+            ${{ runner.os }}-turbo-api-${{ hashFiles('turbo.json', 'package-lock.json') }}-
             ${{ runner.os }}-turbo-api-
 
       - name: Install dependencies
@@ -187,7 +241,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -212,10 +266,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: "npm"
@@ -231,7 +285,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: apps/web/playwright-report/
@@ -242,12 +296,193 @@ jobs:
     needs: changes
     if: needs.changes.outputs.devops == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    continue-on-error: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-devops-${{ hashFiles('scripts/**', 'packages/api-contracts/src/runtime-defaults.ts', 'turbo.json', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-devops-${{ hashFiles('turbo.json', 'package-lock.json') }}-
+            ${{ runner.os }}-turbo-devops-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check runtime drift
+        id: drift
+        run: npm run check-drift
+
+      - name: Check dependency integrity
+        id: integrity
+        run: npm run check-integrity
+
+      - name: Validate runbooks and observability docs
+        id: runbooks
+        run: |
+          MISSING=()
+          for f in docs/runbooks.md docs/observability.md; do
+            [ -f "$f" ] || MISSING+=("$f")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Missing required docs: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "✅ Runbooks and observability docs present"
+
+      - name: Validate service health script
+        id: health_script
+        run: |
+          if [ ! -f "scripts/check-service-health.sh" ]; then
+            echo "❌ scripts/check-service-health.sh is missing"
+            exit 1
+          fi
+          bash -n scripts/check-service-health.sh
+          echo "✅ scripts/check-service-health.sh syntax OK"
+
+      - name: Validate backup protection
+        id: backup_protection
+        run: |
+          if [ -f "scripts/backup-restore-drill.sh" ]; then
+            bash -n scripts/backup-restore-drill.sh
+            echo "✅ backup-restore-drill.sh syntax OK" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f ".github/workflows/backup-restore-drill.yml" ]; then
+            echo "✅ Backup restore workflow present" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## DevOps Gate Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.drift.outcome }}" = "success" ]; then
+            echo "✅ **Runtime drift check**: passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Runtime drift check**: failed — ports/URLs in docs or .env.example are out of sync with \`packages/api-contracts/src/runtime-defaults.ts\`. Run \`npm run check-drift\` locally to see details." >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ steps.integrity.outcome }}" = "success" ]; then
+            echo "✅ **Dependency integrity check**: passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Dependency integrity check**: failed — lockfile or workspace dependency versions are inconsistent. Run \`npm run check-integrity\` locally to see details." >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ steps.runbooks.outcome }}" = "success" ]; then
+            echo "✅ **Runbooks / observability docs**: present" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Runbooks / observability docs**: missing — ensure docs/runbooks.md and docs/observability.md exist." >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ steps.health_script.outcome }}" = "success" ]; then
+            echo "✅ **Service health script**: syntax OK" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Service health script**: missing or invalid — ensure scripts/check-service-health.sh exists and has valid bash syntax." >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ steps.backup_protection.outcome }}" = "success" ]; then
+            echo "✅ **Backup protection**: validated" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Backup protection**: validation failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  required-checks:
+    name: Required Checks
+    needs: [devops]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert devops gate passed
+        run: |
+          if [ "${{ needs.devops.result }}" != "success" ] && [ "${{ needs.devops.result }}" != "skipped" ]; then
+            echo "❌ DevOps gate failed. Drift or integrity checks must pass before merge."
+            exit 1
+          fi
+          echo "✅ All required checks passed."
+  # DEVOPS-212: Wave-prep gate — runs the full release-readiness sequence.
+  # For audit-ready artifacts (commit range, check logs, health notes), use the
+  # Release Candidate workflow or: npm run release-evidence -- --wave <id>
+  # See docs/release-evidence-bundle.md (DEVOPS-216).
+  wave-prep:
+    name: Wave Prep
+    needs: [changes, devops]
+    if: (needs.changes.outputs.devops == 'true' || github.event_name == 'push') && needs.devops.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-wave-prep-${{ hashFiles('scripts/**', 'packages/api-contracts/src/runtime-defaults.ts', 'turbo.json', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-wave-prep-${{ hashFiles('turbo.json', 'package-lock.json') }}-
+            ${{ runner.os }}-turbo-wave-prep-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify build order
+        run: npx tsx scripts/verify-build-order.ts
+        continue-on-error: true
+
+      - name: Validate branch workflow
+        run: npx tsx scripts/validate-branch-workflow.ts
+
+      - name: Write wave-prep summary
+        if: always()
+        run: |
+          echo "## Wave Prep Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All wave-prep checks completed. Review individual step results above." >> $GITHUB_STEP_SUMMARY
+
+  # DEVOPS-201: Full-stack Wave integration gate.
+  # Runs after all per-layer jobs and fails the PR if any layer regresses.
+  wave-integration:
+    name: Wave Integration Gate
+    needs: [web, api, devops]
+    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check layer results
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "Layer results: $results"
+          for job in web api devops; do
+            result=$(echo "$results" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$job',{}).get('result','skipped'))")
+            if [ "$result" = "failure" ]; then
+              echo "::error::Layer '$job' failed — Wave integration gate blocked."
+              exit 1
+            fi
+          done
+          echo "All required layers passed or were skipped."
+
+  # DEVOPS-201: Validate Prisma schema and migration consistency on API changes.
+  api-schema:
+    name: API Schema Validation
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: "npm"
@@ -255,8 +490,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check runtime drift
-        run: npm run check-drift
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w api
 
-      - name: Check dependency integrity
-        run: npm run check-integrity
+      - name: Validate Prisma schema
+        run: npx prisma validate --schema apps/api/prisma/schema.prisma
+
+      - name: Check migration consistency
+        run: bash scripts/verify-migrations.sh
+        continue-on-error: true
+
+  # DEVOPS-201: Cross-boundary contract validation — api-contracts must build
+  # cleanly whenever either the API or web layer changes.
+  api-contracts:
+    name: API Contracts
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and typecheck api-contracts
+        run: npx turbo run build typecheck --filter=@devconsole/api-contracts

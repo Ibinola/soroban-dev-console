@@ -9,9 +9,11 @@
     "rootDir": "src",
     "outDir": "dist",
     "noEmitOnError": true,
+    "noEmit": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts"],
   "exclude": [
