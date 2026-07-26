@@ -18,6 +18,7 @@ model Workspace {
   archived          Boolean             @default(false)
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
+  tags              Json?
   savedContracts    SavedContract[]
   savedInteractions SavedInteraction[]
   artifacts         WorkspaceArtifact[]

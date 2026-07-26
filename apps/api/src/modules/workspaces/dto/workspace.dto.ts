@@ -15,6 +15,7 @@ import {
   IsObject,
   IsInt,
   Min,
+  Max,
   registerDecorator,
   ValidationOptions,
   ValidationArguments,
@@ -201,6 +202,10 @@ export class ListWorkspacesDto {
   network?: string;
 
   @IsOptional()
+  @IsString()
+  tag?: string;
+
+  @IsOptional()
   @Transform(({ value }) => value === "true" || value === true)
   @IsBoolean()
   includeArchived?: boolean;
@@ -214,4 +219,37 @@ export interface PaginatedResponse<T> {
     skip: number;
     take: number;
   };
+}
+
+export class SearchWorkspacesDto {
+  @IsString()
+  q!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  take?: number;
+
+  @IsOptional()
+  @IsIn(["updatedAt", "createdAt", "name"])
+  sortBy?: "updatedAt" | "createdAt" | "name";
+
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  sortOrder?: "asc" | "desc";
+}
+
+export class UpdateWorkspaceTagsDto {
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @Max(20)
+  tags!: string[];
 }
