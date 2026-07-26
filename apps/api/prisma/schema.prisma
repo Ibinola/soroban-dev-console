@@ -200,13 +200,28 @@ model ShareLink {
   token         String     @unique
   label         String?
   snapshotJson  Json       @map("snapshot_json")
+  viewCount     Int        @default(0) @map("view_count")
   expiresAt     DateTime?  @map("expires_at")
   revokedAt     DateTime?  @map("revoked_at")
   createdAt     DateTime   @default(now()) @map("created_at")
   workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accessLogs    ShareAccessLog[]
 
   @@index([workspaceId, createdAt])
   @@map("share_links")
+}
+
+/// Access log entries for share link view tracking.
+model ShareAccessLog {
+  id          String     @id @default(cuid())
+  shareId     String     @map("share_id")
+  accessedAt  DateTime   @default(now()) @map("accessed_at")
+  ip          String?
+  userAgent   String?    @map("user_agent")
+  share       ShareLink  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([shareId, accessedAt])
+  @@map("share_access_logs")
 }
 
 /// BE-205: Canonical verification state and eligibility record for a Wave contributor.
