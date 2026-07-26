@@ -1,4 +1,4 @@
-import { xdr, scValToNative } from "@stellar/stellar-sdk";
+import { xdr, scValToNative, rpc as SorobanRpc } from "@stellar/stellar-sdk";
 
 export interface DiffResult {
   key: string;
@@ -135,4 +135,64 @@ export function diffWorkspaceSnapshots(
   }
 
   return results;
+}
+
+// ── FE-#737: Convert simulation LedgerEntryChange[] to DiffResult[] ──────────
+
+type LedgerEntryChange = SorobanRpc.Api.LedgerEntryChange;
+
+function ledgerEntryToScValDisplay(entry: xdr.LedgerEntry | null): { display: string; type: string } | null {
+  if (!entry) return null;
+  try {
+    const data = entry.data();
+    // contractData holds an ScVal in .val()
+    if (data.switch().name === "contractData") {
+      const val = data.contractData().val();
+      const native = scValToNative(val);
+      return {
+        display: typeof native === "object" ? JSON.stringify(native) : String(native),
+        type: val.switch().name,
+      };
+    }
+    return { display: entry.toXDR("base64").slice(0, 32) + "…", type: "raw" };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert Soroban RPC `LedgerEntryChange[]` (from simulation results)
+ * into `DiffResult[]` consumable by `StateDiffViewer`.
+ */
+export function stateChangesToDiffs(
+  changes: LedgerEntryChange[],
+): DiffResult[] {
+  return changes.map((change) => {
+    let keyStr = "";
+    let keyDecoded: string | undefined;
+    try {
+      keyStr = change.key.toXDR("base64");
+      keyDecoded = tryDecodeLedgerKey(keyStr);
+    } catch {
+      keyStr = "unknown";
+    }
+
+    const oldVal = ledgerEntryToScValDisplay(change.before);
+    const newVal = ledgerEntryToScValDisplay(change.after);
+
+    const type: DiffResult["type"] = !change.before
+      ? "added"
+      : !change.after
+        ? "deleted"
+        : "modified";
+
+    return {
+      key: keyStr,
+      keyDecoded,
+      oldValue: oldVal?.display ?? null,
+      newValue: newVal?.display ?? null,
+      type,
+      valueType: (newVal ?? oldVal)?.type,
+    };
+  });
 }
