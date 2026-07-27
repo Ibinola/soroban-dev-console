@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min, Max } from "class-validator";
+import { IsOptional, IsString, IsInt, IsISO8601, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 
 export class ListAuditDto {
@@ -37,9 +37,21 @@ export class ListAuditDto {
   @Min(0)
   skip?: number;
 
+  /** Page size for offset-based pagination (max 100). */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   take?: number;
+
+  /** Only return audit logs created at or after this ISO timestamp. */
+  @IsOptional()
+  @IsISO8601()
+  createdAfter?: string;
+
+  /** Only return audit logs created at or before this ISO timestamp. */
+  @IsOptional()
+  @IsISO8601()
+  createdBefore?: string;
 }

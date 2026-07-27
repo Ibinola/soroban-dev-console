@@ -107,14 +107,25 @@ export class AuditService {
     take?: number;
     cursor?: string;
     limit?: number;
+    createdAfter?: string;
+    createdBefore?: string;
   }) {
-    const { actor, action, resourceType, resourceId } = query;
+    const { actor, action, resourceType, resourceId, createdAfter, createdBefore } = query;
+
+    const createdAtFilter =
+      createdAfter || createdBefore
+        ? {
+            ...(createdAfter && { gte: new Date(createdAfter) }),
+            ...(createdBefore && { lte: new Date(createdBefore) }),
+          }
+        : undefined;
 
     const where = {
       ...(actor && { actor }),
       ...(action && { action }),
       ...(resourceType && { resourceType }),
       ...(resourceId && { resourceId }),
+      ...(createdAtFilter && { createdAt: createdAtFilter }),
     };
 
     // Cursor-based pagination: stable across concurrent inserts. Ordering is
@@ -147,7 +158,11 @@ export class AuditService {
     }
 
     // Legacy offset-based pagination (kept for backward compatibility).
-    const { skip = 0, take = 50 } = query;
+    // `take` is clamped to the 100-row cap defensively, even though the DTO
+    // already enforces it at the HTTP boundary.
+    const { skip = 0 } = query;
+    const take = Math.min(query.take ?? 50, CURSOR_MAX_LIMIT);
+
     const [data, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
@@ -158,6 +173,8 @@ export class AuditService {
       this.prisma.auditLog.count({ where }),
     ]);
 
-    return { data, pagination: { total, skip, take } };
+    const hasMore = skip + data.length < total;
+
+    return { data, pagination: { total, skip, take, hasMore } };
   }
 }

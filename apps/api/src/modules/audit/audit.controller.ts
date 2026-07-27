@@ -16,10 +16,12 @@ export class AuditController {
       resourceId: query.resourceId,
       skip: query.skip,
       take: query.take,
-      // Cursor-based pagination params are only forwarded when provided so
-      // callers using legacy offset pagination keep their existing behavior.
+      // Optional params are only forwarded when provided so callers using
+      // legacy offset pagination / no time filter keep existing behavior.
       ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
+      ...(query.createdAfter !== undefined ? { createdAfter: query.createdAfter } : {}),
+      ...(query.createdBefore !== undefined ? { createdBefore: query.createdBefore } : {}),
     });
   }
 
