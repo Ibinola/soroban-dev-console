@@ -31,13 +31,22 @@ export function ConnectWalletButton() {
     walletType,
     sessionStatus,
     connect,
-    disconnect,
+    disconnectWallet,
     revalidateSession,
     getCapabilities,
+    autoReconnect,
+    setAutoReconnect,
+    attemptReconnect,
+    reconnectAttempts,
   } = useWallet();
 
   const [isOpen, setIsOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [freighterAvailable, setFreighterAvailable] = useState(false);
+
+  useEffect(() => {
+    setFreighterAvailable(typeof window !== "undefined" && typeof (window as any).freighter !== "undefined");
+  }, []);
 
   useEffect(() => {
     setIsMounted(true);
@@ -158,7 +167,7 @@ export function ConnectWalletButton() {
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={disconnect}
+            onClick={disconnectWallet}
             className="cursor-pointer text-red-600"
           >
             <LogOut className="mr-2 h-4 w-4" />
@@ -168,6 +177,10 @@ export function ConnectWalletButton() {
       </DropdownMenu>
     );
   }
+
+  const reconnectLabel = !isConnected && autoReconnect
+    ? `Reconnecting attempt ${reconnectAttempts}/3...`
+    : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -179,6 +192,25 @@ export function ConnectWalletButton() {
           <DialogTitle>Connect your wallet</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+          {/* Freighter extension status */}
+          <div className="flex items-center justify-between rounded-md border px-3 py-2 text-xs">
+            <span className="text-muted-foreground">Freighter extension</span>
+            {freighterAvailable ? (
+              <Badge variant="default" className="text-[10px]">Installed</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px]">Not detected</Badge>
+            )}
+          </div>
+
+          {!isConnected && autoReconnect && (
+            <div className="flex items-center justify-between rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+              <span className="text-amber-700">{reconnectLabel}</span>
+              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setAutoReconnect(false); attemptReconnect(); }}>
+                Retry now
+              </Button>
+            </div>
+          )}
+
           {walletProviderList.map((provider) => (
             <Button
               key={provider.id}

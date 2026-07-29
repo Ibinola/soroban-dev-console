@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useNetworkStore } from "@/store/useNetworkStore";
+import { useNetworkStore, DEFAULT_NETWORKS } from "@/store/useNetworkStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
+import { useTheme } from "next-themes";
 import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import { Label } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
 import {
   Card,
   CardContent,
@@ -28,15 +31,58 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { DataManagement } from "@/components/data-management";
 import { RuntimeConfigStatus } from "@/components/runtime-config-status";
+import { SupportBundleCard } from "@/components/support-bundle-card";
 import { toast } from "sonner";
 import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
+// Issue #747: SSR-safe theme button group
+function ThemeSelector() {
+  const { setTheme: setNextTheme } = useTheme();
+  const { theme, setTheme } = useSettingsStore();
+
+  const handleSelect = (value: "light" | "dark" | "system") => {
+    setTheme(value);
+    setNextTheme(value);
+  };
+
+  const options = [
+    { value: "light" as const, label: "Light", icon: Sun },
+    { value: "dark" as const, label: "Dark", icon: Moon },
+    { value: "system" as const, label: "System", icon: Monitor },
+  ];
+
+  return (
+    <div className="flex gap-2">
+      {options.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          onClick={() => handleSelect(value)}
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+            theme === value
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border bg-background hover:bg-muted"
+          }`}
+          aria-pressed={theme === value}
+        >
+          <Icon className="h-4 w-4" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
-  const { customNetworks, addCustomNetwork, removeCustomNetwork } =
+  const { customNetworks, addCustomNetwork, removeCustomNetwork, autoFailover, setAutoFailover, degradationThresholdMs, setDegradationThreshold, failoverNetworkId, setFailoverNetworkId } =
     useNetworkStore();
+  const { defaultNetwork, setDefaultNetwork, autoRunSimulation, setAutoRunSimulation } =
+    useSettingsStore();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -97,13 +143,133 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-muted-foreground">
-          Manage your custom RPC connections and configurations.
+          Manage your preferences, custom RPC connections, and configurations.
         </p>
       </div>
 
       {/* FE-063: Fallback state indicator for fixture manifest */}
       <FixtureFallbackIndicator />
 
+      {/* Issue #747: Appearance section */}
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Appearance</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>Theme</CardTitle>
+            <CardDescription>
+              Choose your preferred color scheme. System follows your OS preference.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ThemeSelector />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Issue #747: Editor section */}
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Editor</h2>
+        <Card>
+          <CardContent className="space-y-6 pt-6">
+            <div className="space-y-2">
+              <Label htmlFor="default-network">Default Network</Label>
+              <p className="text-xs text-muted-foreground">
+                New workspaces will use this network by default.
+              </p>
+              <select
+                id="default-network"
+                value={defaultNetwork}
+                onChange={(e) => setDefaultNetwork(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="testnet">Testnet</option>
+                <option value="mainnet">Mainnet</option>
+                <option value="futurenet">Futurenet</option>
+                <option value="local">Local</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="auto-run-simulation">Auto-run Simulation</Label>
+                <p className="text-xs text-muted-foreground">
+                  Automatically simulate contract calls when a method is selected.
+                </p>
+              </div>
+              <Switch
+                id="auto-run-simulation"
+                checked={autoRunSimulation}
+                onCheckedChange={setAutoRunSimulation}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Auto-failover configuration */}
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Auto-failover</h2>
+        <Card>
+          <CardContent className="space-y-6 pt-6">
+            <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="auto-failover-toggle">Enable Auto-failover</Label>
+                <p className="text-xs text-muted-foreground">
+                  Automatically switch to a fallback network when latency exceeds the threshold.
+                </p>
+              </div>
+              <Switch
+                id="auto-failover-toggle"
+                checked={autoFailover}
+                onCheckedChange={setAutoFailover}
+              />
+            </div>
+
+            <div className="rounded-md border p-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="failover-threshold">Degradation Threshold (ms)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Latency above this triggers auto-failover: {degradationThresholdMs}ms
+                </p>
+                <input
+                  id="failover-threshold"
+                  type="range"
+                  min={500}
+                  max={10000}
+                  step={100}
+                  value={degradationThresholdMs}
+                  onChange={(e) => setDegradationThreshold(Number(e.target.value))}
+                  className="w-full"
+                  aria-label="Degradation threshold in milliseconds"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>500ms</span>
+                  <span>10000ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-md border p-4 space-y-2">
+              <Label htmlFor="failover-network">Failover Network</Label>
+              <p className="text-xs text-muted-foreground">
+                Network to switch to when failover is triggered.
+              </p>
+              <select
+                id="failover-network"
+                value={failoverNetworkId}
+                onChange={(e) => setFailoverNetworkId(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {Object.values(DEFAULT_NETWORKS).map((net) => (
+                  <option key={net.id} value={net.id}>{net.name}</option>
+                ))}
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Advanced: Custom RPC networks */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         {/* Form Section */}
         <Card>
@@ -250,6 +416,11 @@ export default function SettingsPage() {
       <div className="max-w-2xl">
         <h2 className="mb-4 text-xl font-semibold">Application Data</h2>
         <DataManagement />
+      </div>
+
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">Diagnostics</h2>
+        <SupportBundleCard />
       </div>
     </div>
   );

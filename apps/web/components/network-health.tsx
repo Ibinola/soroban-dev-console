@@ -3,24 +3,33 @@
 import { useEffect } from "react";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
 } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
 import { cn } from "@devconsole/ui";
+
+/**
+ * Issue #738: Network latency indicator and RPC endpoint status badge.
+ *
+ * - Status dot in header: green (healthy), yellow (degraded p95 > 2000ms), red (offline/failed)
+ * - Polls GET /api/health/rpc every 30 seconds
+ * - Clicking opens a popover showing per-network latency (p50) and last-checked timestamp
+ * - Degrades gracefully if the health endpoint is unreachable
+ */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export function NetworkHealth() {
-  const { currentNetwork, health, setHealth } = useNetworkStore();
+  const { currentNetwork, health, setHealth, autoFailover, setAutoFailover, failoverNetworkId, degradationThresholdMs } = useNetworkStore();
 
   useEffect(() => {
     let cancelled = false;
 
     async function checkHealth() {
       try {
-        const res = await fetch(`${API_BASE}/health/networks/${currentNetwork}`);
+        const res = await fetch(`${API_BASE}/api/health/networks/${currentNetwork}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as {
           status: "healthy" | "degraded" | "offline";
@@ -60,36 +69,111 @@ export function NetworkHealth() {
 
   if (!health) return null;
 
-  const statusColors = {
-    healthy: "bg-green-500",
-    degraded: "bg-yellow-500",
-    offline: "bg-red-500",
-  };
+  // Issue #738: Yellow if p95 > 2000ms, Red if offline, Green if healthy
+  const statusColor =
+    health.status === "healthy"
+      ? "bg-green-500"
+      : health.status === "degraded"
+      ? "bg-yellow-500"
+      : "bg-red-500";
+
+  const statusLabel =
+    health.status === "healthy"
+      ? "Healthy"
+      : health.status === "degraded"
+      ? `Degraded (${health.latencyMs}ms)`
+      : "Offline";
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex cursor-help items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted">
-            <div
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted"
+          aria-label={`Network status: ${statusLabel}`}
+        >
+          <div
+            className={cn(
+              "h-2 w-2 rounded-full",
+              health.status !== "offline" && "animate-pulse",
+              statusColor,
+            )}
+          />
+          <span className="hidden font-mono text-xs text-muted-foreground lg:inline">
+            {health.latencyMs > 0 ? `${health.latencyMs}ms` : "—"}
+          </span>
+        </button>
+      </PopoverTrigger>
+
+      {/* Issue #738: Popover showing per-network latency and last-checked timestamp */}
+      <PopoverContent side="bottom" align="start" className="w-64 text-sm">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold uppercase text-xs tracking-wider text-muted-foreground">
+              RPC Status
+            </span>
+            <span
               className={cn(
-                "h-2 w-2 animate-pulse rounded-full",
-                statusColors[health.status],
+                "rounded-full px-2 py-0.5 text-xs font-medium",
+                health.status === "healthy" && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+                health.status === "degraded" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+                health.status === "offline" && "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
               )}
-            />
-            <span className="hidden font-mono text-xs text-muted-foreground lg:inline">
-              {health.latencyMs}ms
+            >
+              {health.status}
             </span>
           </div>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="space-y-1 text-xs">
-          <p className="font-bold uppercase">{health.status}</p>
-          <p>Ledger: {health.latestLedger}</p>
-          <p className="text-[10px] opacity-70">
-            Last check: {new Date(health.lastCheck).toLocaleTimeString()}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+
+          <div className="divide-y rounded-md border text-xs">
+            <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Network</span>
+              <span className="font-medium capitalize">{currentNetwork}</span>
+            </div>
+            <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Latency (p50)</span>
+              <span className="font-mono font-medium">
+                {health.latencyMs > 0 ? `${health.latencyMs}ms` : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Latest ledger</span>
+              <span className="font-mono font-medium">
+                {health.latestLedger > 0 ? health.latestLedger.toLocaleString() : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Last checked</span>
+              <span className="font-mono font-medium">
+                {new Date(health.lastCheck).toLocaleTimeString()}
+              </span>
+            </div>
+          </div>
+
+          {health.status === "degraded" && (
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">
+              Latency above 2000ms threshold. Write transactions may fail.
+            </p>
+          )}
+          {health.status === "offline" && (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              RPC endpoint unreachable. Check your network connection or switch networks.
+            </p>
+          )}
+
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium">Auto-failover</span>
+              <p className="text-[10px] text-muted-foreground">
+                {autoFailover ? `Switches to ${failoverNetworkId} at &gt;${degradationThresholdMs}ms` : "Off"}
+              </p>
+            </div>
+            <Switch
+              checked={autoFailover}
+              onCheckedChange={setAutoFailover}
+              aria-label="Toggle auto-failover"
+            />
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

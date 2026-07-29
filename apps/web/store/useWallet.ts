@@ -7,6 +7,7 @@ import {
   type WalletProviderId,
 } from "@/lib/wallet/provider";
 import { useNetworkStore } from "@/store/useNetworkStore";
+import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 
 // FE-042: Session revalidation state
 export type SessionStatus = "valid" | "stale" | "mismatch" | "disconnected";
@@ -20,9 +21,16 @@ interface WalletState {
   networkAtConnect: string | null;
   // FE-043: sandbox mode
   isSandboxMode: boolean;
+  // W7-FE-002 / #675: network passphrase captured at connect time so we
+  // can detect a mismatch if the user changes networks later.
+  networkPassphraseAtConnect: string | null;
+  // #836: auto-reconnect state
+  autoReconnect: boolean;
+  reconnectAttempts: number;
 
   connect: (provider: WalletProviderId) => Promise<void>;
-  disconnect: () => void;
+  // #674: disconnect action — calls provider disconnect then resets store + workspace sync state
+  disconnectWallet: () => Promise<void>;
   // FE-041: capability-aware sign abstraction
   signTransaction: (xdr: string, networkPassphrase: string) => Promise<string>;
   getCapabilities: () => WalletCapabilities | null;
@@ -31,6 +39,10 @@ interface WalletState {
   // FE-043: sandbox helpers
   enterSandbox: () => void;
   exitSandbox: () => void;
+  // #836: reconnect
+  attemptReconnect: () => Promise<void>;
+  setAutoReconnect: (enabled: boolean) => void;
+  resetReconnectAttempts: () => void;
 }
 
 export const useWallet = create<WalletState>()(
@@ -42,6 +54,9 @@ export const useWallet = create<WalletState>()(
       sessionStatus: "disconnected",
       networkAtConnect: null,
       isSandboxMode: false,
+      networkPassphraseAtConnect: null,
+      autoReconnect: false,
+      reconnectAttempts: 0,
 
       connect: async (provider) => {
         try {
@@ -53,6 +68,7 @@ export const useWallet = create<WalletState>()(
             walletType: session.provider,
             sessionStatus: "valid",
             networkAtConnect: currentNetwork,
+            networkPassphraseAtConnect: session.networkPassphrase ?? null,
             isSandboxMode: false,
           });
         } catch (e: any) {
@@ -61,7 +77,15 @@ export const useWallet = create<WalletState>()(
         }
       },
 
-      disconnect: () => {
+      disconnectWallet: async () => {
+        const { walletType, isConnected } = get();
+        if (isConnected && walletType) {
+          try {
+            await walletProviders[walletType].disconnect();
+          } catch {
+            // best-effort provider cleanup
+          }
+        }
         set({
           isConnected: false,
           address: null,
@@ -69,7 +93,9 @@ export const useWallet = create<WalletState>()(
           sessionStatus: "disconnected",
           networkAtConnect: null,
           isSandboxMode: false,
+          networkPassphraseAtConnect: null,
         });
+        useWorkspaceStore.getState().resetSyncState();
       },
 
       // FE-041: unified signing abstraction with capability guard
@@ -89,23 +115,51 @@ export const useWallet = create<WalletState>()(
         return walletProviders[walletType].capabilities;
       },
 
-      // FE-042: revalidate persisted session against live provider state
+      // FE-042: revalidate persisted session against live provider state.
+      // If the wallet reports the session is no longer valid we fully
+      // disconnect so the user is forced back to the connect prompt.
       revalidateSession: async () => {
-        const { walletType, isConnected, networkAtConnect } = get();
+        const { walletType, isConnected, networkAtConnect, networkPassphraseAtConnect } = get();
 
         if (!isConnected || !walletType) {
           set({ sessionStatus: "disconnected" });
           return "disconnected";
         }
 
-        const stillLive = await walletProviders[walletType].revalidate();
-        if (!stillLive) {
-          set({ sessionStatus: "stale", isConnected: false });
-          return "stale";
+        let revalidateResult;
+        try {
+          revalidateResult = await walletProviders[walletType].revalidate();
+        } catch (err) {
+          // Treat any thrown error as a stale session — the wallet store
+          // should clear and prompt the user to reconnect.
+          revalidateResult = { isValid: false };
         }
 
-        // FE-042: detect network mismatch
+        if (!revalidateResult?.isValid) {
+          // W7-FE-002 / #651: failed revalidation clears the wallet store
+          // and surfaces the connect prompt.
+          get().disconnectWallet();
+          return "disconnected";
+        }
+
+        // W7-FE-002 / #675: detect network mismatch using the wallet's
+        // freshly-fetched passphrase. Fall back to the network ID for
+        // legacy persisted sessions that lack a passphrase.
         const currentNetwork = useNetworkStore.getState().currentNetwork;
+        const currentPassphrase = useNetworkStore
+          .getState()
+          .getActiveNetworkConfig().networkPassphrase;
+
+        const walletPassphrase =
+          revalidateResult.networkPassphrase ??
+          networkPassphraseAtConnect ??
+          null;
+
+        if (walletPassphrase && walletPassphrase !== currentPassphrase) {
+          set({ sessionStatus: "mismatch" });
+          return "mismatch";
+        }
+
         if (networkAtConnect && networkAtConnect !== currentNetwork) {
           set({ sessionStatus: "mismatch" });
           return "mismatch";
@@ -114,6 +168,28 @@ export const useWallet = create<WalletState>()(
         set({ sessionStatus: "valid" });
         return "valid";
       },
+
+      // #836: attempt reconnect to last known provider
+      attemptReconnect: async () => {
+        const { walletType, autoReconnect, reconnectAttempts } = get();
+        if (!walletType || !autoReconnect) return;
+        const maxAttempts = 3;
+        if (reconnectAttempts >= maxAttempts) {
+          set({ autoReconnect: false, reconnectAttempts: 0 });
+          return;
+        }
+        set({ reconnectAttempts: reconnectAttempts + 1 });
+        try {
+          await get().connect(walletType);
+          set({ reconnectAttempts: 0 });
+        } catch {
+          // will be retried on next call
+        }
+      },
+
+      setAutoReconnect: (enabled) => set({ autoReconnect: enabled }),
+
+      resetReconnectAttempts: () => set({ reconnectAttempts: 0 }),
 
       // FE-043: enter wallet-less sandbox mode
       enterSandbox: () => {
@@ -127,12 +203,14 @@ export const useWallet = create<WalletState>()(
     }),
     {
       name: "soroban-wallet-storage",
+      version: 1,
       // FE-042: don't persist transient session status
       partialize: (state) => ({
         isConnected: state.isConnected,
         address: state.address,
         walletType: state.walletType,
         networkAtConnect: state.networkAtConnect,
+        networkPassphraseAtConnect: state.networkPassphraseAtConnect,
       }),
     },
   ),
