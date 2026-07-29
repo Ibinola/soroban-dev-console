@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { xdr, nativeToScVal } from "@stellar/stellar-sdk";
 import { StrKey } from "@stellar/stellar-sdk";
 import { Button } from "@devconsole/ui";
@@ -313,6 +313,11 @@ export default function XdrToolsPage() {
             aria-selected={activeTab === "decode"}
             aria-controls="decode-panel"
             onKeyDown={(e) => handleTabKeyDown(e, "decode")}
+        <div className="flex gap-2">
+          <Button
+            variant={activeTab === "decode" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveTab("decode")}
           >
             <Code className="mr-1 h-3 w-3" />
             Decode
@@ -326,6 +331,9 @@ export default function XdrToolsPage() {
             aria-selected={activeTab === "encode"}
             aria-controls="encode-panel"
             onKeyDown={(e) => handleTabKeyDown(e, "encode")}
+            variant={activeTab === "encode" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveTab("encode")}
           >
             <ArrowRightLeft className="mr-1 h-3 w-3" />
             Encode
@@ -335,6 +343,7 @@ export default function XdrToolsPage() {
 
       {activeTab === "decode" ? (
         <div id="decode-panel" role="tabpanel" aria-label="Decode XDR" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Card className="flex h-full flex-col">
               <CardHeader>
@@ -357,6 +366,7 @@ export default function XdrToolsPage() {
                     Decode
                   </Button>
                   <Button variant="outline" onClick={clearAll} disabled={!decodeInput} aria-label="Clear input">
+                  <Button variant="outline" onClick={clearAll} disabled={!decodeInput}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -395,6 +405,7 @@ export default function XdrToolsPage() {
               <CardContent className="relative min-h-[300px] flex-1">
                 {decoded ? (
                   <div aria-live="polite" className="absolute inset-4 overflow-auto rounded-md bg-zinc-950 p-4 font-mono text-xs text-zinc-50">
+                  <div className="absolute inset-4 overflow-auto rounded-md bg-zinc-950 p-4 font-mono text-xs text-zinc-50">
                     <pre>{decoded}</pre>
                   </div>
                 ) : (
@@ -408,6 +419,7 @@ export default function XdrToolsPage() {
         </div>
       ) : (
         <div id="encode-panel" role="tabpanel" aria-label="Encode XDR" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Card className="flex h-full flex-col">
               <CardHeader>
@@ -454,6 +466,7 @@ export default function XdrToolsPage() {
                     Encode
                   </Button>
                   <Button variant="outline" onClick={clearAll} aria-label="Clear all">
+                  <Button variant="outline" onClick={clearAll}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

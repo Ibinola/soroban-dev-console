@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { ApiErrorResponse } from "@devconsole/api-contracts";
+import { buildStructuredLogEntry, getCorrelationId } from "./request-context.js";
 
 @Catch()
 export class ApiErrorFilter implements ExceptionFilter {
@@ -46,6 +47,20 @@ export class ApiErrorFilter implements ExceptionFilter {
         path: request.url,
       },
     };
+
+    console.error(
+      JSON.stringify(
+        buildStructuredLogEntry({
+          level: "error",
+          correlationId: getCorrelationId(),
+          message: "api.error",
+          method: request.method,
+          path: request.url,
+          statusCode: status,
+          error: message,
+        }),
+      ),
+    );
 
     response.status(status).json(errorResponse);
   }

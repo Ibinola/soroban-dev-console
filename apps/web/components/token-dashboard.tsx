@@ -231,6 +231,16 @@ export function TokenDashboard({ contractId }: TokenDashboardProps) {
               </Button>
             </div>
 
+            {address && address !== checkAddress && (
+              <button
+                type="button"
+                onClick={() => setCheckAddress(address)}
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Use my connected address
+              </button>
+            )}
+
             {balance && (
               <div className="mt-2 flex items-center gap-3 rounded-md border bg-background p-3 animate-in fade-in slide-in-from-top-1">
                 <CreditCard className="h-4 w-4 text-green-600" />

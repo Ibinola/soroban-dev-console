@@ -257,14 +257,13 @@ export default function LedgerKeyInspectorPage() {
               {keyType === "ContractData" && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="contract-id">Contract ID</Label>
-                <Input
-                  id="contract-id"
-                  placeholder="C..."
-                  value={contractId}
-                  onChange={(e) => setContractId(e.target.value.trim())}
-                  className="font-mono text-xs"
-                />
+                    <Label>Contract ID</Label>
+                    <Input
+                      placeholder="C..."
+                      value={contractId}
+                      onChange={(e) => setContractId(e.target.value.trim())}
+                      className="font-mono text-xs"
+                    />
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -338,7 +337,6 @@ export default function LedgerKeyInspectorPage() {
                 className="w-full"
                 onClick={handleFetch}
                 disabled={!keyXdr || isLoading}
-                aria-label="Fetch ledger entry"
               >
                 {isLoading ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -371,8 +369,6 @@ export default function LedgerKeyInspectorPage() {
                       key={item.id}
                       className="w-full rounded-md border p-2 text-left hover:bg-muted"
                       onClick={() => loadFromHistory(item)}
-                      aria-label={`Load ${item.keyType} query from history`}
-                      tabIndex={0}
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium">{item.keyType}</span>
@@ -423,7 +419,6 @@ export default function LedgerKeyInspectorPage() {
                       variant="secondary"
                       className="absolute right-2 top-2 h-6 w-6"
                       onClick={() => copyToClipboard(keyXdr)}
-                      aria-label="Copy ledger key XDR"
                     >
                       <Copy className="h-3 w-3" />
                     </Button>
@@ -454,7 +449,7 @@ export default function LedgerKeyInspectorPage() {
 
           {/* Query Result */}
           {result && (
-            <Card aria-live="polite">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   {result.found ? (

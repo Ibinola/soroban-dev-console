@@ -45,7 +45,7 @@ Soroban DevConsole provides an intuitive web interface for Soroban smart contrac
 - **Framework**: NestJS
 - **Language**: TypeScript
 - **Database**: SQLite with Prisma ORM
-- **Features**: RPC proxy, workspace CRUD, share links, audit logging
+- **Features**: RPC proxy, workspace CRUD, share links, audit logging, **contributor verification**, **budget accounting**, and **point ledgers** (Wave 5).
 
 ### Smart Contracts (contracts/)
 - **Language**: Rust
@@ -69,9 +69,9 @@ soroban-dev-console/
 │   │   └── store/            # Zustand state stores
 │   └── api/                  # NestJS backend application
 │       ├── src/
-│       │   ├── modules/      # Feature modules (workspaces, rpc, shares)
-│       │   ├── lib/          # Shared utilities
-│       │   └── auth/         # Authentication guards
+│       │   ├── modules/      # Feature modules (workspaces, rpc, shares, budget, verification, support)
+│       │   ├── lib/          # Shared utilities (audit, prisma)
+│       │   └── auth/         # Authentication guards (owner-key, verification)
 │       └── prisma/           # Database schema and migrations
 ├── contracts/                # Soroban smart contract fixtures
 │   ├── counter-fixture/

@@ -5,6 +5,9 @@
  * polling, and result normalization across call, batch, and deploy flows.
  *
  * Can be tested independently of page components.
+ *
+ * Issue #735: Adds real-time transaction status streaming via SSE with a
+ * polling fallback when EventSource is unavailable or fails to connect.
  */
 
 import {
@@ -60,6 +63,209 @@ export interface OrchestrationOptions {
 }
 
 export type StatusCallback = (status: TxStatus) => void;
+
+// ── Issue #735: SSE-based status streaming ────────────────────────────────────
+
+/**
+ * Options for the SSE / polling status watcher.
+ */
+export interface TxStatusWatchOptions {
+  /** API base URL — defaults to NEXT_PUBLIC_API_URL or http://localhost:4000 */
+  apiBase?: string;
+  /** How long to wait before giving up when SSE connection fails (ms, default 5 000) */
+  sseConnectTimeoutMs?: number;
+  /** Polling interval used in the fallback path (ms, default 2 000) */
+  pollIntervalMs?: number;
+  /** Max polling attempts in the fallback path (default 60) */
+  maxPollAttempts?: number;
+}
+
+/**
+ * Subscribe to real-time transaction status updates via SSE, falling back to
+ * HTTP polling if EventSource is unavailable or fails to connect.
+ *
+ * @param network  Network identifier (e.g. "testnet")
+ * @param hash     Transaction hash to watch
+ * @param onUpdate Called on every status update
+ * @param options  Configuration overrides
+ * @returns A cleanup function that stops watching
+ */
+export function watchTxStatus(
+  network: string,
+  hash: string,
+  onUpdate: (result: NormalizedTransactionResult) => void,
+  options: TxStatusWatchOptions = {},
+): () => void {
+  const {
+    apiBase = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ||
+      "http://localhost:4000",
+    sseConnectTimeoutMs = 5_000,
+    pollIntervalMs = 2_000,
+    maxPollAttempts = 60,
+  } = options;
+
+  const sseUrl = `${apiBase}/api/rpc/${network}/tx/${encodeURIComponent(hash)}/status`;
+
+  // ── Try SSE first ───────────────────────────────────────────────────────────
+  if (typeof EventSource !== "undefined") {
+    let resolved = false;
+    let es: EventSource | null = null;
+    let pollCleanup: (() => void) | null = null;
+
+    // Fallback to polling if SSE doesn't connect within the timeout
+    const connectTimeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        es?.close();
+        pollCleanup = startPollingFallback(
+          network,
+          hash,
+          apiBase,
+          onUpdate,
+          pollIntervalMs,
+          maxPollAttempts,
+        );
+      }
+    }, sseConnectTimeoutMs);
+
+    try {
+      es = new EventSource(sseUrl);
+
+      es.onopen = () => {
+        // SSE connected — cancel the polling fallback timer
+        clearTimeout(connectTimeout);
+        resolved = true;
+      };
+
+      es.onmessage = (event: MessageEvent) => {
+        try {
+          const envelope = JSON.parse(event.data as string) as
+            | { success: true; data: NormalizedTransactionResult }
+            | { success: false; error: string };
+
+          if (envelope.success) {
+            onUpdate(envelope.data);
+            // Close the stream once terminal
+            if (
+              envelope.data.status === "success" ||
+              envelope.data.status === "failed"
+            ) {
+              es?.close();
+            }
+          }
+        } catch {
+          // Malformed event data — ignore
+        }
+      };
+
+      es.onerror = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(connectTimeout);
+          es?.close();
+          // SSE failed before a message arrived — fall back to polling
+          pollCleanup = startPollingFallback(
+            network,
+            hash,
+            apiBase,
+            onUpdate,
+            pollIntervalMs,
+            maxPollAttempts,
+          );
+        } else {
+          // Already started, this is a normal close after the stream ends
+          es?.close();
+        }
+      };
+    } catch {
+      // EventSource constructor threw — environment doesn't support it
+      clearTimeout(connectTimeout);
+      pollCleanup = startPollingFallback(
+        network,
+        hash,
+        apiBase,
+        onUpdate,
+        pollIntervalMs,
+        maxPollAttempts,
+      );
+    }
+
+    return () => {
+      clearTimeout(connectTimeout);
+      es?.close();
+      pollCleanup?.();
+    };
+  }
+
+  // ── No EventSource available — go straight to polling ──────────────────────
+  const cleanup = startPollingFallback(
+    network,
+    hash,
+    apiBase,
+    onUpdate,
+    pollIntervalMs,
+    maxPollAttempts,
+  );
+  return cleanup;
+}
+
+/**
+ * Internal helper: poll `GET /api/rpc/:network/status` (POST body) until the
+ * transaction reaches a terminal state or the attempt limit is reached.
+ */
+function startPollingFallback(
+  network: string,
+  hash: string,
+  apiBase: string,
+  onUpdate: (result: NormalizedTransactionResult) => void,
+  intervalMs: number,
+  maxAttempts: number,
+): () => void {
+  let attempts = 0;
+  let stopped = false;
+
+  const poll = async () => {
+    if (stopped || attempts >= maxAttempts) return;
+    attempts++;
+
+    try {
+      const res = await fetch(`${apiBase}/api/rpc/${network}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hash }),
+      });
+
+      if (!res.ok) return;
+
+      const envelope = await res.json() as
+        | { success: true; data: NormalizedTransactionResult }
+        | { success: false };
+
+      if (envelope.success) {
+        onUpdate(envelope.data);
+        if (
+          envelope.data.status === "success" ||
+          envelope.data.status === "failed"
+        ) {
+          stopped = true;
+          return;
+        }
+      }
+    } catch {
+      // Network error — keep retrying
+    }
+
+    if (!stopped) {
+      setTimeout(poll, intervalMs);
+    }
+  };
+
+  void poll();
+
+  return () => { stopped = true; };
+}
+
+// ── Existing orchestration helpers (unchanged) ────────────────────────────────
 
 /**
  * Simulate a prepared transaction and return normalized results.

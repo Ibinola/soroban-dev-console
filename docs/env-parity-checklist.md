@@ -97,6 +97,25 @@ npm run wave-prep
 
 This runs: drift check → integrity check → build order verification → branch workflow validation → SSR smoke test.
 
+### 9. Wave-Critical Feature Flags
+
+Staging must exercise the same feature flags that will be active in production. Mismatched flags are a common source of Wave launch regressions.
+
+Flags are controlled via `FEATURE_*` env vars in `apps/api/.env` and served to the frontend through `GET /runtime-config`.
+
+| Flag | Env Var | Default | Production |
+|------|---------|---------|------------|
+| Sharing | `FEATURE_SHARING` | `true` | `true` |
+| Multi-op | `FEATURE_MULTI_OP` | `true` | `false` |
+| Token Dashboard | `FEATURE_TOKEN_DASHBOARD` | `true` | `true` |
+| Audit Log | `FEATURE_AUDIT_LOG` | `true` | `true` |
+| RPC Gateway | `FEATURE_RPC_GATEWAY` | `true` | `true` |
+
+For staging parity:
+- [ ] `FEATURE_MULTI_OP` is set to `false` in the staging API env (matches production default)
+- [ ] All other `FEATURE_*` flags match the intended production values
+- [ ] `GET /runtime-config` response is inspected after deploy to confirm flag state
+
 ## Environment Comparison Matrix
 
 | Check | Local | Staging | Production |
@@ -107,6 +126,8 @@ This runs: drift check → integrity check → build order verification → bran
 | RPC endpoints | Any | Testnet/Mainnet | Mainnet |
 | Build artefacts | Optional | Required | Required |
 | Migrations applied | Optional | Required | Required |
+| `FEATURE_MULTI_OP` | `true` | `false` | `false` |
+| `FEATURE_SHARING` | `true` | `true` | `true` |
 
 ## Automated Parity Script
 

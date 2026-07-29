@@ -1,3 +1,10 @@
+/**
+ * Issue #757: Input sanitization for workspace names and descriptions to prevent stored XSS.
+ *
+ * Custom validators strip/reject HTML tags from name, description, and share label fields.
+ * Returns 400 if the sanitized value differs from the original (rather than silently stripping).
+ */
+
 import {
   IsString,
   IsOptional,
@@ -8,8 +15,46 @@ import {
   IsObject,
   IsInt,
   Min,
+  Max,
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
+  IsBoolean,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
+
+/** Regex to detect HTML tags (including script, style, event handlers) */
+const HTML_TAG_PATTERN = /<[^>]*>/g;
+const DANGEROUS_PATTERNS = [
+  /<script[\s\S]*?>[\s\S]*?<\/script>/gi,
+  /javascript:/gi,
+  /on\w+\s*=/gi,
+  /<[a-z][\s\S]*>/gi,
+];
+
+/**
+ * Issue #757: Custom validator that rejects strings containing HTML tags.
+ * Returns false (and triggers 400) if the value contains any HTML markup.
+ */
+function NoHtmlTags(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: "noHtmlTags",
+      target: object.constructor,
+      propertyName,
+      options: {
+        message: `${propertyName} must not contain HTML tags or script content`,
+        ...validationOptions,
+      },
+      validator: {
+        validate(value: unknown, _args: ValidationArguments) {
+          if (typeof value !== "string") return true; // let other validators handle type errors
+          return !DANGEROUS_PATTERNS.some((p) => p.test(value)) && !HTML_TAG_PATTERN.test(value);
+        },
+      },
+    });
+  };
+}
 
 const NETWORKS = ["testnet", "mainnet", "futurenet", "local"] as const;
 
@@ -42,11 +87,13 @@ class WorkspaceArtifactRefDto {
 export class CreateWorkspaceDto {
   @IsString()
   @MaxLength(120)
+  @NoHtmlTags()
   name!: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(500)
+  @NoHtmlTags()
   description?: string;
 
   @IsOptional()
@@ -70,16 +117,22 @@ export class UpdateWorkspaceDto {
   @IsOptional()
   @IsString()
   @MaxLength(120)
+  @NoHtmlTags()
   name?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(500)
+  @NoHtmlTags()
   description?: string;
 
   @IsOptional()
   @IsIn(NETWORKS)
   selectedNetwork?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  archived?: boolean;
 
   /**
    * BE-006: Optimistic concurrency control.
@@ -147,6 +200,15 @@ export class ListWorkspacesDto {
   @IsOptional()
   @IsString()
   network?: string;
+
+  @IsOptional()
+  @IsString()
+  tag?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === "true" || value === true)
+  @IsBoolean()
+  includeArchived?: boolean;
 }
 
 /** BE-005: Pagination response envelope */
@@ -157,4 +219,37 @@ export interface PaginatedResponse<T> {
     skip: number;
     take: number;
   };
+}
+
+export class SearchWorkspacesDto {
+  @IsString()
+  q!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  take?: number;
+
+  @IsOptional()
+  @IsIn(["updatedAt", "createdAt", "name"])
+  sortBy?: "updatedAt" | "createdAt" | "name";
+
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  sortOrder?: "asc" | "desc";
+}
+
+export class UpdateWorkspaceTagsDto {
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @Max(20)
+  tags!: string[];
 }

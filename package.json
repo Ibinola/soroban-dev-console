@@ -12,22 +12,27 @@
     "lint": "turbo run lint --filter=web --filter=@devconsole/ui --filter=@devconsole/soroban-utils",
     "typecheck": "turbo run typecheck --filter=web --filter=@devconsole/ui --filter=@devconsole/soroban-utils",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-drift": "tsx scripts/check-runtime-drift.ts",
-    "check-integrity": "tsx scripts/check-dependency-integrity.ts",
-    "audit:ci": "turbo run audit --filter=web --filter=api",
-    "wave-prep": "npm run check-drift && npm run check-integrity && tsx scripts/verify-build-order.ts && tsx scripts/validate-branch-workflow.ts && tsx scripts/smoke-ssr-prerender.ts",
-    "release-evidence": "tsx scripts/generate-release-evidence.ts",
-    "deploy:contracts": "bash scripts/deploy-test-suite.sh"
+    "test": "turbo run test",
+    "security:scan": "npx tsx scripts/secret-scan.ts",
+    "security:playbooks": "npx tsx scripts/validate-playbooks.ts",
+    "check-integrity": "npx tsx scripts/check-dependency-integrity.ts",
+    "check-drift": "npx tsx scripts/check-runtime-drift.ts",
+    "release-evidence": "npx tsx scripts/generate-release-evidence.ts",
+    "security:scan-staged": "npx tsx scripts/secret-scan-staged.ts",
+    "prepare": "husky",
+    "generate-changelog": "npx tsx scripts/generate-changelog.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@types/stellar-sdk": "^0.11.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0",
     "prettier": "^3.2.5",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "tsx": "^4.21.0",
-    "turbo": "latest"
+    "turbo": "^2.5.4"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^14.5.0"
+    "@stellar/stellar-sdk": "^16.1.0"
+  },
+  "lint-staged": {
+    "*": "npx tsx scripts/secret-scan-staged.ts"
   }
 }

@@ -76,3 +76,46 @@ export async function fetchContractOverview(
     return { ...base, error: err?.message ?? "Failed to fetch contract data" };
   }
 }
+
+/**
+ * Human-readable "time since deployment" from a unix timestamp (ms).
+ * Returns a compact relative label such as "3d ago" or "just now".
+ */
+export function formatRelativeTime(timestampMs: number, now: number = Date.now()): string {
+  const seconds = Math.max(0, Math.floor((now - timestampMs) / 1000));
+  if (seconds < 45) return "just now";
+
+  const units: [number, string][] = [
+    [60, "s"],
+    [60, "m"],
+    [24, "h"],
+    [7, "d"],
+    [4.34524, "w"],
+    [12, "mo"],
+    [Number.POSITIVE_INFINITY, "y"],
+  ];
+
+  let value = seconds;
+  let label = "s";
+  for (const [factor, unit] of units) {
+    label = unit;
+    if (value < factor) break;
+    value = Math.floor(value / factor);
+  }
+  return `${value}${label} ago`;
+}
+
+/** Short display label for the network a contract lives on. */
+export function getNetworkBadgeLabel(network: string): string {
+  const normalized = network.trim().toLowerCase();
+  const known: Record<string, string> = {
+    public: "Mainnet",
+    mainnet: "Mainnet",
+    testnet: "Testnet",
+    futurenet: "Futurenet",
+    standalone: "Local",
+    local: "Local",
+  };
+  if (known[normalized]) return known[normalized];
+  return network.charAt(0).toUpperCase() + network.slice(1);
+}

@@ -14,10 +14,11 @@ model Workspace {
   name              String
   description       String?
   selectedNetwork   String              @default("testnet") @map("selected_network")
-  /// BE-006: Monotonically increasing revision counter for optimistic concurrency control.
   revision          Int                 @default(0)
+  archived          Boolean             @default(false)
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
+  tags              Json?
   savedContracts    SavedContract[]
   savedInteractions SavedInteraction[]
   artifacts         WorkspaceArtifact[]
@@ -77,119 +78,6 @@ model WorkspaceArtifact {
 }
 
 /// BE-011: Durable audit record for workspace and share mutations.
-model AuditLog {
-  id          String   @id @default(cuid())
-  actor       String
-  action      String
-  resourceType String  @map("resource_type")
-  resourceId  String   @map("resource_id")
-  summary     String?
-  metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@index([actor])
-  @@index([resourceType, resourceId])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
-
-/// BE-215: Support ticket with category tagging and routing metadata for Wave 5 triage.
-model SupportTicket {
-  id          String   @id @default(cuid())
-  subject     String
-  body        String
-  category    String   /// verification | payout | appeal | bug | abuse
-  status      String   @default("open") /// open | in_progress | resolved | closed
-  priority    String   @default("normal") /// low | normal | high | urgent
-  reporterKey String   @map("reporter_key")
-  assigneeKey String?  @map("assignee_key")
-  tags        String   @default("[]") /// JSON-encoded string[]
-  metadata    Json?
-  resolvedAt  DateTime? @map("resolved_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@index([category, status])
-  @@index([reporterKey])
-  @@index([status, priority])
-  @@index([createdAt])
-  @@map("support_tickets")
-}
-
-/// BE-206: Idempotent record of a contributor verification event from an external provider.
-model VerificationEvent {
-  id            String   @id @default(cuid())
-  eventId       String   @unique @map("event_id")
-  contributorId String   @map("contributor_id")
-  provider      String
-  status        String
-  verifiedAt    DateTime? @map("verified_at")
-  metadata      Json?
-  processedAt   DateTime @default(now()) @map("processed_at")
-
-  @@index([contributorId])
-  @@index([provider, status])
-  @@map("verification_events")
-}
-
-/// BE-209: Captured maintainer review context for appeal analysis.
-model ReviewContext {
-  id                    String   @id @default(cuid())
-  pullRequestId         String   @map("pull_request_id")
-  repositoryId          String   @map("repository_id")
-  reviewerId            String   @map("reviewer_id")
-  decision              String
-  commentCount          Int      @default(0) @map("comment_count")
-  requestedChangesCount Int      @default(0) @map("requested_changes_count")
-  mergeStatus           String   @map("merge_status")
-  reviewedAt            DateTime @map("reviewed_at")
-  metadata              Json?
-  createdAt             DateTime @default(now()) @map("created_at")
-
-  @@index([pullRequestId])
-  @@index([repositoryId, reviewerId])
-  @@map("review_contexts")
-}
-
-/// BE-216: Durable background job record for retry-safe execution.
-model BackgroundJob {
-  id          String    @id @default(cuid())
-  type        String
-  status      String    @default("pending")
-  payload     Json
-  attempts    Int       @default(0)
-  maxAttempts Int       @default(3) @map("max_attempts")
-  lastError   String?   @map("last_error")
-  lockedUntil DateTime? @map("locked_until")
-  scheduledAt DateTime  @default(now()) @map("scheduled_at")
-  completedAt DateTime? @map("completed_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  @@index([status, scheduledAt])
-  @@index([type, status])
-  @@map("background_jobs")
-}
-
-/// BE-208: Appeal case submitted by a contributor disputing a decision.
-model AppealCase {
-  id            String    @id @default(cuid())
-  ownerKey      String    @map("owner_key")
-  issueRef      String    @map("issue_ref")
-  /// State machine: open → under_review → resolved | rejected
-  status        String    @default("open")
-  reason        String
-  evidenceJson  Json?     @map("evidence_json")
-  resolvedAt    DateTime? @map("resolved_at")
-  resolution    String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-
-  @@index([ownerKey])
-  @@index([issueRef])
-  @@index([status])
-  @@map("appeal_cases")
-}
 
 /// Immutable, read-only links that capture a point-in-time workspace snapshot.
 model ShareLink {
@@ -198,13 +86,28 @@ model ShareLink {
   token         String     @unique
   label         String?
   snapshotJson  Json       @map("snapshot_json")
+  viewCount     Int        @default(0) @map("view_count")
   expiresAt     DateTime?  @map("expires_at")
   revokedAt     DateTime?  @map("revoked_at")
   createdAt     DateTime   @default(now()) @map("created_at")
   workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accessLogs    ShareAccessLog[]
 
   @@index([workspaceId, createdAt])
   @@map("share_links")
+}
+
+/// Access log entries for share link view tracking.
+model ShareAccessLog {
+  id          String     @id @default(cuid())
+  shareId     String     @map("share_id")
+  accessedAt  DateTime   @default(now()) @map("accessed_at")
+  ip          String?
+  userAgent   String?    @map("user_agent")
+  share       ShareLink  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([shareId, accessedAt])
+  @@map("share_access_logs")
 }
 
 /// BE-205: Canonical verification state and eligibility record for a Wave contributor.
@@ -325,26 +228,144 @@ model PointReservation {
   @@index([contributorId])
   @@index([issueRef])
   @@index([status])
+  @@unique([contributorId, issueRef, reservationType])
   @@map("point_reservations")
 }
 
-/// BE-204: Budget-impacting event log for analytics and dashboards.
-model BudgetEvent {
-  id              String    @id @default(cuid())
-  organizationId  String    @map("organization_id")
-  contributorId   String    @map("contributor_id")
-  /// Event type: cap_set | reservation_created | reservation_released | points_used | points_released | reconciliation_drift
-  eventType       String    @map("event_type")
-  /// Points affected by this event
-  points          Int       @map("points")
-  /// Reference to related resource (reservation ID, issue ref, etc.)
-  referenceId     String?   @map("reference_id")
-  /// Additional metadata about the event
-  metadata        Json?     @map("metadata")
-  createdAt       DateTime  @default(now()) @map("created_at")
+/// Durable audit record for workspace and share mutations.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actor       String
+  action      String
+  resourceType String  @map("resource_type")
+  resourceId  String   @map("resource_id")
+  summary     String?
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
 
-  @@index([organizationId])
-  @@index([contributorId])
-  @@index([eventType])
-  @@map("budget_events")
+  @@index([actor])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
+
+/// BE-215: Support ticket with category tagging and routing metadata for Wave 5 triage.
+model SupportTicket {
+  id          String   @id @default(cuid())
+  subject     String
+  body        String
+  category    String   /// verification | payout | appeal | bug | abuse
+  status      String   @default("open") /// open | in_progress | resolved | closed
+  priority    String   @default("normal") /// low | normal | high | urgent
+  reporterKey String   @map("reporter_key")
+  assigneeKey String?  @map("assignee_key")
+  tags        String   @default("[]") /// JSON-encoded string[]
+  metadata    Json?
+  resolvedAt  DateTime? @map("resolved_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([category, status])
+  @@index([category, status, createdAt])
+  @@index([status, createdAt])
+  @@index([reporterKey])
+  @@index([status, priority])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+/// BE-206: Idempotent record of a contributor verification event from an external provider.
+model VerificationEvent {
+  id            String   @id @default(cuid())
+  eventId       String   @unique @map("event_id")
+  contributorId String   @map("contributor_id")
+  provider      String
+  status        String
+  verifiedAt    DateTime? @map("verified_at")
+  metadata      Json?
+  processedAt   DateTime @default(now()) @map("processed_at")
+
+  @@index([contributorId])
+  @@index([provider, status])
+  @@map("verification_events")
+}
+
+/// BE-209: Captured maintainer review context for appeal analysis.
+model ReviewContext {
+  id                    String   @id @default(cuid())
+  pullRequestId         String   @map("pull_request_id")
+  repositoryId          String   @map("repository_id")
+  reviewerId            String   @map("reviewer_id")
+  decision              String
+  commentCount          Int      @default(0) @map("comment_count")
+  requestedChangesCount Int      @default(0) @map("requested_changes_count")
+  mergeStatus           String   @map("merge_status")
+  reviewedAt            DateTime @map("reviewed_at")
+  metadata              Json?
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@index([pullRequestId])
+  @@index([repositoryId, reviewerId])
+  @@map("review_contexts")
+/// BE-0703: Dead-letter queue for failed async jobs.
+model DeadLetterJob {
+  id            String    @id @default(cuid())
+  jobType       String    @map("job_type")
+  payload       Json
+  error         String?
+  retryCount    Int       @default(0) @map("retry_count")
+  maxRetries    Int       @default(3) @map("max_retries")
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  processedAt   DateTime? @map("processed_at")
+
+  @@index([status])
+  @@index([jobType])
+  @@index([createdAt])
+  @@map("dead_letter_jobs")
+}
+
+/// Durable background job record for retry-safe execution.
+model BackgroundJob {
+  id          String    @id @default(cuid())
+  type        String
+  status      String    @default("pending")
+  queue       String    @default("default")
+  priority    Int       @default(0)
+  payload     Json
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3) @map("max_attempts")
+  lastError   String?   @map("last_error")
+  lockedUntil DateTime? @map("locked_until")
+  scheduledAt DateTime  @default(now()) @map("scheduled_at")
+  completedAt DateTime? @map("completed_at")
+  deadLetterAt DateTime? @map("dead_letter_at")
+  deadLetterReason String? @map("dead_letter_reason")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, scheduledAt])
+  @@index([type, status])
+  @@map("background_jobs")
+}
+
+/// BE-208: Appeal case submitted by a contributor disputing a decision.
+model AppealCase {
+  id            String    @id @default(cuid())
+  ownerKey      String    @map("owner_key")
+  issueRef      String    @map("issue_ref")
+  /// State machine: open → under_review → resolved | rejected
+  status        String    @default("open")
+  reason        String
+  evidenceJson  Json?     @map("evidence_json")
+  resolvedAt    DateTime? @map("resolved_at")
+  resolution    String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([ownerKey])
+  @@index([issueRef])
+  @@index([status])
+  @@map("appeal_cases")
+}
+

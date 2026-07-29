@@ -1,222 +1,135 @@
-# Alert Routing, Escalation Policies, and Operator Runbooks
+# Operational Runbooks
 
-> DEVOPS-208 — Turning monitoring outputs into actionable operations.
-
-## Alert Severity Levels
-
-| Severity | Response SLA | Who is paged | Examples |
-|----------|-------------|--------------|---------|
-| **P1 — Critical** | 15 min | On-call maintainer (immediate) | API down, all RPC endpoints unreachable |
-| **P2 — High** | 1 hour | On-call maintainer | High 5xx rate, job queue backed up, DB slow |
-| **P3 — Medium** | Next business day | Team channel notification | Build failure on main, single RPC endpoint degraded |
-| **P4 — Low** | Weekly review | Ticket created | Elevated latency within SLO, minor drift |
-
-## Alert Routing
-
-### Routing Rules
-
-```
-IF severity == P1 OR P2:
-  → page on-call maintainer (PagerDuty / OpsGenie / GitHub @mention)
-  → post to #incidents channel
-
-IF severity == P3:
-  → post to #alerts channel
-  → create GitHub issue with label "incident"
-
-IF severity == P4:
-  → log to #monitoring channel
-  → add to weekly review queue
-```
-
-### Ownership Matrix
-
-| Service Area | Primary Owner | Escalation |
-|-------------|---------------|------------|
-| API Backend | On-call maintainer | Repo maintainer (@Ibinola) |
-| Web Frontend | On-call maintainer | Repo maintainer (@Ibinola) |
-| RPC Proxy | On-call maintainer | Stellar Discord #dev-support |
-| CI / Workflows | On-call maintainer | Repo maintainer (@Ibinola) |
-| Database | On-call maintainer | Repo maintainer (@Ibinola) |
-
-### Escalation Policy
-
-1. **Alert fires** → automated notification sent to on-call.
-2. **+15 min, no acknowledgement** → escalate to secondary on-call.
-3. **+30 min, no acknowledgement** → escalate to repo maintainer.
-4. **+1 hour, unresolved P1** → post public status update in GitHub Discussions.
+This document contains runbooks for common operational and incident scenarios for the Soroban DevConsole. Each runbook provides a short description of the scenario, symptoms to look for, and step-by-step recovery actions.
 
 ---
 
-## Runbooks
+## Table of Contents
 
-### RB-001: API Unreachable (P1)
+1. [API Service Restart](#1-api-service-restart)
+2. [Database Migration Failure](#2-database-migration-failure)
+3. [High RPC Error Rate](#3-high-rpc-error-rate)
+4. [CI Pipeline Failures](#4-ci-pipeline-failures)
+5. [Secret Exposure Response](#5-secret-exposure-response)
+6. [Backup and Restore](#6-backup-and-restore)
 
-**Trigger:** `GET /health` fails 3× in 5 minutes.
+---
 
-**Diagnosis:**
+## 1. API Service Restart
+
+**Symptom:** The API is unresponsive or returning 502/503. The `/api/health` endpoint times out.
+
+**Steps:**
+
+1. Check the process/container logs for crash details.
+2. Verify environment variables are set correctly (see `apps/api/.env.example`).
+3. Confirm the database file is present: `apps/api/prisma/dev.db`.
+4. Restart the process: `npm run dev --workspace=api`.
+5. Confirm health: `curl http://localhost:4000/api/health`.
+6. If the restart fails, check for port conflicts (`lsof -i :4000`).
+
+**Post-recovery:** Record the incident in the audit log and check for repeated crashes.
+
+---
+
+## 2. Database Migration Failure
+
+**Symptom:** The API fails to start with a Prisma migration error. Logs show `PrismaClientKnownRequestError` or migration version mismatch.
+
+**Steps:**
+
+1. Run `npm run prisma:migrate --workspace=api` to check migration status.
+2. If migrations are in an inconsistent state, run: `npm run db:reset --workspace=api` (⚠️ **destructive** — only safe in development).
+3. Re-run seed data: `npm run db:seed --workspace=api`.
+4. In production, back up the database before any migration: `bash scripts/backup-restore-drill.sh --run`.
+5. Apply pending migrations: `npm run prisma:deploy --workspace=api`.
+
+**Post-recovery:** Verify the migration list is clean with `bash scripts/verify-migrations.sh`.
+
+---
+
+## 3. High RPC Error Rate
+
+**Symptom:** Contract calls are failing. The `/api/health/networks` endpoint reports degraded network status.
+
+**Steps:**
+
+1. Check `GET /api/health/networks` for per-network status.
+2. Identify the failing network (testnet / mainnet / futurenet).
+3. Verify the Stellar Horizon and Soroban RPC endpoints for that network are reachable:
+   ```
+   curl https://horizon-testnet.stellar.org
+   curl https://soroban-testnet.stellar.org
+   ```
+4. If public endpoints are down, consider switching to a custom RPC URL in Settings.
+5. The RPC failover service (`apps/api/src/modules/rpc/rpc-failover.service.ts`) will automatically retry with fallback URLs if configured.
+6. Monitor the transaction feed for recovery.
+
+---
+
+## 4. CI Pipeline Failures
+
+**Symptom:** A PR is blocked by a failing CI job.
+
+### Security job failure
+
+- **Missing script:** Run `npm run security:scan` locally and check for any exposed secrets or policy violations.
+- **Playbook validation:** Ensure `docs/runbooks.md` and `docs/observability.md` exist and are non-empty.
+
+### DevOps job failure
+
+- **Runtime drift:** Run `npm run check-drift` locally. Update `.env.example` to match `packages/api-contracts/src/runtime-defaults.ts`.
+- **Dependency integrity:** Run `npm run check-integrity` locally. Resolve any inconsistent version declarations across workspaces.
+- **Missing docs:** Create `docs/runbooks.md` or `docs/observability.md` if they were deleted.
+
+### Web/API build failure
+
+- Run `npm run build` locally and resolve TypeScript or lint errors.
+- Check that all referenced scripts in `package.json` exist under `scripts/`.
+
+---
+
+## 5. Secret Exposure Response
+
+**Symptom:** A secret (private key, API token, passphrase) has been committed to the repository or exposed in logs.
+
+**Immediate steps:**
+
+1. **Rotate the secret immediately.** Do not wait.
+2. If the commit is recent and unmerged, remove it with `git rebase` before pushing.
+3. If the commit has been pushed, contact the repository owner to purge the history.
+4. Run `npm run security:scan` to identify any other secrets in the codebase.
+5. Audit the `AuditLog` table for any actions taken with the exposed credential.
+6. Update `.gitignore` and `.env.example` if a new file type was involved.
+
+---
+
+## 6. Backup and Restore
+
+**Creating a backup:**
+
 ```bash
-# 1. Check if the process is running
-curl -s http://localhost:4000/health
-
-# 2. Check recent logs
-# (adjust for your deployment — Docker, PM2, systemd, etc.)
-# Docker:  docker logs <container> --tail 100
-# PM2:     pm2 logs api --lines 100
-# systemd: journalctl -u soroban-api -n 100
-
-# 3. Run the health check script
-bash scripts/check-service-health.sh
+bash scripts/backup-restore-drill.sh --run
 ```
 
-**Resolution steps:**
-1. If process is not running → restart it.
-2. If process is running but returning 5xx → check DB connectivity (see RB-003).
-3. If DB is fine → check for OOM or resource exhaustion; restart if needed.
-4. If restart does not resolve → roll back to the previous deployment.
+Backups are written to `.backups/dev_<timestamp>.db`. The script keeps the 5 most recent backups.
 
-**Post-incident:** Create a GitHub issue tagged `incident` with timeline and root cause.
+**Restoring from backup:**
 
----
-
-### RB-002: High 5xx Error Rate (P2)
-
-**Trigger:** > 5% of API requests return 5xx over a 10-minute window.
-
-**Diagnosis:**
 ```bash
-# Check recent error logs for patterns
-bash scripts/check-service-health.sh
-
-# Look for repeated error messages in API logs
-# Filter for level=error in structured JSON logs
+cp .backups/dev_<timestamp>.db apps/api/prisma/dev.db
 ```
 
-**Resolution steps:**
-1. Identify the failing endpoint from logs (`module`, `path` fields).
-2. Check if the error is DB-related → see RB-003.
-3. Check if the error is RPC-related → see RB-004.
-4. If a recent deployment is suspected → roll back.
-5. If the issue is intermittent → add to P3 queue for investigation.
+Then restart the API and verify health.
 
----
+**CI syntax check:**
 
-### RB-003: Database Connectivity / Slow Queries (P2)
-
-**Trigger:** `db` field in `/health` response is not `"ok"`, or P95 query time > 1 s.
-
-**Diagnosis:**
 ```bash
-# Check DB file exists and is not corrupted
-ls -lh apps/api/prisma/dev.db
-
-# Run Prisma introspect to verify schema
-cd apps/api && npx prisma db pull --print
-
-# Check for locked tables (SQLite)
-# A long-running transaction can block all writes
+bash scripts/backup-restore-drill.sh
 ```
 
-**Resolution steps:**
-1. If DB file is missing → restore from backup (see `docs/backup-restore-drill.md`).
-2. If DB is locked → identify and kill the blocking process; restart API.
-3. If schema drift → run `npx prisma migrate deploy` in `apps/api`.
-4. If performance issue → run `VACUUM` on the SQLite file during low-traffic window.
+This validates script syntax without performing any database operations.
 
 ---
 
-### RB-004: All RPC Endpoints Unreachable (P1)
-
-**Trigger:** All configured Soroban RPC URLs fail reachability check.
-
-**Diagnosis:**
-```bash
-bash scripts/check-service-health.sh
-
-# Manual check for each endpoint
-curl -s --max-time 5 \
-  -X POST https://soroban-testnet.stellar.org:443 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getHealth","params":[]}'
-```
-
-**Resolution steps:**
-1. Check [Stellar Status Page](https://status.stellar.org) for network incidents.
-2. If Stellar network is down → inform users; no action required on our side.
-3. If only one endpoint is down → verify `SOROBAN_RPC_*_URL` env vars are correct.
-4. If a custom/private RPC is down → contact the RPC provider.
-5. Ensure at least one fallback endpoint is configured in `apps/api/.env`.
-
----
-
-### RB-005: Job Queue Backed Up (P2)
-
-**Trigger:** Job queue depth > 500 for more than 10 minutes.
-
-**Diagnosis:**
-```bash
-# Check queue depth via health endpoint
-curl -s http://localhost:4000/health/queues | jq .
-
-# Check for failed jobs in API logs
-# Look for level=error in jobs module logs
-```
-
-**Resolution steps:**
-1. Check if the job worker is running (it may have crashed silently).
-2. Restart the API to reset the worker.
-3. If jobs are failing repeatedly → check the error message and fix the underlying cause.
-4. If queue is backed up due to a spike → monitor; it should drain automatically.
-5. If jobs are stuck (not processing) → clear the queue and re-enqueue if safe.
-
----
-
-### RB-006: CI Build Failure on `main` (P3)
-
-**Trigger:** CI `web` or `api` job fails on a push to `main`.
-
-**Diagnosis:**
-```bash
-# Check the failing job in GitHub Actions
-# https://github.com/Ibinola/soroban-dev-console/actions
-
-# Reproduce locally
-npm ci
-npm run lint -w web
-npm run typecheck -w web
-npm run test:run -w web
-```
-
-**Resolution steps:**
-1. Identify the failing step from the CI log.
-2. If lint/typecheck → fix the code issue and push a fix commit.
-3. If test failure → investigate the test; fix or quarantine if flaky (see `docs/flaky-check-quarantine.md`).
-4. If dependency issue → run `npm ci` locally and check for resolution errors.
-5. Do not merge PRs while `main` is broken.
-
----
-
-### RB-007: Single RPC Endpoint Degraded (P3)
-
-**Trigger:** One RPC endpoint returns non-200 or times out; others are healthy.
-
-**Resolution steps:**
-1. Check [Stellar Status Page](https://status.stellar.org).
-2. If the endpoint is a third-party provider → check their status page.
-3. Update `SOROBAN_RPC_*_URL` to point to an alternative if available.
-4. The RPC proxy will automatically use remaining healthy endpoints.
-5. Monitor for recovery; no immediate user impact if ≥ 1 endpoint is healthy.
-
----
-
-## Post-Incident Process
-
-After any P1 or P2 incident:
-
-1. **Timeline** — document when the alert fired, when it was acknowledged, and when it was resolved.
-2. **Root cause** — identify what caused the incident.
-3. **Impact** — estimate affected users / requests.
-4. **Action items** — create GitHub issues for any follow-up work.
-5. **Runbook update** — if this runbook was missing a step, update it.
-
-File the post-incident report as a GitHub issue with labels `incident` and `post-mortem`.
+*Last updated: 2026-07-23*

@@ -10,16 +10,51 @@ import { ApiResponseInterceptor } from "./lib/api-response.interceptor.js";
 import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
 import { DEFAULT_API_PORT } from "@devconsole/api-contracts";
 
+function buildCspHeader(): string {
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https://*.stellar.org",
+  ];
+  return directives.join("; ");
+}
+
+function buildCorsOrigin() {
+  const corsOrigins = process.env.CORS_ORIGINS;
+  if (corsOrigins) {
+    const allowlist = corsOrigins
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+    return (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin || allowlist.includes(origin)) {
+        cb(null, true);
+      } else {
+        console.warn(`[cors] Blocked origin: ${origin}`);
+        cb(null, false);
+      }
+    };
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return (_origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      cb(null, false);
+    };
+  }
+
+  return process.env.WEB_ORIGIN ?? "http://localhost:3000";
+}
+
 async function bootstrap() {
   validateEnv();
   const app = await NestFactory.create(AppModule, {
     cors: false
   });
 
-  const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
-
   app.enableCors({
-    origin: webOrigin,
+    origin: buildCorsOrigin(),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     // DEVOPS-002: Removed x-owner-key from allowedHeaders to avoid advertising
     // sensitive authentication headers in CORS preflight responses.
@@ -28,13 +63,16 @@ async function bootstrap() {
     credentials: true
   });
   app.setGlobalPrefix("api");
-  
+
+  const cspHeader = buildCspHeader();
+
   // DEVOPS-002: Add security headers to all responses
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "0"); // Modern browsers use CSP instead
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Content-Security-Policy", cspHeader);
     next();
   });
   app.useGlobalFilters(new ApiErrorFilter());

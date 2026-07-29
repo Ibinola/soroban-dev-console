@@ -1,7 +1,8 @@
 import * as freighter from "@stellar/freighter-api";
 import albedo from "@albedo-link/intent";
+import { xBullWalletConnect } from "@creit.tech/xbull-wallet-connect";
 
-export type WalletProviderId = "freighter" | "albedo";
+export type WalletProviderId = "freighter" | "albedo" | "xbull";
 
 // FE-041: Capability matrix — explicit flags per provider
 export interface WalletCapabilities {
@@ -12,9 +13,19 @@ export interface WalletCapabilities {
   supportsMainnet: boolean;
 }
 
+// FE-042 / W7-FE-002: Session now carries the network passphrase so the
+// wallet store can detect a mismatch if the user changes networks later.
 export interface WalletSession {
   provider: WalletProviderId;
   address: string;
+  networkPassphrase?: string | null;
+}
+
+// W7-FE-002 / #675: revalidation returns the wallet's *current* network
+// passphrase so the store can compare it against the active app network.
+export interface RevalidationResult {
+  isValid: boolean;
+  networkPassphrase?: string | null;
 }
 
 export interface WalletProviderDefinition {
@@ -26,8 +37,42 @@ export interface WalletProviderDefinition {
   connect: () => Promise<WalletSession>;
   // FE-041: Signing abstraction — unified sign interface
   signTransaction: (xdr: string, networkPassphrase: string) => Promise<string>;
-  // FE-042: Revalidation — check if the provider is still live
-  revalidate: () => Promise<boolean>;
+  // FE-042: Revalidation — check if the provider is still live.
+  // Returns the wallet's current networkPassphrase so the store can
+  // surface a mismatch warning to the user.
+  revalidate: () => Promise<RevalidationResult>;
+  // W7-FE-002 / #675: best-effort lookup of the wallet's active network
+  // passphrase without re-prompting the user.
+  getNetworkPassphrase?: () => Promise<string | null>;
+  // #674: Disconnect — deauthorize the provider and clear local session state.
+  disconnect: () => Promise<void>;
+}
+
+/**
+ * Best-effort fetch of the wallet provider's active network passphrase.
+ * Used for the network mismatch warning (#675). Returns null if the
+ * provider does not expose network info or if the user denies/interrupts.
+ */
+async function freighterGetNetworkPassphrase(): Promise<string | null> {
+  try {
+    // Preferred path — getNetworkDetails returns the full passphrase.
+    if (freighter.getNetworkDetails) {
+      const details = await freighter.getNetworkDetails();
+      if (!details?.error && details?.networkPassphrase) {
+        return details.networkPassphrase;
+      }
+    }
+    // Fallback — older getNetwork API.
+    if (freighter.getNetwork) {
+      const network = await freighter.getNetwork();
+      if (!network?.error && network?.networkPassphrase) {
+        return network.networkPassphrase;
+      }
+    }
+  } catch {
+    // Swallow — we treat any failure as "could not determine wallet network".
+  }
+  return null;
 }
 
 async function connectFreighter(): Promise<WalletSession> {
@@ -82,12 +127,19 @@ async function connectFreighter(): Promise<WalletSession> {
     );
   }
 
-  return { provider: "freighter", address: finalAddress };
+  const networkPassphrase = await freighterGetNetworkPassphrase();
+  return { provider: "freighter", address: finalAddress, networkPassphrase };
 }
 
 async function connectAlbedo(): Promise<WalletSession> {
   const result = await albedo.publicKey({});
-  return { provider: "albedo", address: result.pubkey };
+  // Albedo's public_key response does not include a network field by
+  // default; we treat it as unknown and let revalidation resolve it.
+  return {
+    provider: "albedo",
+    address: result.pubkey,
+    networkPassphrase: null,
+  };
 }
 
 // FE-041: Signing abstraction implementations
@@ -106,15 +158,15 @@ async function albedoSign(xdr: string, networkPassphrase: string): Promise<strin
 }
 
 // FE-042: Revalidation helpers
-async function freighterRevalidate(): Promise<boolean> {
+async function freighterRevalidate(): Promise<RevalidationResult> {
   try {
-    if (!freighter.isConnected) return false;
+    if (!freighter.isConnected) return { isValid: false };
     const connected = await freighter.isConnected();
     const isConn =
       typeof connected === "object"
         ? Boolean((connected as { isConnected?: boolean }).isConnected)
         : Boolean(connected);
-    if (!isConn) return false;
+    if (!isConn) return { isValid: false };
 
     if (freighter.getAddress) {
       const addrRes = await freighter.getAddress();
@@ -122,17 +174,97 @@ async function freighterRevalidate(): Promise<boolean> {
         typeof addrRes === "object"
           ? ((addrRes as { address?: string }).address ?? "")
           : addrRes;
-      return Boolean(addr);
+      if (!addr) return { isValid: false };
     }
-    return true;
+
+    const passphrase = await freighterGetNetworkPassphrase();
+    return { isValid: true, networkPassphrase: passphrase };
   } catch {
-    return false;
+    return { isValid: false };
   }
 }
 
-async function albedoRevalidate(): Promise<boolean> {
-  // Albedo is web-based; assume valid if we have a session
+// #674: Freighter disconnect — deauthorize the extension.
+async function disconnectFreighter(): Promise<void> {
+  if (freighter.setAllowed) {
+    try {
+      await freighter.setAllowed(false);
+    } catch {
+      // best-effort
+    }
+  }
+}
+
+// W7-FE-002 / #651: albedoRevalidate now attempts a session probe via
+// publicKey({}). A rejection (user revoked access or session expired)
+// yields `isValid: false` so the wallet store clears itself.
+async function albedoRevalidate(): Promise<RevalidationResult> {
+  try {
+    const result = await albedo.publicKey({});
+    return {
+      isValid: Boolean(result?.pubkey),
+      networkPassphrase: null,
+    };
+  } catch {
+    return { isValid: false };
+  }
+}
+
+// #674: Albedo disconnect — best-effort cleanup of stored intent tokens.
+async function disconnectAlbedo(): Promise<void> {
+  try {
+    if (typeof window !== "undefined") {
+      Object.keys(window.localStorage)
+        .filter(
+          (key) =>
+            key.toLowerCase().includes("albedo") ||
+            key.toLowerCase().includes("intent"),
+        )
+        .forEach((key) => window.localStorage.removeItem(key));
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+async function connectXbull(): Promise<WalletSession> {
+  const bridge = new xBullWalletConnect();
+  try {
+    const publicKey = await bridge.connect({
+      canRequestPublicKey: true,
+      canRequestSign: true,
+    });
+    return { provider: "xbull", address: publicKey };
+  } finally {
+    bridge.closeConnections();
+  }
+}
+
+async function xbullSign(xdr: string, networkPassphrase: string): Promise<string> {
+  const bridge = new xBullWalletConnect();
+  try {
+    const result = await bridge.sign({ xdr, network: networkPassphrase });
+    return result;
+  } finally {
+    bridge.closeConnections();
+  }
+}
+
+async function xbullRevalidate(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  // xBull does not expose a persistent isConnected API.
+  // We optimistically return true; connect/sign will surface errors
+  // if the extension or webapp is unavailable.
   return true;
+}
+
+async function disconnectXbull(): Promise<void> {
+  try {
+    const bridge = new xBullWalletConnect();
+    bridge.closeConnections();
+  } catch {
+    // best-effort
+  }
 }
 
 export const walletProviders: Record<WalletProviderId, WalletProviderDefinition> = {
@@ -151,6 +283,8 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectFreighter,
     signTransaction: freighterSign,
     revalidate: freighterRevalidate,
+    getNetworkPassphrase: freighterGetNetworkPassphrase,
+    disconnect: disconnectFreighter,
   },
   albedo: {
     id: "albedo",
@@ -167,6 +301,24 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectAlbedo,
     signTransaction: albedoSign,
     revalidate: albedoRevalidate,
+    disconnect: disconnectAlbedo,
+  },
+  xbull: {
+    id: "xbull",
+    label: "xBull",
+    description: "Open source Stellar wallet with extension and webapp support",
+    accentClassName: "text-emerald-600",
+    capabilities: {
+      canSign: true,
+      canSignAuthEntries: false,
+      requiresExtension: true,
+      supportsTestnet: true,
+      supportsMainnet: true,
+    },
+    connect: connectXbull,
+    signTransaction: xbullSign,
+    revalidate: xbullRevalidate,
+    disconnect: disconnectXbull,
   },
 };
 

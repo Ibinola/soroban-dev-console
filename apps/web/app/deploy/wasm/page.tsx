@@ -60,6 +60,7 @@ import {
   parseWasmMetadata,
   extractContractIdFromDeployResult,
 } from "@devconsole/soroban-utils";
+import { parseWasmSectionSizes, type WasmSectionSizes } from "@/lib/artifact-introspection";
 import { registerSource } from "@/lib/source-registry";
 import { InstantiateWizard } from "@/components/instantiate-wizard";
 import { ActionGuard } from "@/components/action-guard";
@@ -250,6 +251,7 @@ export default function WasmRegistryPage() {
   const [deployingHash, setDeployingHash] = useState<string | null>(null);
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [previewFunctions, setPreviewFunctions] = useState<string[]>([]);
+  const [wasmStats, setWasmStats] = useState<{ size: number; hash: string; sections: WasmSectionSizes } | null>(null);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -258,15 +260,23 @@ export default function WasmRegistryPage() {
 
       try {
         const arrayBuffer = await selected.arrayBuffer();
-        const functions = await parseWasmMetadata(Buffer.from(arrayBuffer));
+        const wasmBuffer = Buffer.from(arrayBuffer);
+        const functions = await parseWasmMetadata(wasmBuffer);
         const spec = createNormalizedContractSpecFromFunctionNames(
           functions,
           "wasm",
           selected.name,
         );
         setPreviewFunctions(spec.functions.map((entry) => entry.name));
+        
+        setWasmStats({
+          size: wasmBuffer.length,
+          hash: hash(wasmBuffer).toString("hex"),
+          sections: parseWasmSectionSizes(new Uint8Array(wasmBuffer))
+        });
       } catch {
         setPreviewFunctions([]);
+        setWasmStats(null);
         toast.error("Could not parse WASM metadata. You can still install the artifact.");
       }
 
@@ -477,6 +487,63 @@ export default function WasmRegistryPage() {
               <Input type="file" accept=".wasm" onChange={handleFileChange} />
             </div>
 
+            {wasmStats && (
+              <div className="mt-2 space-y-2 rounded-md border bg-muted/30 p-3 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Size</span>
+                  <span className={wasmStats.size > 256 * 1024 ? "font-bold text-destructive" : "font-medium"}>
+                    {(wasmStats.size / 1024).toFixed(2)} KB
+                  </span>
+                </div>
+                {wasmStats.size > 256 * 1024 && (
+                  <div className="text-destructive">
+                    <AlertCircle className="mr-1 inline h-3 w-3" />
+                    Warning: File exceeds the Soroban max contract size (~256KB)
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">SHA-256</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {wasmStats.hash.slice(0, 16)}...{wasmStats.hash.slice(-16)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Functions</span>
+                  <span className="font-medium">{previewFunctions.length}</span>
+                </div>
+                <div className="mt-2 space-y-1 border-t pt-2">
+                  <span className="font-semibold text-muted-foreground">Sections</span>
+                  <div className="flex justify-between">
+                    <span className="ml-2 text-muted-foreground">Code</span>
+                    <span>{(wasmStats.sections.code / 1024).toFixed(2)} KB</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="ml-2 text-muted-foreground">Data</span>
+                    <span>{(wasmStats.sections.data / 1024).toFixed(2)} KB</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="ml-2 text-muted-foreground">Custom</span>
+                    <span>{(wasmStats.sections.custom / 1024).toFixed(2)} KB</span>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 w-full text-muted-foreground"
+                  onClick={() => {
+                    setFile(null);
+                    setWasmStats(null);
+                    setPreviewFunctions([]);
+                    // Reset file input by re-rendering or we can just leave it as is 
+                    // since changing it will trigger change event, but we can't easily clear the DOM input.
+                    // A better way is using a ref, but ignoring for now.
+                  }}
+                >
+                  <RotateCcw className="mr-1 h-3 w-3" /> Clear Selection
+                </Button>
+              </div>
+            )}
+
             <div className="grid w-full items-center gap-1.5">
               <Label>Name (Optional)</Label>
               <Input
@@ -625,7 +692,7 @@ export default function WasmRegistryPage() {
                 )}
               </TableBody>
             </Table>
-            {file && (
+            {file && !wasmStats && (
               <div className="space-y-2 rounded-md border bg-muted/50 p-3">
                 <Label className="text-[10px] font-bold uppercase">WASM Preview</Label>
                 <div className="flex flex-wrap gap-1">

@@ -10,15 +10,18 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 import {
   CreateWorkspaceDto,
   ImportWorkspaceDto,
   ListWorkspacesDto,
+  SearchWorkspacesDto,
   UpdateWorkspaceDto,
+  UpdateWorkspaceTagsDto,
 } from "./workspace.dto.js";
 import { WorkspacesService } from "./workspaces.service.js";
 
@@ -32,6 +35,16 @@ export class WorkspacesController {
   @Get()
   list(@Req() req: Request, @Query() query: ListWorkspacesDto) {
     return this.workspacesService.list((req as OwnerKeyRequest).ownerKey, query);
+  }
+
+  @Get("search")
+  search(@Req() req: Request, @Query() query: SearchWorkspacesDto) {
+    return this.workspacesService.search((req as OwnerKeyRequest).ownerKey, query);
+  }
+
+  @Get("tags")
+  getAllTags(@Req() req: Request) {
+    return this.workspacesService.getAllTags((req as OwnerKeyRequest).ownerKey);
   }
 
   @Get(":id")
@@ -58,6 +71,19 @@ export class WorkspacesController {
     );
   }
 
+  @Patch(":id/tags")
+  updateTags(
+    @Param("id") id: string,
+    @Body() dto: UpdateWorkspaceTagsDto,
+    @Req() req: Request,
+  ) {
+    return this.workspacesService.updateTags(
+      id,
+      (req as OwnerKeyRequest).ownerKey,
+      dto.tags,
+    );
+  }
+
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param("id") id: string, @Req() req: Request) {
@@ -73,5 +99,51 @@ export class WorkspacesController {
   @Get(":id/export")
   export(@Param("id") id: string, @Req() req: Request) {
     return this.workspacesService.export(id, (req as OwnerKeyRequest).ownerKey);
+  }
+
+  @Get(":id/export/zip")
+  async exportZip(
+    @Param("id") id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const stream = await this.workspacesService.exportZip(
+      id,
+      (req as OwnerKeyRequest).ownerKey,
+    );
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="workspace-${id}.zip"`,
+    );
+    stream.pipe(res);
+  }
+
+  @Post(":id/interactions/:interactionId/replay")
+  replayInteraction(
+    @Param("id") id: string,
+    @Param("interactionId") interactionId: string,
+    @Req() req: Request,
+  ) {
+    return this.workspacesService.replayInteraction(
+      id,
+      interactionId,
+      (req as OwnerKeyRequest).ownerKey,
+    );
+  }
+
+  @Get(":id/interactions/:interactionId/diff")
+  diffInteractions(
+    @Param("id") id: string,
+    @Param("interactionId") interactionId: string,
+    @Query("compare") compareId: string,
+    @Req() req: Request,
+  ) {
+    return this.workspacesService.diffInteractions(
+      id,
+      interactionId,
+      compareId,
+      (req as OwnerKeyRequest).ownerKey,
+    );
   }
 }

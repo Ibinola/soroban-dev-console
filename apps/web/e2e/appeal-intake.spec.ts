@@ -24,7 +24,7 @@ test.describe('Contributor appeal intake', () => {
     await expect(page.getByRole('alert').filter({ hasText: /verification required/i })).toHaveCount(0);
 
     await page.locator('form').evaluate((form) => {
-      form.noValidate = true;
+      (form as HTMLFormElement).noValidate = true;
     });
     await page.getByRole('button', { name: /submit appeal/i }).click();
     await expect(page.getByText(/issue number and summary are required/i)).toBeVisible();

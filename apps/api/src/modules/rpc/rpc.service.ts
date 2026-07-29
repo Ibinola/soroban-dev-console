@@ -22,6 +22,11 @@ import {
   buildMethodNotAllowedError,
 } from "./rpc-method-policy.js";
 import { getCorrelationId } from "../../lib/request-context.js";
+import { validateJsonDepth } from "../../lib/json-validation.js";
+import { createLogger } from "../../lib/logger.js";
+
+// Issue #753: Structured logger for RPC upstream call tracing
+const log = createLogger("RpcService");
 
 const networkSchema = z.enum(["mainnet", "testnet", "futurenet", "local"]);
 
@@ -43,6 +48,8 @@ type RpcNetwork = z.infer<typeof networkSchema>;
 
 const MAX_BATCH_REQUESTS = 25;
 const MAX_PAYLOAD_BYTES = 50_000;
+const RPC_MAX_JSON_DEPTH = Number(process.env.RPC_MAX_JSON_DEPTH) || 10;
+const RPC_MAX_STRING_LENGTH = Number(process.env.RPC_MAX_STRING_LENGTH) || 10_000;
 
 export type ProxiedRpcResponse = {
   statusCode: number;
@@ -106,6 +113,8 @@ export class RpcService {
         };
       }
     }
+
+    validateJsonDepth(parsedPayload.data, RPC_MAX_JSON_DEPTH, RPC_MAX_STRING_LENGTH);
 
     const serializedPayload = JSON.stringify(parsedPayload.data);
     if (serializedPayload.length > MAX_PAYLOAD_BYTES) {
@@ -197,15 +206,27 @@ export class RpcService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), policy.timeoutMs);
     const start = Date.now();
+    // Issue #753: Get correlation ID for end-to-end trace propagation
     const correlationId = getCorrelationId();
+
+    // Issue #753: Log the upstream RPC call before it starts
+    log.debug("rpc.upstream.start", {
+      correlationId,
+      network,
+      method,
+      rpcUrl,
+    });
 
     try {
       const upstreamResponse = await fetch(rpcUrl, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          // DEVOPS-001: Propagate correlation ID to upstream RPC
-          ...(correlationId ? { "x-request-id": correlationId } : {}),
+          // Issue #753: Propagate both X-Request-ID and X-Correlation-ID to upstream
+          ...(correlationId ? {
+            "x-request-id": correlationId,
+            "x-correlation-id": correlationId,
+          } : {}),
         },
         body: serializedPayload,
         signal: controller.signal,
@@ -225,18 +246,49 @@ export class RpcService {
           })()
         : { statusCode: upstreamResponse.status, contentType, body: rawBody };
 
+      const durationMs = Date.now() - start;
+
+      // Issue #753: Log upstream call result with latency and status
+      log.info("rpc.upstream.completed", {
+        correlationId,
+        network,
+        method,
+        statusCode: result.statusCode,
+        durationMs,
+      });
+
+      // Issue #753: For upstream errors, log the full response body at debug level
+      if (result.statusCode >= 400) {
+        log.debug("rpc.upstream.error_body", {
+          correlationId,
+          network,
+          method,
+          statusCode: result.statusCode,
+          responseBody: typeof result.body === "string" ? result.body.slice(0, 2000) : JSON.stringify(result.body).slice(0, 2000),
+        });
+      }
+
       this.events.emit(RPC_PROXIED, {
         network,
         method,
         statusCode: result.statusCode,
-        durationMs: Date.now() - start,
+        durationMs,
         cached: false,
         correlationId,
       });
 
       return result;
     } catch (error) {
+      const durationMs = Date.now() - start;
+
       if (error instanceof Error && error.name === "AbortError") {
+        log.warn("rpc.upstream.timeout", {
+          correlationId,
+          network,
+          method,
+          durationMs,
+          timeoutMs: policy.timeoutMs,
+        });
         this.events.emit(RPC_UPSTREAM_ERROR, {
           network,
           method,
@@ -248,10 +300,20 @@ export class RpcService {
         );
       }
 
+      const errorName = error instanceof Error ? error.name : "UnknownError";
+      log.error("rpc.upstream.failed", {
+        correlationId,
+        network,
+        method,
+        durationMs,
+        errorName,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+
       this.events.emit(RPC_UPSTREAM_ERROR, {
         network,
         method,
-        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorName,
         correlationId,
       });
       throw new BadGatewayException("Failed to proxy RPC request");
