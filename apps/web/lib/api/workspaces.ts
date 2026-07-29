@@ -45,7 +45,7 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as ApiEnvelope<any>;
-    if (body && "error" in body) {
+    if (body && body.error) {
       throw new ApiError(
         `${body.error.message} [${correlationId}]`,
         body.error.code,

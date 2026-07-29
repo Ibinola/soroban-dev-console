@@ -28,6 +28,7 @@ import {
   pollTransactionStatus,
 } from "@/lib/api/transactions";
 import {
+  type ApiEnvelope,
   type NormalizedTransactionResult,
   type NormalizedSimulationPayload,
 } from "@devconsole/api-contracts";
@@ -148,7 +149,7 @@ export function watchTxStatus(
             // Close the stream once terminal
             if (
               envelope.data.status === "success" ||
-              envelope.data.status === "failed"
+              envelope.data.status === "error"
             ) {
               es?.close();
             }
@@ -237,15 +238,13 @@ function startPollingFallback(
 
       if (!res.ok) return;
 
-      const envelope = await res.json() as
-        | { success: true; data: NormalizedTransactionResult }
-        | { success: false };
+      const envelope = (await res.json()) as ApiEnvelope<NormalizedTransactionResult>;
 
-      if (envelope.success) {
+      if (envelope && envelope.data) {
         onUpdate(envelope.data);
         if (
           envelope.data.status === "success" ||
-          envelope.data.status === "failed"
+          envelope.data.status === "error"
         ) {
           stopped = true;
           return;
@@ -262,10 +261,10 @@ function startPollingFallback(
 
   void poll();
 
-  return () => { stopped = true; };
+  return () => {
+    stopped = true;
+  };
 }
-
-// ── Existing orchestration helpers (unchanged) ────────────────────────────────
 
 /**
  * Simulate a prepared transaction and return normalized results.
@@ -279,16 +278,18 @@ export async function simulateTx(
     
     // Convert to the existing NormalizedSimulationResult format for compatibility
     return {
-      ok: normalized.ok,
-      error: normalized.error,
-      minResourceFee: normalized.minResourceFee,
+      ok: true,
+      minResourceFee: normalized.minResourceFee ?? undefined,
       resultXdr: normalized.resultXdr,
-      auth: normalized.auth,
-      requiredAuthKeys: normalized.requiredAuthKeys,
-      stateChangesCount: normalized.stateChangesCount,
-      cpuInsns: normalized.cpuInsns,
-      memBytes: normalized.memBytes,
-      stateChanges: [], // Not included in normalized payload yet
+      auth: (normalized.auth ?? []).map((a) => ({
+        address: a.address,
+        kind: "account" as const,
+      })),
+      requiredAuthKeys: (normalized.auth ?? []).map((a) => a.address),
+      stateChangesCount: normalized.stateChanges ? normalized.stateChanges.length : 0,
+      cpuInsns: normalized.cpuInsns ? parseInt(normalized.cpuInsns, 10) : undefined,
+      memBytes: normalized.memBytes ? parseInt(normalized.memBytes, 10) : undefined,
+      stateChanges: (normalized.stateChanges ?? []) as any,
     };
   } catch (error) {
     // Fallback to direct RPC if normalized API fails
@@ -381,14 +382,14 @@ export async function orchestrateTx(
           status: "success",
           hash: submitResult.hash,
           simulation: normalized,
-          resultMetaXdr: finalStatus.resultMetaXdr,
+          resultMetaXdr: finalStatus.resultXdr,
         };
       }
 
       return {
         status: "error",
         hash: submitResult.hash,
-        errorMessage: finalStatus.error || "Transaction failed on-chain",
+        errorMessage: finalStatus.errorMessage || "Transaction failed on-chain",
         simulation: normalized,
         resultXdr: finalStatus.resultXdr,
       };

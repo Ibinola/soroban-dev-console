@@ -20,7 +20,9 @@ const { callSpy, nativeToScValSpy } = vi.hoisted(() => ({
 }));
 
 vi.mock("@stellar/stellar-sdk", () => ({
-  Contract: vi.fn().mockImplementation(() => ({ call: callSpy })),
+  Contract: vi.fn(function (this: any) {
+    return { call: callSpy };
+  }),
   TransactionBuilder: vi.fn(),
   TimeoutInfinite: 0,
   Operation: class {},

@@ -15,8 +15,13 @@ test("health controller returns ok status", () => {
     }),
   } satisfies Pick<NetworkHealthService, "getAllHealth" | "getHealth">;
 
+  const rpcMetricsStub = {
+    getMetrics: () => ({ successCount: 0, errorCount: 0, averageLatencyMs: 0 }),
+  };
+
   const controller = new HealthController(
     networkHealthStub as unknown as NetworkHealthService,
+    rpcMetricsStub as unknown as any,
   );
   const result = controller.getHealth();
 

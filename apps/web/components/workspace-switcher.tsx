@@ -159,7 +159,9 @@ export function WorkspaceSwitcher() {
       .filter((c) => ws.savedCallIds.includes(c.id))
       .map((c) => ({
         functionName: c.fnName,
-        argumentsJson: c.args,
+        argumentsJson: Object.fromEntries(
+          c.args.map((arg, idx) => [arg.name || `arg${idx}`, arg.value])
+        ),
       }));
 
     const shareId = await syncToCloud({

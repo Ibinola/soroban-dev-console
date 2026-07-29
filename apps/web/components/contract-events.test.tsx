@@ -8,7 +8,9 @@ const serverInstance = vi.hoisted(() => ({ getEvents: vi.fn() }));
 vi.mock("@stellar/stellar-sdk", () => {
   return {
     rpc: {
-      Server: vi.fn().mockImplementation(() => serverInstance),
+      Server: vi.fn(function (this: any) {
+        return serverInstance;
+      }),
     },
     Contract: vi.fn(),
     TransactionBuilder: vi.fn(),

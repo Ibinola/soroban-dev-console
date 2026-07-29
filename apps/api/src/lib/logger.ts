@@ -37,7 +37,7 @@ function writeLog(level: LogLevel, context: string, message: string, meta?: Reco
 
   const correlationId = getCorrelationId() ?? "system";
   const entry = {
-    ...buildStructuredLogEntry({ level: level === "warn" ? "error" : level, correlationId, message }),
+    ...buildStructuredLogEntry({ level: level === "error" ? "error" : "info", correlationId, message }),
     timestamp: new Date().toISOString(),
     context,
     ...meta,

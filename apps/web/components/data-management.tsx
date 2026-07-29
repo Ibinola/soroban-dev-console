@@ -118,7 +118,12 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
           .map((c) => ({ contractId: c.id, network: c.network }));
         const interactionRefs = savedCalls
           .filter((c) => workspace.savedCallIds.includes(c.id))
-          .map((c) => ({ functionName: c.fnName, argumentsJson: c.args }));
+          .map((c) => ({
+            functionName: c.fnName,
+            argumentsJson: Object.fromEntries(
+              c.args.map((arg, idx) => [arg.name || `arg${idx}`, arg.value])
+            ),
+          }));
 
         wsCloudId = await syncToCloud({
           name: workspace.name,
@@ -138,7 +143,7 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
 
       const link = await sharesApi.create({
         workspaceId: wsCloudId,
-        snapshotJson: snapshot,
+        snapshotJson: JSON.stringify(snapshot),
         label: label.trim() || workspace.name,
         expiresInSeconds,
       });
@@ -247,7 +252,7 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
           <ul className="space-y-2">
             {shares.map((s) => (
               <li
-                key={s.id}
+                key={s.token}
                 className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
               >
                 <div className="flex-1 min-w-0">

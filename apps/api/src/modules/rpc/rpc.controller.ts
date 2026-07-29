@@ -206,7 +206,7 @@ export class RpcController {
           } as MessageEvent);
 
           // Close the stream once the transaction has reached a terminal state
-          if (normalized.status === "success" || normalized.status === "failed") {
+          if (normalized.status === "success" || normalized.status === "error") {
             clearTimeout(timeoutHandle);
             stop$.next();
           }
