@@ -27,25 +27,27 @@ export function StateDiffViewer({ diffs }: { diffs: DiffResult[] }) {
     );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" role="list" aria-label="State changes">
       {diffs.map((diff, i) => (
         <div
           key={i}
           className="rounded-md border bg-muted/20 p-2 font-mono text-[10px]"
+          role="listitem"
+          aria-label={`State change: ${diff.type}`}
         >
           <div className="mb-1 flex items-center gap-2 flex-wrap">
             {diff.type === "added" && (
-              <Badge className="border-green-200 bg-green-500/10 text-green-600">
+              <Badge className="border-green-200 bg-green-500/10 text-green-600" aria-label="Added">
                 <Plus className="mr-1 h-3 w-3" /> Added
               </Badge>
             )}
             {diff.type === "modified" && (
-              <Badge className="border-blue-200 bg-blue-500/10 text-blue-600">
+              <Badge className="border-blue-200 bg-blue-500/10 text-blue-600" aria-label="Changed">
                 <Edit3 className="mr-1 h-3 w-3" /> Changed
               </Badge>
             )}
             {diff.type === "deleted" && (
-              <Badge className="border-red-200 bg-red-500/10 text-red-600">
+              <Badge className="border-red-200 bg-red-500/10 text-red-600" aria-label="Removed">
                 <Minus className="mr-1 h-3 w-3" /> Removed
               </Badge>
             )}

@@ -28,6 +28,7 @@ import {
   PlayCircle,
   CheckCircle2,
   XCircle,
+  Clock,
 } from "lucide-react";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
@@ -178,6 +179,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [result, setResult] = useState<string | null>(null);
   const [simulation, setSimulation] =
     useState<NormalizedSimulationResult | null>(null);
+  const [executionTimeMs, setExecutionTimeMs] = useState<number | null>(null);
+  const [rpcLatencyMs, setRpcLatencyMs] = useState<number | null>(null);
   const { saveCall, savePreset } = useSavedCallsStore();
   const { addBundle } = useResultBundlesStore();
   const { activeWorkspaceId, linkSavedCall } = useWorkspaceStore();
@@ -291,6 +294,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     setIsLoading(true);
     setResult(null);
     setSimulation(null);
+    setExecutionTimeMs(null);
+    setRpcLatencyMs(null);
+    const startTime = performance.now();
     try {
       const network = getActiveNetworkConfig();
       const server = new SorobanRpc.Server(network.rpcUrl);
@@ -346,6 +352,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         setResult(`Simulation failed: ${normalized.error || "Unknown error"}`);
         toast.error(`Simulation Failed: ${normalized.error || "Unknown error"}`);
       }
+      setExecutionTimeMs(Math.round(performance.now() - startTime));
+      setRpcLatencyMs(Math.round(performance.now() - startTime));
     } catch (e: any) {
       console.error(e);
       setSimulation({
@@ -358,6 +366,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       });
       setResult(`Error: ${e.message}`);
       toast.error(`Simulation Error: ${e.message}`);
+      setExecutionTimeMs(Math.round(performance.now() - startTime));
     } finally {
       setIsLoading(false);
     }
@@ -371,6 +380,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
     setIsLoading(true);
     setResult(null);
+    setExecutionTimeMs(null);
+    setRpcLatencyMs(null);
+    const sendStart = performance.now();
 
     try {
       const network = getActiveNetworkConfig();
@@ -430,10 +442,13 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       setResult(`Transaction Submitted! Hash: ${sendRes.hash}`);
       toast.success("Transaction sent to network");
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
     } catch (e: any) {
       console.error(e);
       setResult(`Submission Error: ${e.message}`);
       toast.error(`Submission Error: ${e.message}`);
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
     } finally {
       setIsLoading(false);
     }
@@ -797,6 +812,25 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           {result && (
             <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
               {result}
+            </div>
+          )}
+
+          {(executionTimeMs != null || rpcLatencyMs != null) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {executionTimeMs != null && (
+                <Badge variant="secondary" title="Execution duration">
+                  <Clock className="mr-1 h-3 w-3" />
+                  {executionTimeMs}ms
+                </Badge>
+              )}
+              {rpcLatencyMs != null && (
+                <Badge
+                  variant={rpcLatencyMs > 2000 ? "destructive" : "secondary"}
+                  title="RPC round-trip latency"
+                >
+                  RPC {rpcLatencyMs}ms
+                </Badge>
+              )}
             </div>
           )}
 

@@ -18,6 +18,8 @@ export interface TransactionResultProps {
   showSimulation?: boolean;
   compact?: boolean;
   actions?: React.ReactNode;
+  executionTimeMs?: number;
+  rpcLatencyMs?: number;
 }
 
 export function TransactionResult({
@@ -27,6 +29,8 @@ export function TransactionResult({
   showSimulation = true,
   compact = false,
   actions,
+  executionTimeMs,
+  rpcLatencyMs,
 }: TransactionResultProps) {
   const isSuccess = result.status === "success";
   const isError = result.status === "error";
@@ -170,6 +174,25 @@ export function TransactionResult({
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Execution Timer & RPC Latency */}
+        {(executionTimeMs != null || rpcLatencyMs != null) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {executionTimeMs != null && (
+              <Badge variant="secondary" title="Execution duration">
+                <Clock className="mr-1 h-3 w-3" />
+                {executionTimeMs}ms
+              </Badge>
+            )}
+            {rpcLatencyMs != null && (
+              <Badge
+                variant={rpcLatencyMs > 2000 ? "destructive" : "secondary"}
+                title="RPC round-trip latency"
+              >
+                RPC {rpcLatencyMs}ms
+              </Badge>
+            )}
+          </div>
+        )}
         {/* Transaction Hash */}
         {result.hash && (
           <div>

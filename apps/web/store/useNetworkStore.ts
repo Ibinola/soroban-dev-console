@@ -72,11 +72,17 @@ interface NetworkState {
   currentNetwork: string;
   customNetworks: NetworkConfig[];
   health: NetworkHealth | null;
+  autoFailover: boolean;
+  degradationThresholdMs: number;
+  failoverNetworkId: string;
 
   setNetwork: (id: string) => void;
   setHealth: (health: NetworkHealth | null) => void;
   addCustomNetwork: (network: NetworkConfig) => void;
   removeCustomNetwork: (id: string) => void;
+  setAutoFailover: (enabled: boolean) => void;
+  setDegradationThreshold: (ms: number) => void;
+  setFailoverNetworkId: (id: string) => void;
 
   // Helpers
   getActiveNetworkConfig: () => NetworkConfig;
@@ -93,9 +99,15 @@ export const useNetworkStore = create<NetworkState>()(
       currentNetwork: "testnet",
       customNetworks: [],
       health: null,
+      autoFailover: false,
+      degradationThresholdMs: 2000,
+      failoverNetworkId: "mainnet",
 
       setNetwork: (id) => set({ currentNetwork: id, health: null }),
       setHealth: (health) => set({ health }),
+      setAutoFailover: (enabled) => set({ autoFailover: enabled }),
+      setDegradationThreshold: (ms) => set({ degradationThresholdMs: ms }),
+      setFailoverNetworkId: (id) => set({ failoverNetworkId: id }),
 
       addCustomNetwork: (network) =>
         set((state) => ({

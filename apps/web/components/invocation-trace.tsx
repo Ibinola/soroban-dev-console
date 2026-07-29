@@ -71,6 +71,12 @@ function TraceNodeComponent({
       : node.contractId);
 
   return (
+    <div
+      className={cn("rounded-md border p-2", getStatusColor(status))}
+      role="treeitem"
+      aria-expanded={hasChildren ? node.expanded : undefined}
+      aria-selected={node.expanded}
+    >
     <div className={cn("rounded-md border p-2", getStatusColor(status))}>
       <div
         className="flex items-center gap-2 cursor-pointer"
@@ -79,6 +85,9 @@ function TraceNodeComponent({
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") onToggle(node.id);
+          if (e.key === "ArrowLeft" && node.expanded) onToggle(node.id);
+          if (e.key === "ArrowRight" && !node.expanded && hasChildren) onToggle(node.id);
+        }}
         }}
         aria-expanded={hasChildren ? node.expanded : undefined}
       >
@@ -157,6 +166,7 @@ function TraceNodeComponent({
 
       {/* Nested children */}
       {node.expanded && hasChildren && (
+        <div className="mt-2 ml-4 space-y-2 border-l-2 border-muted pl-2" role="group" aria-label={`Sub-calls for ${node.functionName}`}>
         <div className="mt-2 ml-4 space-y-2 border-l-2 border-muted pl-2">
           {node.children.map((child) => (
             <TraceNodeComponent
@@ -192,6 +202,7 @@ export function InvocationTraceView({
   );
 
   return (
+    <div className={cn("space-y-1", className)} role="tree" aria-label="Invocation trace">
     <div className={cn("space-y-1", className)}>
       <TraceNodeComponent
         node={root}

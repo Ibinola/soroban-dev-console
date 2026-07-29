@@ -24,6 +24,9 @@ interface WalletState {
   // W7-FE-002 / #675: network passphrase captured at connect time so we
   // can detect a mismatch if the user changes networks later.
   networkPassphraseAtConnect: string | null;
+  // #836: auto-reconnect state
+  autoReconnect: boolean;
+  reconnectAttempts: number;
 
   connect: (provider: WalletProviderId) => Promise<void>;
   // #674: disconnect action — calls provider disconnect then resets store + workspace sync state
@@ -36,6 +39,10 @@ interface WalletState {
   // FE-043: sandbox helpers
   enterSandbox: () => void;
   exitSandbox: () => void;
+  // #836: reconnect
+  attemptReconnect: () => Promise<void>;
+  setAutoReconnect: (enabled: boolean) => void;
+  resetReconnectAttempts: () => void;
 }
 
 export const useWallet = create<WalletState>()(
@@ -48,6 +55,8 @@ export const useWallet = create<WalletState>()(
       networkAtConnect: null,
       isSandboxMode: false,
       networkPassphraseAtConnect: null,
+      autoReconnect: false,
+      reconnectAttempts: 0,
 
       connect: async (provider) => {
         try {
@@ -159,6 +168,28 @@ export const useWallet = create<WalletState>()(
         set({ sessionStatus: "valid" });
         return "valid";
       },
+
+      // #836: attempt reconnect to last known provider
+      attemptReconnect: async () => {
+        const { walletType, autoReconnect, reconnectAttempts } = get();
+        if (!walletType || !autoReconnect) return;
+        const maxAttempts = 3;
+        if (reconnectAttempts >= maxAttempts) {
+          set({ autoReconnect: false, reconnectAttempts: 0 });
+          return;
+        }
+        set({ reconnectAttempts: reconnectAttempts + 1 });
+        try {
+          await get().connect(walletType);
+          set({ reconnectAttempts: 0 });
+        } catch {
+          // will be retried on next call
+        }
+      },
+
+      setAutoReconnect: (enabled) => set({ autoReconnect: enabled }),
+
+      resetReconnectAttempts: () => set({ reconnectAttempts: 0 }),
 
       // FE-043: enter wallet-less sandbox mode
       enterSandbox: () => {

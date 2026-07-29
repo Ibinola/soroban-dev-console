@@ -199,6 +199,18 @@ function decodeXdr(input: string): { result: unknown; typeName: string } | null 
 
 export default function XdrToolsPage() {
   const [activeTab, setActiveTab] = useState<"decode" | "encode">("decode");
+  const decodeTabRef = useRef<HTMLButtonElement>(null);
+  const encodeTabRef = useRef<HTMLButtonElement>(null);
+
+  const handleTabKeyDown = (e: React.KeyboardEvent, tab: "decode" | "encode") => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const nextTab = tab === "decode" ? "encode" : "decode";
+      setActiveTab(nextTab);
+      if (nextTab === "decode") decodeTabRef.current?.focus();
+      else encodeTabRef.current?.focus();
+    }
+  };
 
   // Decoder state
   const [decodeInput, setDecodeInput] = useState("");
@@ -291,6 +303,16 @@ export default function XdrToolsPage() {
             Decode base64 XDR strings or encode ScVal types to XDR.
           </p>
         </div>
+        <div className="flex gap-2" role="tablist" aria-label="XDR tool mode">
+          <Button
+            ref={decodeTabRef}
+            variant={activeTab === "decode" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveTab("decode")}
+            role="tab"
+            aria-selected={activeTab === "decode"}
+            aria-controls="decode-panel"
+            onKeyDown={(e) => handleTabKeyDown(e, "decode")}
         <div className="flex gap-2">
           <Button
             variant={activeTab === "decode" ? "default" : "outline"}
@@ -301,6 +323,14 @@ export default function XdrToolsPage() {
             Decode
           </Button>
           <Button
+            ref={encodeTabRef}
+            variant={activeTab === "encode" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveTab("encode")}
+            role="tab"
+            aria-selected={activeTab === "encode"}
+            aria-controls="encode-panel"
+            onKeyDown={(e) => handleTabKeyDown(e, "encode")}
             variant={activeTab === "encode" ? "default" : "outline"}
             size="sm"
             onClick={() => setActiveTab("encode")}
@@ -312,6 +342,7 @@ export default function XdrToolsPage() {
       </div>
 
       {activeTab === "decode" ? (
+        <div id="decode-panel" role="tabpanel" aria-label="Decode XDR" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Card className="flex h-full flex-col">
@@ -334,6 +365,7 @@ export default function XdrToolsPage() {
                     <Code className="h-4 w-4" />
                     Decode
                   </Button>
+                  <Button variant="outline" onClick={clearAll} disabled={!decodeInput} aria-label="Clear input">
                   <Button variant="outline" onClick={clearAll} disabled={!decodeInput}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -372,6 +404,7 @@ export default function XdrToolsPage() {
               </CardHeader>
               <CardContent className="relative min-h-[300px] flex-1">
                 {decoded ? (
+                  <div aria-live="polite" className="absolute inset-4 overflow-auto rounded-md bg-zinc-950 p-4 font-mono text-xs text-zinc-50">
                   <div className="absolute inset-4 overflow-auto rounded-md bg-zinc-950 p-4 font-mono text-xs text-zinc-50">
                     <pre>{decoded}</pre>
                   </div>
@@ -385,6 +418,7 @@ export default function XdrToolsPage() {
           </div>
         </div>
       ) : (
+        <div id="encode-panel" role="tabpanel" aria-label="Encode XDR" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Card className="flex h-full flex-col">
@@ -431,6 +465,7 @@ export default function XdrToolsPage() {
                     <ArrowRightLeft className="h-4 w-4" />
                     Encode
                   </Button>
+                  <Button variant="outline" onClick={clearAll} aria-label="Clear all">
                   <Button variant="outline" onClick={clearAll}>
                     <Trash2 className="h-4 w-4" />
                   </Button>

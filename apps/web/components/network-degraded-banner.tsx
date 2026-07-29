@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { AlertTriangle, WifiOff, RefreshCw } from "lucide-react";
 import { useOfflineDetection } from "@/hooks/use-offline-detection";
+import { toast } from "sonner";
 
 /**
  * Shows a sticky banner when the active network is degraded, offline, or the
@@ -15,11 +17,20 @@ import { useOfflineDetection } from "@/hooks/use-offline-detection";
  * Write flows should check `health.status` before submitting transactions.
  */
 export function NetworkDegradedBanner() {
+  const { health, currentNetwork, setNetwork, autoFailover, failoverNetworkId, degradationThresholdMs } = useNetworkStore();
   const { health, currentNetwork, setNetwork } = useNetworkStore();
   const { isOnline } = useOfflineDetection();
 
   // Issue #745: Browser is completely offline
   const isBrowserOffline = !isOnline;
+
+  // Auto-failover: switch to fallback network when degraded above threshold
+  useEffect(() => {
+    if (autoFailover && health?.status === "degraded" && health.latencyMs >= degradationThresholdMs && currentNetwork !== failoverNetworkId) {
+      setNetwork(failoverNetworkId);
+      toast.info(`Auto-failover switched to ${failoverNetworkId} due to high latency (${health.latencyMs}ms)`);
+    }
+  }, [autoFailover, health, currentNetwork, failoverNetworkId, degradationThresholdMs, setNetwork]);
 
   if (!isBrowserOffline && (!health || health.status === "healthy")) return null;
 
@@ -47,6 +58,7 @@ export function NetworkDegradedBanner() {
           {isBrowserOffline
             ? "You're offline — workspace changes are being saved locally and will sync when you reconnect."
             : isDegraded
+            ? `Network degraded (${health?.latencyMs}ms) — write transactions may fail.${autoFailover ? ` Auto-failover will switch at ${degradationThresholdMs}ms.` : ""}`
             ? `Network degraded (${health?.latencyMs}ms) — write transactions may fail.`
             : "Network offline — read-only mode active. Switch network or retry."}
         </span>

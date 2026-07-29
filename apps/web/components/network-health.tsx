@@ -7,6 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
 import { cn } from "@devconsole/ui";
 
 /**
@@ -21,7 +22,7 @@ import { cn } from "@devconsole/ui";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export function NetworkHealth() {
-  const { currentNetwork, health, setHealth } = useNetworkStore();
+  const { currentNetwork, health, setHealth, autoFailover, setAutoFailover, failoverNetworkId, degradationThresholdMs } = useNetworkStore();
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +158,20 @@ export function NetworkHealth() {
               RPC endpoint unreachable. Check your network connection or switch networks.
             </p>
           )}
+
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium">Auto-failover</span>
+              <p className="text-[10px] text-muted-foreground">
+                {autoFailover ? `Switches to ${failoverNetworkId} at &gt;${degradationThresholdMs}ms` : "Off"}
+              </p>
+            </div>
+            <Switch
+              checked={autoFailover}
+              onCheckedChange={setAutoFailover}
+              aria-label="Toggle auto-failover"
+            />
+          </div>
         </div>
       </PopoverContent>
     </Popover>
