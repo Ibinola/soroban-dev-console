@@ -66,10 +66,10 @@ export const useKeyboardShortcutsStore = create<ShortcutsModalState>((set) => ({
 
 const GROUPS = ["Global", "Contract Explorer", "Workspace", "Transaction"] as const;
 
-function KeyBadge({ key: k }: { key: string }) {
+function KeyBadge({ keyName }: { keyName: string }) {
   return (
     <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border bg-muted px-1.5 text-xs font-mono text-muted-foreground shadow-sm">
-      {k}
+      {keyName}
     </kbd>
   );
 }
@@ -130,7 +130,7 @@ export function KeyboardShortcutsModal() {
                       <span className="text-foreground">{shortcut.description}</span>
                       <div className="flex items-center gap-1">
                         {shortcut.keys.map((k, i) => (
-                          <KeyBadge key={i} key={k} />
+                          <KeyBadge key={i} keyName={k} />
                         ))}
                       </div>
                     </div>

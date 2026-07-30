@@ -307,6 +307,8 @@ model ReviewContext {
   @@index([pullRequestId])
   @@index([repositoryId, reviewerId])
   @@map("review_contexts")
+}
+
 /// BE-0703: Dead-letter queue for failed async jobs.
 model DeadLetterJob {
   id            String    @id @default(cuid())

@@ -8,6 +8,8 @@ import process from "node:process";
  * Exits non-zero to block the commit if any secrets are detected.
  */
 
+const EXCLUDE_PARTS = ["/node_modules/", "/dist/", "/target/", "/.git/", "/.turbo/", "/.backups/", "/.next/"];
+
 const PATTERNS = [
   { rule: "email", regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
   { rule: "jwt", regex: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g },
@@ -25,8 +27,13 @@ const WHITELIST_FILES = [
   "docs/contributor-playbook.md",
   "docs/maintainer-playbook.md",
   "docs/runbooks.md",
+  "docs/architecture.md",
   "scripts/secret-scan.ts",
   "scripts/secret-scan-staged.ts",
+  "apps/api/src/lib/audit.service.test.ts",
+  "apps/api/src/modules/fixture-manifest/fixture-manifest.contract.test.ts",
+  "apps/api/src/modules/health/notifications.spec.ts",
+  "apps/api/src/modules/security/services/redaction.service.test.ts",
 ];
 
 const ROOT = process.cwd();

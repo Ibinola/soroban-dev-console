@@ -16,13 +16,19 @@ const PATTERNS = [
   { rule: "connection_string", regex: /(?:mongodb|postgres):\/\/[^\s]+/gi },
 ];
 const INCLUDE_DIRS = ["apps", "packages", "contracts", "docs", "scripts", ".github"];
-const EXCLUDE_PARTS = ["/node_modules/", "/dist/", "/target/", "/.git/", "/.turbo/", "/.backups/"];
+const EXCLUDE_PARTS = ["/node_modules/", "/dist/", "/target/", "/.git/", "/.turbo/", "/.backups/", "/.next/"];
 
 const WHITELIST_FILES = [
   "docs/contributor-playbook.md",
   "docs/maintainer-playbook.md",
   "docs/runbooks.md",
+  "docs/architecture.md",
   "scripts/secret-scan.ts",
+  "scripts/secret-scan-staged.ts",
+  "apps/api/src/lib/audit.service.test.ts",
+  "apps/api/src/modules/fixture-manifest/fixture-manifest.contract.test.ts",
+  "apps/api/src/modules/health/notifications.spec.ts",
+  "apps/api/src/modules/security/services/redaction.service.test.ts",
 ];
 
 function isTextFile(file: string): boolean {

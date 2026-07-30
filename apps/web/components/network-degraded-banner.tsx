@@ -18,7 +18,6 @@ import { toast } from "sonner";
  */
 export function NetworkDegradedBanner() {
   const { health, currentNetwork, setNetwork, autoFailover, failoverNetworkId, degradationThresholdMs } = useNetworkStore();
-  const { health, currentNetwork, setNetwork } = useNetworkStore();
   const { isOnline } = useOfflineDetection();
 
   // Issue #745: Browser is completely offline
@@ -59,7 +58,6 @@ export function NetworkDegradedBanner() {
             ? "You're offline — workspace changes are being saved locally and will sync when you reconnect."
             : isDegraded
             ? `Network degraded (${health?.latencyMs}ms) — write transactions may fail.${autoFailover ? ` Auto-failover will switch at ${degradationThresholdMs}ms.` : ""}`
-            ? `Network degraded (${health?.latencyMs}ms) — write transactions may fail.`
             : "Network offline — read-only mode active. Switch network or retry."}
         </span>
       </div>

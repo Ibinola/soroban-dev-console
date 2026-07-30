@@ -238,8 +238,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       (key) => key.toUpperCase() === normalizedConnectedAddress,
     );
 
-  const searchParams = useSearchParams();
-  const methodParam = searchParams.get("method");
+  const methodParam = searchParams?.get("method");
 
   useEffect(() => {
     if (

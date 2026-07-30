@@ -37,6 +37,23 @@ vi.mock("@/lib/wallet/provider", () => {
         revalidate: vi.fn(),
         disconnect: vi.fn(),
       },
+      xbull: {
+        id: "xbull",
+        label: "xBull",
+        description: "",
+        accentClassName: "",
+        capabilities: {
+          canSign: true,
+          canSignAuthEntries: false,
+          requiresExtension: true,
+          supportsTestnet: true,
+          supportsMainnet: true,
+        },
+        connect: vi.fn(),
+        signTransaction: vi.fn(),
+        revalidate: vi.fn(),
+        disconnect: vi.fn(),
+      },
     },
     assertCapability: vi.fn(),
   };
@@ -58,12 +75,16 @@ vi.mock("@/store/useNetworkStore", () => {
   };
 });
 
+const { mockGetState } = vi.hoisted(() => ({
+  mockGetState: vi.fn(() => ({
+    resetSyncState: vi.fn(),
+  })),
+}));
+
 vi.mock("@/store/useWorkspaceStore", () => {
   return {
     useWorkspaceStore: {
-      getState: () => ({
-        resetSyncState: vi.fn(),
-      }),
+      getState: mockGetState,
     },
   };
 });

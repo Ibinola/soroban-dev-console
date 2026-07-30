@@ -188,7 +188,7 @@ async function freighterRevalidate(): Promise<RevalidationResult> {
 async function disconnectFreighter(): Promise<void> {
   if (freighter.setAllowed) {
     try {
-      await freighter.setAllowed(false);
+      await (freighter.setAllowed as unknown as () => Promise<void>)();
     } catch {
       // best-effort
     }
@@ -214,13 +214,25 @@ async function albedoRevalidate(): Promise<RevalidationResult> {
 async function disconnectAlbedo(): Promise<void> {
   try {
     if (typeof window !== "undefined") {
-      Object.keys(window.localStorage)
-        .filter(
-          (key) =>
-            key.toLowerCase().includes("albedo") ||
-            key.toLowerCase().includes("intent"),
-        )
-        .forEach((key) => window.localStorage.removeItem(key));
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (
+          key &&
+          (key.toLowerCase().includes("albedo") || key.toLowerCase().includes("intent"))
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      for (const key of Object.keys(window.localStorage)) {
+        if (
+          (key.toLowerCase().includes("albedo") || key.toLowerCase().includes("intent")) &&
+          !keysToRemove.includes(key)
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((key) => window.localStorage.removeItem(key));
     }
   } catch {
     // best-effort
@@ -250,12 +262,12 @@ async function xbullSign(xdr: string, networkPassphrase: string): Promise<string
   }
 }
 
-async function xbullRevalidate(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+async function xbullRevalidate(): Promise<RevalidationResult> {
+  if (typeof window === "undefined") return { isValid: false };
   // xBull does not expose a persistent isConnected API.
   // We optimistically return true; connect/sign will surface errors
   // if the extension or webapp is unavailable.
-  return true;
+  return { isValid: true };
 }
 
 async function disconnectXbull(): Promise<void> {

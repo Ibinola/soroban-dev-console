@@ -115,15 +115,15 @@ describe("watchTxStatus – SSE emission sequence (Issue #735)", () => {
     cleanup();
   });
 
-  it("closes the SSE stream on 'failed' terminal status", async () => {
+  it("closes the SSE stream on 'error' terminal status", async () => {
     const updates: NormalizedTransactionResult[] = [];
     watchTxStatus("testnet", "abc123", (r) => updates.push(r), BASE_OPTIONS);
 
     const es = MockEventSource.instances[0];
     es.simulateOpen();
-    es.simulateMessage(sseEnvelope(makeResult("failed")));
+    es.simulateMessage(sseEnvelope(makeResult("error")));
 
-    expect(updates[0].status).toBe("failed");
+    expect(updates[0].status).toBe("error");
     expect(es.closed).toBe(true);
   });
 

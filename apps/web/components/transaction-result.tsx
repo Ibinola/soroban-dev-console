@@ -55,10 +55,7 @@ export function TransactionResult({
   const renderSimulationDetails = (simulation: NormalizedSimulationResult) => {
     if (!showSimulation || compact) return null;
 
-    const simDecoded = useMemo(
-      () => decodeXdr(simulation.resultXdr ?? ""),
-      [simulation.resultXdr],
-    );
+    const simDecoded = decodeXdr(simulation.resultXdr ?? "");
 
     return (
       <div className="space-y-3">

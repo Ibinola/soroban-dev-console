@@ -3,7 +3,6 @@ import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
 import {
   NormalizedTransactionResult,
   NormalizedSimulationPayload,
-  NormalizedTransactionStatus,
 } from "@devconsole/api-contracts";
 
 @Injectable()
@@ -21,21 +20,6 @@ export class TransactionNormalizerService {
     return undefined;
   }
 
-  private toIsoTimestamp(value: unknown): string | undefined {
-    if (typeof value === "number") {
-      return new Date(value).toISOString();
-    }
-
-    if (value && typeof value === "object") {
-      const candidate = value as { toISOString?: () => string };
-      if (typeof candidate.toISOString === "function") {
-        return candidate.toISOString();
-      }
-    }
-
-    return undefined;
-  }
-
   /**
    * Normalize simulation transaction responses to a stable shape
    */
@@ -44,23 +28,16 @@ export class TransactionNormalizerService {
   ): NormalizedSimulationPayload {
     if (SorobanRpc.Api.isSimulationError(response)) {
       return {
-        ok: false,
-        error: response.error || "Unknown simulation error",
         auth: [],
-        requiredAuthKeys: [],
-        stateChangesCount: 0,
       };
     }
 
     const success = response as SorobanRpc.Api.SimulateTransactionSuccessResponse;
     
     return {
-      ok: true,
       resultXdr: success.result?.retval?.toXDR("base64"),
-      minResourceFee: success.minResourceFee,
+      minResourceFee: success.minResourceFee ? String(success.minResourceFee) : undefined,
       auth: this.normalizeAuth(success),
-      requiredAuthKeys: this.extractRequiredAuthKeys(success),
-      stateChangesCount: success.stateChanges?.length ?? 0,
       cpuInsns: this.extractCpuInstructions(success),
       memBytes: this.extractMemoryBytes(success),
     };
@@ -77,7 +54,7 @@ export class TransactionNormalizerService {
     return {
       status: this.mapSendTransactionStatus(response.status),
       hash,
-      error:
+      errorMessage:
         response.status === "ERROR"
           ? "Transaction submission failed"
           : undefined,
@@ -94,7 +71,7 @@ export class TransactionNormalizerService {
 
     const normalized: NormalizedTransactionResult = {
       status,
-      error: status === "failed" ? this.extractTransactionError(response) : undefined,
+      errorMessage: status === "error" ? this.extractTransactionError(response) : undefined,
     };
 
     if ("hash" in response && typeof response.hash === "string") {
@@ -103,14 +80,11 @@ export class TransactionNormalizerService {
     if ("ledger" in response && typeof response.ledger === "number") {
       normalized.ledger = response.ledger;
     }
-    if ("createdAt" in response) {
-      normalized.createdAt = this.toIsoTimestamp(response.createdAt);
-    }
     if ("resultXdr" in response) {
       normalized.resultXdr = this.toBase64Xdr(response.resultXdr);
     }
     if ("resultMetaXdr" in response) {
-      normalized.resultMetaXdr = this.toBase64Xdr(response.resultMetaXdr);
+      normalized.resultXdr = this.toBase64Xdr(response.resultMetaXdr);
     }
 
     return normalized;
@@ -118,7 +92,7 @@ export class TransactionNormalizerService {
 
   private normalizeAuth(
     simulation: SorobanRpc.Api.SimulateTransactionSuccessResponse,
-  ): Array<{ address: string; kind: "account" | "contract" | "unknown" }> {
+  ): Array<{ address: string; kind: "account" | "contract" }> {
     return (
       simulation.result?.auth?.flatMap((entry) => {
         try {
@@ -128,12 +102,10 @@ export class TransactionNormalizerService {
           }
 
           const authAddress = credentials.address().address();
-          const kind =
-            authAddress.switch().name === "scAddressTypeAccount"
-              ? "account"
-              : authAddress.switch().name === "scAddressTypeContract"
-                ? "contract"
-                : "unknown";
+          const kind: "account" | "contract" =
+            authAddress.switch().name === "scAddressTypeContract"
+              ? "contract"
+              : "account";
 
           return [
             {
@@ -148,17 +120,9 @@ export class TransactionNormalizerService {
     );
   }
 
-  private extractRequiredAuthKeys(
-    simulation: SorobanRpc.Api.SimulateTransactionSuccessResponse,
-  ): string[] {
-    return this.normalizeAuth(simulation)
-      .filter((entry) => entry.kind === "account")
-      .map((entry) => entry.address);
-  }
-
   private extractCpuInstructions(
     simulation: SorobanRpc.Api.SimulateTransactionSuccessResponse,
-  ): number | undefined {
+  ): string | undefined {
     const maybePayload = simulation as any;
     const maybeCost = maybePayload["cost"] as
       | {
@@ -168,16 +132,14 @@ export class TransactionNormalizerService {
         }
       | undefined;
 
-    const cpuInsns = Number(
-      maybeCost?.cpuInsns ?? maybeCost?.cpuInstructions ?? maybeCost?.cpu_insns,
-    );
+    const cpuInsns = maybeCost?.cpuInsns ?? maybeCost?.cpuInstructions ?? maybeCost?.cpu_insns;
 
-    return Number.isFinite(cpuInsns) ? cpuInsns : undefined;
+    return cpuInsns !== undefined ? String(cpuInsns) : undefined;
   }
 
   private extractMemoryBytes(
     simulation: SorobanRpc.Api.SimulateTransactionSuccessResponse,
-  ): number | undefined {
+  ): string | undefined {
     const maybePayload = simulation as any;
     const maybeCost = maybePayload["cost"] as
       | {
@@ -186,30 +148,30 @@ export class TransactionNormalizerService {
         }
       | undefined;
 
-    const memBytes = Number(maybeCost?.memBytes ?? maybeCost?.mem_bytes);
+    const memBytes = maybeCost?.memBytes ?? maybeCost?.mem_bytes;
 
-    return Number.isFinite(memBytes) ? memBytes : undefined;
+    return memBytes !== undefined ? String(memBytes) : undefined;
   }
 
   private mapSendTransactionStatus(
     status: SorobanRpc.Api.SendTransactionStatus,
-  ): NormalizedTransactionStatus {
+  ): "success" | "error" | "pending" {
     switch (status) {
       case "PENDING":
         return "pending";
       case "ERROR":
-        return "failed";
+        return "error";
       default:
-        return "failed";
+        return "error";
     }
   }
 
   private mapGetTransactionStatus(
     status: SorobanRpc.Api.GetTransactionStatus,
-  ): NormalizedTransactionStatus {
+  ): "success" | "error" | "pending" {
     const rawStatus = String(status);
     if (rawStatus === "SUCCESS") return "success";
-    if (rawStatus === "FAILED") return "failed";
+    if (rawStatus === "FAILED") return "error";
     return "pending";
   }
 
