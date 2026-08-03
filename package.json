@@ -30,7 +30,7 @@
     "turbo": "^2.5.4"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^16.1.0"
+    "@stellar/stellar-sdk": "^16.2.0"
   },
   "lint-staged": {
     "*": "npx tsx scripts/secret-scan-staged.ts"
