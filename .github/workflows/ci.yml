@@ -253,11 +253,30 @@ jobs:
         with:
           workspaces: contracts/${{ matrix.contract }}
 
+      - name: Check WASM compilation
+        run: cargo check --target wasm32-unknown-unknown --manifest-path contracts/${{ matrix.contract }}/Cargo.toml
+
       - name: Test contract
         run: cargo test --manifest-path contracts/${{ matrix.contract }}/Cargo.toml
 
       - name: Build contract
         run: cargo build --release --manifest-path contracts/${{ matrix.contract }}/Cargo.toml
+
+      - name: Verify WASM binary size
+        run: |
+          WASM_FILE="target/wasm32-unknown-unknown/release/${{ matrix.contract }}.wasm"
+          if [ -f "$WASM_FILE" ]; then
+            SIZE=$(stat -f%z "$WASM_FILE" 2>/dev/null || stat -c%s "$WASM_FILE" 2>/dev/null)
+            MAX_SIZE=$((512 * 1024))
+            echo "WASM binary size: ${SIZE} bytes (limit: ${MAX_SIZE} bytes)"
+            if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+              echo "::error::WASM binary exceeds 512KB limit (${SIZE} bytes)"
+              exit 1
+            fi
+            echo "✅ WASM binary size OK"
+          else
+            echo "::warning::WASM binary not found at expected path"
+          fi
 
   e2e:
     name: E2E Tests
