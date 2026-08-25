@@ -1,0 +1,169 @@
+name: Generate Changelog
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  changelog:
+    name: Generate Release Changelog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get previous tag
+        id: prev-tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^${TAG}$" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD | head -1)
+            echo "previous_tag=commit" >> "$GITHUB_OUTPUT"
+            echo "Using initial commit as range start"
+          else
+            echo "previous_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
+            echo "Using tag ${PREV_TAG} as range start"
+          fi
+
+      - name: Categorize commits
+        id: categorize
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG="${{ steps.prev-tag.outputs.previous_tag }}"
+
+          FEATURES=""
+          FIXES=""
+          MAINTENANCE=""
+          OTHER=""
+
+          if [ "$PREV_TAG" = "commit" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            COMMITS=$(git log --pretty=format:"%s" --no-merges "${PREV_TAG}..${TAG}")
+          fi
+
+          while IFS= read -r msg; do
+            [ -z "$msg" ] && continue
+            lower=$(echo "$msg" | tr '[:upper:]' '[:lower:]')
+            case "$lower" in
+              feat*|feature*)
+                FEATURES="${FEATURES}- ${msg}\n"
+                ;;
+              fix*|bug*|patch*)
+                FIXES="${FIXES}- ${msg}\n"
+                ;;
+              chore*|ci*|build*|refactor*|docs*|style*|test*|perf*)
+                MAINTENANCE="${MAINTENANCE}- ${msg}\n"
+                ;;
+              *)
+                OTHER="${OTHER}- ${msg}\n"
+                ;;
+            esac
+          done <<< "$COMMITS"
+
+          echo "features<<EOF" >> "$GITHUB_OUTPUT"
+          printf "%b" "$FEATURES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "fixes<<EOF" >> "$GITHUB_OUTPUT"
+          printf "%b" "$FIXES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "maintenance<<EOF" >> "$GITHUB_OUTPUT"
+          printf "%b" "$MAINTENANCE" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "other<<EOF" >> "$GITHUB_OUTPUT"
+          printf "%b" "$OTHER" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog markdown
+        id: changelog-md
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          DATE=$(date +%Y-%m-%d)
+          FEATURES="${{ steps.categorize.outputs.features }}"
+          FIXES="${{ steps.categorize.outputs.fixes }}"
+          MAINTENANCE="${{ steps.categorize.outputs.maintenance }}"
+          OTHER="${{ steps.categorize.outputs.other }}"
+
+          {
+            echo "## What's Changed in ${TAG}"
+            echo ""
+            echo "_Released on ${DATE}_"
+            echo ""
+
+            if [ -n "$FEATURES" ]; then
+              echo "### Features"
+              echo ""
+              printf "%b" "$FEATURES"
+              echo ""
+            fi
+
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo ""
+              printf "%b" "$FIXES"
+              echo ""
+            fi
+
+            if [ -n "$MAINTENANCE" ]; then
+              echo "### Maintenance"
+              echo ""
+              printf "%b" "$MAINTENANCE"
+              echo ""
+            fi
+
+            if [ -n "$OTHER" ]; then
+              echo "### Other Changes"
+              echo ""
+              printf "%b" "$OTHER"
+              echo ""
+            fi
+          } > /tmp/changelog-section.md
+
+          cat /tmp/changelog-section.md
+
+      - name: Prepend to CHANGELOG.md
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          EXISTING=""
+          if [ -f CHANGELOG.md ]; then
+            EXISTING=$(cat CHANGELOG.md)
+          fi
+
+          {
+            cat /tmp/changelog-section.md
+            echo ""
+            if [ -n "$EXISTING" ]; then
+              echo "---"
+              echo ""
+              echo "$EXISTING"
+            fi
+          } > CHANGELOG.md
+
+      - name: Commit and push changelog
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "docs(changelog): add release notes for ${TAG}"
+          git push
