@@ -16,6 +16,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { ContractCallForm } from "@/components/contract-call-form";
+import { ContractCardSkeleton } from "@/components/contract-card-skeleton";
 import { ContractEvents } from "@/components/contract-events";
 import { ContractStorage } from "@/components/contract-storage";
 import { ContractUpgradeModal } from "@/components/contract-upgrade-modal";
@@ -276,20 +277,18 @@ export default function ContractDetailPage() {
           <TokenDashboard contractId={contractId} />
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <Card className="min-w-0 md:col-span-1">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5" />
-                  Contract Info
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <>
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-3/4" />
-                  </>
-                ) : overview?.exists ? (
+            {loading ? (
+              <ContractCardSkeleton className="md:col-span-1" />
+            ) : (
+              <Card className="min-w-0 md:col-span-1">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Contract Info
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {overview?.exists ? (
                   <>
                     <div className="flex items-center gap-2 text-sm">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -347,9 +346,10 @@ export default function ContractDetailPage() {
                       />
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             <div className="min-w-0 md:col-span-2">
               <ContractCallForm contractId={contractId} />
