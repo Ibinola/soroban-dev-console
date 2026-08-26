@@ -137,6 +137,9 @@ jobs:
       - name: Run unit tests
         run: npm run test:run -w web
 
+      - name: Check test coverage thresholds
+        run: npm run test:coverage -w web
+
       - name: Analyze bundle size
         run: npm run analyze -w web
         env:
