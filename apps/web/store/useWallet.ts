@@ -8,6 +8,7 @@ import {
 } from "@/lib/wallet/provider";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
+import { clearSessionToken, regenerateSessionToken } from "@/lib/session/session-token";
 
 // FE-042: Session revalidation state
 export type SessionStatus = "valid" | "stale" | "mismatch" | "disconnected";
@@ -27,6 +28,9 @@ interface WalletState {
   // #836: auto-reconnect state
   autoReconnect: boolean;
   reconnectAttempts: number;
+  // #949: session correlation token, rotated on connect/disconnect to
+  // prevent session fixation across auth state transitions.
+  sessionToken: string | null;
 
   connect: (provider: WalletProviderId) => Promise<void>;
   // #674: disconnect action — calls provider disconnect then resets store + workspace sync state
@@ -57,11 +61,15 @@ export const useWallet = create<WalletState>()(
       networkPassphraseAtConnect: null,
       autoReconnect: false,
       reconnectAttempts: 0,
+      sessionToken: null,
 
       connect: async (provider) => {
         try {
           const session = await walletProviders[provider].connect();
           const currentNetwork = useNetworkStore.getState().currentNetwork;
+          // #949: rotate the session correlation token on every new
+          // authenticated session so a pre-auth token can't be fixated.
+          const sessionToken = regenerateSessionToken();
           set({
             isConnected: true,
             address: session.address,
@@ -70,6 +78,7 @@ export const useWallet = create<WalletState>()(
             networkAtConnect: currentNetwork,
             networkPassphraseAtConnect: session.networkPassphrase ?? null,
             isSandboxMode: false,
+            sessionToken,
           });
         } catch (e: any) {
           console.error(`${provider} connection failed`, e);
@@ -86,6 +95,10 @@ export const useWallet = create<WalletState>()(
             // best-effort provider cleanup
           }
         }
+        // #949: clear the session cookie and rotate the correlation token so
+        // it cannot be reused to fixate a subsequent session.
+        clearSessionToken();
+        const sessionToken = regenerateSessionToken();
         set({
           isConnected: false,
           address: null,
@@ -94,6 +107,7 @@ export const useWallet = create<WalletState>()(
           networkAtConnect: null,
           isSandboxMode: false,
           networkPassphraseAtConnect: null,
+          sessionToken,
         });
         useWorkspaceStore.getState().resetSyncState();
       },

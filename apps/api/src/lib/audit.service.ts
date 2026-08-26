@@ -98,6 +98,58 @@ export class AuditService {
     await this.prune();
   }
 
+  /**
+   * Issue #951: Export audit logs to a sanitized JSON document for
+   * compliance / security review. Payload values are re-redacted defensively
+   * even though entries are already redacted at write time, in case older
+   * rows predate a redaction pattern.
+   */
+  async exportToJson(filters?: {
+    actor?: string;
+    action?: string;
+    resourceType?: string;
+    resourceId?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+  }): Promise<{ filename: string; payload: string }> {
+    const createdAtFilter =
+      filters?.createdAfter || filters?.createdBefore
+        ? {
+            ...(filters.createdAfter && { gte: new Date(filters.createdAfter) }),
+            ...(filters.createdBefore && { lte: new Date(filters.createdBefore) }),
+          }
+        : undefined;
+
+    const where = {
+      ...(filters?.actor && { actor: filters.actor }),
+      ...(filters?.action && { action: filters.action }),
+      ...(filters?.resourceType && { resourceType: filters.resourceType }),
+      ...(filters?.resourceId && { resourceId: filters.resourceId }),
+      ...(createdAtFilter && { createdAt: createdAtFilter }),
+    };
+
+    const rows = await this.prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const sanitized = rows.map((row) => ({
+      ...row,
+      summary: row.summary ? redactText(row.summary) : row.summary,
+      metadata: row.metadata ? redactJsonValue(row.metadata) : row.metadata,
+    }));
+
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `audit-log-${date}.json`;
+    const payload = JSON.stringify(
+      { exportedAt: new Date().toISOString(), count: sanitized.length, records: sanitized },
+      null,
+      2,
+    );
+
+    return { filename, payload };
+  }
+
   async query(query: {
     actor?: string;
     action?: string;
