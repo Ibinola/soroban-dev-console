@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   GoneException,
@@ -110,6 +111,8 @@ interface PublicShareView {
 
 @Injectable()
 export class SharesService {
+  private readonly logger = new Logger(SharesService.name);
+
   constructor(
     private readonly repository: SharesRepository,
     private readonly workspacesRepository: WorkspacesRepository,
@@ -198,12 +201,19 @@ export class SharesService {
   @MapDbErrors()
   async resolve(token: string, ip?: string, userAgent?: string): Promise<PublicShareView> {
     const share = await this.repository.findUnique({ where: { token } });
-    if (!share) throw new NotFoundException("Share link not found");
+    if (!share) {
+      // Issue #945: log failed resolution attempts — repeated misses from a
+      // single IP are a signal of share-token enumeration.
+      this.logger.warn(`Failed share resolution: token not found ip=${ip ?? "unknown"}`);
+      throw new NotFoundException("Share link not found");
+    }
 
     if (share.revokedAt) {
+      this.logger.warn(`Failed share resolution: token revoked ip=${ip ?? "unknown"}`);
       throw new ForbiddenException("Share link has been revoked");
     }
     if (share.expiresAt && share.expiresAt < new Date()) {
+      this.logger.warn(`Failed share resolution: token expired ip=${ip ?? "unknown"}`);
       throw new GoneException("Share link has expired");
     }
 
