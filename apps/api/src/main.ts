@@ -9,6 +9,8 @@ import { ApiErrorFilter } from "./lib/api-error.filter.js";
 import { ApiResponseInterceptor } from "./lib/api-response.interceptor.js";
 import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
 import { DEFAULT_API_PORT } from "@devconsole/api-contracts";
+// Issue #941: CSRF protection
+import { CsrfGuard } from "./common/guards/csrf.guard.js";
 
 function buildCspHeader(): string {
   const directives = [
@@ -80,6 +82,8 @@ async function bootstrap() {
   app.useGlobalFilters(new ApiErrorFilter());
   // DEVOPS-001: Register correlation interceptor first to ensure all requests are traced
   app.useGlobalInterceptors(new CorrelationInterceptor(), new ApiResponseInterceptor());
+  // Issue #941: Enforce Double Submit Cookie CSRF protection on all mutating endpoints
+  app.useGlobalGuards(new CsrfGuard());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

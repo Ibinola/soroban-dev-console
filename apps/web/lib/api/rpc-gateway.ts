@@ -6,9 +6,11 @@
  * Network and upstream errors are normalized consistently.
  *
  * DEVOPS-001: Includes correlation ID tracking for end-to-end request tracing.
+ * Issue #941: Injects X-CSRF-Token header on mutating requests.
  */
 
 import { DEFAULT_LOCAL_API_URL } from "@devconsole/api-contracts";
+import { getCsrfTokenFromCookie } from "@/lib/csrf-token";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_LOCAL_API_URL;
 
@@ -65,12 +67,15 @@ export async function rpcCall<T = unknown>(
 
   let res: Response;
   try {
+    const csrfToken = getCsrfTokenFromCookie();
     res = await fetch(`${API_BASE}/api/rpc/${network}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         // DEVOPS-001: Include correlation ID for tracing
         "x-request-id": correlationId,
+        // Issue #941: Double Submit Cookie CSRF protection
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -119,12 +124,15 @@ export async function rpcBatch<T = unknown>(
 
   let res: Response;
   try {
+    const csrfToken = getCsrfTokenFromCookie();
     res = await fetch(`${API_BASE}/api/rpc/${network}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         // DEVOPS-001: Include correlation ID for tracing
         "x-request-id": correlationId,
+        // Issue #941: Double Submit Cookie CSRF protection
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       },
       body: JSON.stringify(batch),
     });
