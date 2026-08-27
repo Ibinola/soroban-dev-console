@@ -9,6 +9,8 @@ import { CommandPalette } from "@/components/command-palette";
 import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
 import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
+// Issue #952: SRI helpers — renders external assets with integrity + crossorigin attributes
+import { SriScript, SriStylesheet } from "@/lib/sri-manifest";
 
 export const metadata: Metadata = {
   title: "Soroban DevConsole",
@@ -25,6 +27,18 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/*
+          Issue #952: External assets are loaded via the SRI manifest helper
+          (lib/sri-manifest.ts) which injects integrity + crossorigin attributes
+          automatically.  Add third-party fonts / scripts to the manifest and
+          render them here using <SriStylesheet name="…" /> or <SriScript name="…" />.
+
+          Example (uncomment when adding external fonts):
+            <SriStylesheet name="inter-font" />
+
+          The components render null when the manifest entry is absent, so
+          adding them here is safe even before the hashes are registered.
+        */}
         {/* Inline runtime config so client components can read it synchronously */}
         <script
           id="__runtime_config__"

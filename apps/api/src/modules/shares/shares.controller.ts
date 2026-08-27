@@ -14,6 +14,7 @@ import {
 import type { Request } from "express";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 import { SharesService, CreateShareDto, ForkShareDto, ListSharesDto } from "./shares.service.js";
+import { ShareResolveRateLimitGuard } from "./share-resolve-rate-limit.guard.js";
 
 type OwnerKeyRequest = Request & { ownerKey: string };
 
@@ -30,6 +31,7 @@ export class SharesController {
 
   /** GET /shares/:token — public read-only resolve, returns snapshot data only */
   @Get(":token")
+  @UseGuards(ShareResolveRateLimitGuard)
   resolve(@Param("token") token: string, @Req() req: Request) {
     const ip = req.ip ?? req.socket.remoteAddress;
     const userAgent = req.headers["user-agent"];
