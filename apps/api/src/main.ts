@@ -22,7 +22,9 @@ function buildCspHeader(): string {
 }
 
 function buildCorsOrigin() {
-  const corsOrigins = process.env.CORS_ORIGINS;
+  // Issue #944: ALLOWED_ORIGINS is the documented env var for the proxy
+  // backend's CORS allowlist; CORS_ORIGINS is kept as a legacy alias.
+  const corsOrigins = process.env.ALLOWED_ORIGINS ?? process.env.CORS_ORIGINS;
   if (corsOrigins) {
     const allowlist = corsOrigins
       .split(",")
