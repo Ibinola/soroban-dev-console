@@ -39,7 +39,8 @@ const singleRpcRequestSchema = z
   })
   .passthrough();
 
-const rpcRequestSchema = z.union([
+// Issue #950: exported so it can be reused/tested independently of the service.
+export const RpcProxyRequestSchema = z.union([
   singleRpcRequestSchema,
   z.array(singleRpcRequestSchema).min(1)
 ]);
@@ -72,11 +73,25 @@ export class RpcService {
       throw new BadRequestException("Unsupported network");
     }
 
-    const parsedPayload = rpcRequestSchema.safeParse(payload);
+    // Issue #950: validate the raw payload against RpcProxyRequestSchema and
+    // reject malformed JSON-RPC structures with the standard -32600 error.
+    const parsedPayload = RpcProxyRequestSchema.safeParse(payload);
     if (!parsedPayload.success) {
+      const rawId =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as { id?: unknown }).id
+          : undefined;
+      const id =
+        typeof rawId === "string" || typeof rawId === "number" ? rawId : null;
+
       throw new BadRequestException({
-        error: "Invalid JSON-RPC payload",
-        details: parsedPayload.error.flatten()
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32600,
+          message: "Invalid Request",
+          data: parsedPayload.error.flatten(),
+        },
       });
     }
 

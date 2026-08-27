@@ -253,4 +253,31 @@ describe("useWallet — session revalidation (W7-FE-002 / #651)", () => {
     expect(useWallet.getState().isConnected).toBe(false);
     expect(useWallet.getState().walletType).toBeNull();
   });
+
+  it("purges the session cookie and rotates the session token on disconnect (#949)", async () => {
+    document.cookie = "sdc_session_id=pre-auth-fixation-token; Path=/";
+
+    useWallet.setState({
+      isConnected: true,
+      address: "GAAAA",
+      walletType: "freighter",
+      sessionStatus: "valid",
+      networkAtConnect: "testnet",
+      networkPassphraseAtConnect: null,
+      sessionToken: "pre-auth-fixation-token",
+    });
+    (walletProviders.freighter.disconnect as any).mockResolvedValueOnce(undefined);
+
+    await useWallet.getState().disconnectWallet();
+
+    const cookieMatch = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("sdc_session_id="));
+    const newToken = useWallet.getState().sessionToken;
+
+    expect(newToken).not.toBeNull();
+    expect(newToken).not.toBe("pre-auth-fixation-token");
+    // The rotated token is the only value the cookie may now carry.
+    expect(cookieMatch).toBe(`sdc_session_id=${newToken}`);
+  });
 });
