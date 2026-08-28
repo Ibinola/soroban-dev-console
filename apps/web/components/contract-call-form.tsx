@@ -6,7 +6,9 @@ import {
   TransactionBuilder,
   TimeoutInfinite,
   rpc as SorobanRpc,
+  Keypair,
 } from "@stellar/stellar-sdk";
+import { Switch } from "@devconsole/ui";
 import {
   Play,
   Send,
@@ -197,6 +199,16 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [customFee, setCustomFee] = useState("100");
   const [customCpuLimit, setCustomCpuLimit] = useState("");
   const [customMemLimit, setCustomMemLimit] = useState("");
+
+  // Fee bump state
+  const [enableFeeBump, setEnableFeeBump] = useState(false);
+  const [sponsorType, setSponsorType] = useState<"secret" | "wallet">("wallet");
+  const [sponsorSecretKey, setSponsorSecretKey] = useState("");
+
+  // Simulation failure state
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [showSimulationWarning, setShowSimulationWarning] = useState(false);
+  const [pendingTxToOverride, setPendingTxToOverride] = useState<any>(null);
   // #737: state diff viewer collapsible state
   const [isDiffOpen, setIsDiffOpen] = useState(false);
   // #688: batch invocation state
@@ -371,6 +383,55 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     }
   };
 
+  const wrapAndSignFeeBump = async (
+    signedInnerTxXdr: string,
+    network: any,
+    innerTxFee: string
+  ) => {
+    const signedInnerTx = TransactionBuilder.fromXDR(
+      signedInnerTxXdr,
+      network.networkPassphrase
+    ) as any;
+
+    let sponsorPublicKey = "";
+    let sponsorKeypair: Keypair | null = null;
+
+    if (sponsorType === "secret") {
+      try {
+        sponsorKeypair = Keypair.fromSecret(sponsorSecretKey.trim());
+        sponsorPublicKey = sponsorKeypair.publicKey();
+      } catch {
+        throw new Error("Invalid Sponsor Secret Key");
+      }
+    } else {
+      sponsorPublicKey = address!;
+    }
+
+    const feeBumpFee = (Number(innerTxFee) + 100).toString();
+
+    const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
+      sponsorPublicKey,
+      feeBumpFee,
+      signedInnerTx,
+      network.networkPassphrase
+    );
+
+    let finalXdr = "";
+    if (sponsorType === "secret") {
+      feeBumpTx.sign(sponsorKeypair!);
+      finalXdr = feeBumpTx.toXDR();
+    } else {
+      const outerResult = await signTransaction(feeBumpTx.toXDR(), {
+        networkPassphrase: network.networkPassphrase,
+      });
+      finalXdr = typeof outerResult === "object" && outerResult && "signedTxXdr" in outerResult
+        ? (outerResult as any).signedTxXdr
+        : (outerResult as unknown as string);
+    }
+
+    return finalXdr;
+  };
+
   const handleSend = async () => {
     if (!isConnected || !address) {
       toast.error("Connect wallet to send transactions");
@@ -381,6 +442,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     setResult(null);
     setExecutionTimeMs(null);
     setRpcLatencyMs(null);
+    setSimulationError(null);
+    setPendingTxToOverride(null);
     const sendStart = performance.now();
 
     try {
@@ -393,7 +456,6 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       const sourceAccount = await server.getAccount(address);
 
       const tx = new TransactionBuilder(sourceAccount, {
-        // FE-044: apply fee override
         fee: feeOverride,
         networkPassphrase: network.networkPassphrase,
       })
@@ -403,7 +465,11 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       const sim = await server.simulateTransaction(tx);
       if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-        throw new Error(`Pre-flight simulation failed: ${sim.error}`);
+        setSimulationError(sim.error || "Simulation failed");
+        setPendingTxToOverride(tx);
+        setShowSimulationWarning(true);
+        setIsLoading(false);
+        return;
       }
 
       const preparedTx = SorobanRpc.assembleTransaction(tx, sim).build();
@@ -412,16 +478,21 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         networkPassphrase: network.networkPassphrase,
       });
 
+      let finalTxXdr = signedResult.signedTxXdr;
+      if (enableFeeBump) {
+        finalTxXdr = await wrapAndSignFeeBump(signedResult.signedTxXdr, network, preparedTx.fee);
+      }
+
       const sendRes = await server.sendTransaction(
         TransactionBuilder.fromXDR(
-          signedResult.signedTxXdr,
+          finalTxXdr,
           network.networkPassphrase,
         ),
       );
 
       addBundle({
         kind: "single-call",
-        title: `Transaction · ${fnName || "unknown"}`,
+        title: `Transaction · ${fnName || "unknown"}${enableFeeBump ? " (Sponsored)" : ""}`,
         networkId: network.id,
         workspaceId: activeWorkspaceId,
         contractId,
@@ -448,8 +519,71 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       setResult(`Submission Error: ${e.message}`);
       toast.error(`Submission Error: ${e.message}`);
       setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSendOverride = async (txToSign: any) => {
+    setIsLoading(true);
+    setShowSimulationWarning(false);
+    setResult(null);
+    const sendStart = performance.now();
+
+    try {
+      const network = getActiveNetworkConfig();
+      const server = new SorobanRpc.Server(network.rpcUrl);
+
+      const signedResult = await signTransaction(txToSign.toXDR(), {
+        networkPassphrase: network.networkPassphrase,
+      });
+
+      let finalTxXdr = signedResult.signedTxXdr;
+      if (enableFeeBump) {
+        finalTxXdr = await wrapAndSignFeeBump(signedResult.signedTxXdr, network, txToSign.fee);
+      }
+
+      const sendRes = await server.sendTransaction(
+        TransactionBuilder.fromXDR(
+          finalTxXdr,
+          network.networkPassphrase,
+        ),
+      );
+
+      addBundle({
+        kind: "single-call",
+        title: `Transaction · ${fnName || "unknown"} (Override)${enableFeeBump ? " (Sponsored)" : ""}`,
+        networkId: network.id,
+        workspaceId: activeWorkspaceId,
+        contractId,
+        txHash: sendRes.hash,
+        payload: {
+          mode: "submit",
+          fnName,
+          args,
+          sendStatus: sendRes.status,
+          simulation: { ok: false, error: simulationError || "Simulation failed" } as any,
+        },
+      });
+
+      if (sendRes.status !== "PENDING") {
+        throw new Error(`Submission failed: ${sendRes.status}`);
+      }
+
+      setResult(`Transaction Submitted! Hash: ${sendRes.hash}`);
+      toast.success("Transaction sent to network (simulation bypassed)");
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
+    } catch (e: any) {
+      console.error(e);
+      setResult(`Submission Error: ${e.message}`);
+      toast.error(`Submission Error: ${e.message}`);
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
+    } finally {
+      setIsLoading(false);
+      setPendingTxToOverride(null);
     }
   };
 
@@ -1044,6 +1178,54 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               CPU and memory limits are advisory — the network enforces protocol maximums.
               Unsafe values are validated before signing.
             </p>
+
+            <div className="border-t pt-3 mt-3">
+              <div className="flex items-center justify-between pb-2">
+                <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">Enable Fee Sponsorship (Fee Bump)</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Sponsor the gas fees of this transaction using a secondary account.
+                  </p>
+                </div>
+                <Switch
+                  checked={enableFeeBump}
+                  onCheckedChange={setEnableFeeBump}
+                />
+              </div>
+
+              {enableFeeBump && (
+                <div className="space-y-3 pt-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Sponsor Method</Label>
+                    <Select
+                      value={sponsorType}
+                      onValueChange={(val: "secret" | "wallet") => setSponsorType(val)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select sponsor method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="wallet">Sign with Sponsor Wallet</SelectItem>
+                        <SelectItem value="secret">Sponsor Secret Key</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {sponsorType === "secret" && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Sponsor Secret Key (S...)</Label>
+                      <Input
+                        type="password"
+                        placeholder="SA..."
+                        value={sponsorSecretKey}
+                        onChange={(e) => setSponsorSecretKey(e.target.value)}
+                        className="h-8 text-xs font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1273,6 +1455,45 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         )}
 
       </CardContent>
+
+      <Dialog open={showSimulationWarning} onOpenChange={setShowSimulationWarning}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Simulation Failed
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 text-sm space-y-2">
+            <p>The transaction pre-flight simulation failed with the following error:</p>
+            <div className="rounded bg-muted p-2 font-mono text-xs text-destructive-foreground overflow-auto max-h-40">
+              {simulationError || "Unknown error"}
+            </div>
+            <p>Do you want to override the simulation pre-check and sign the transaction anyway?</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSimulationWarning(false);
+                setPendingTxToOverride(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingTxToOverride) {
+                  handleSendOverride(pendingTxToOverride);
+                }
+              }}
+            >
+              Sign Anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

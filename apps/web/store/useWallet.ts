@@ -229,3 +229,14 @@ export const useWallet = create<WalletState>()(
     },
   ),
 );
+
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      useWallet.getState().revalidateSession().catch((err) => {
+        console.error("Failed to revalidate session", err);
+      });
+    }
+  });
+}
+
