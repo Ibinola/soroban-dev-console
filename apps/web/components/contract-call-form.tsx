@@ -178,6 +178,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [fnName, setFnName] = useState(initialMethod || "");
   const [args, setArgs] = useState<ContractArg[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [autoExecute, setAutoExecute] = useState(true);
   const [result, setResult] = useState<string | null>(null);
   const [simulation, setSimulation] =
     useState<NormalizedSimulationResult | null>(null);
