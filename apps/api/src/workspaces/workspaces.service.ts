@@ -12,3 +12,12 @@ async getSharedWorkspace(shareId: string) {
 
   return share;
 }
+
+// backend/src/workspaces/workspaces.service.ts
+async bulkArchiveWorkspaces(ids: string[]): Promise<void> {
+  await this.workspaceRepository.update(ids, { isArchived: true });
+}
+
+async bulkRestoreWorkspaces(ids: string[]): Promise<void> {
+  await this.workspaceRepository.update(ids, { isArchived: false });
+}
