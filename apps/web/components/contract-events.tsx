@@ -67,6 +67,7 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [polling, setPolling] = useState(false);
+  const [scrollLock, setScrollLock] = useState(false);
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
