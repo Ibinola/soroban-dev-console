@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { ConnectWalletButton } from "@/components/wallet-connect";
+import { WalletBalanceOverview } from "@/components/wallet-balance-overview";
 import { NetworkSwitcher } from "@/components/network-switcher";
 import { ModeToggle } from "@/components/mode-toggle";
 import { NetworkHealth } from "@/components/network-health";
@@ -50,6 +51,7 @@ export function SiteHeader() {
         <div className="ml-auto hidden items-center gap-2 md:flex">
           <NetworkSwitcher />
           <ModeToggle />
+          <WalletBalanceOverview />
           <ConnectWalletButton />
         </div>
       </div>
