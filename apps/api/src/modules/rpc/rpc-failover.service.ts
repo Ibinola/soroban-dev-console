@@ -22,6 +22,7 @@ interface EndpointState {
 @Injectable()
 export class RpcFailoverService {
   private readonly endpoints = new Map<string, EndpointState[]>();
+  private roundRobinIndices = new Map<string, number>();
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -41,6 +42,13 @@ export class RpcFailoverService {
       }
     }
 
+    if (healthy.length > 1) {
+      const startIndex = this.roundRobinIndices.get(network) ?? 0;
+      const nextIndex = (startIndex + 1) % healthy.length;
+      this.roundRobinIndices.set(network, nextIndex);
+      const shiftedHealthy = [...healthy.slice(startIndex), ...healthy.slice(0, startIndex)];
+      return [...shiftedHealthy, ...degraded].map((s) => s.url);
+    }
     return [...healthy, ...degraded].map((s) => s.url);
   }
 
