@@ -42,6 +42,7 @@ export class CorrelationInterceptor implements NestInterceptor {
 
     // Set in response headers so client can reference it
     res.setHeader("x-request-id", correlationId);
+    res.setHeader("x-correlation-id", correlationId);
 
     const startTime = Date.now();
 
