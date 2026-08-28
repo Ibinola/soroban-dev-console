@@ -184,7 +184,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     useState<NormalizedSimulationResult | null>(null);
   const [executionTimeMs, setExecutionTimeMs] = useState<number | null>(null);
   const [rpcLatencyMs, setRpcLatencyMs] = useState<number | null>(null);
-  const { saveCall, savePreset } = useSavedCallsStore();
+  const { saveCall, savePreset, presets } = useSavedCallsStore();
+  const contractPresets = presets.filter(p => p.contractId === contractId && p.fnName === activeVariant?.fnName);
   const { addBundle } = useResultBundlesStore();
   const { activeWorkspaceId, linkSavedCall } = useWorkspaceStore();
   const [isSaveOpen, setIsSaveOpen] = useState(false);
