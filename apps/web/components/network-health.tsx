@@ -23,6 +23,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export function NetworkHealth() {
   const { currentNetwork, health, setHealth, autoFailover, setAutoFailover, failoverNetworkId, degradationThresholdMs } = useNetworkStore();
+  const [latencyHistory, setLatencyHistory] = useState<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +46,7 @@ export function NetworkHealth() {
             latencyMs: data.latencyMs,
             lastCheck: data.checkedAt,
           });
+          setLatencyHistory(prev => [...prev.slice(-4), data.latencyMs]);
         }
       } catch {
         if (!cancelled) {
@@ -132,6 +134,16 @@ export function NetworkHealth() {
               <span className="text-muted-foreground">Latency (p50)</span>
               <span className="font-mono font-medium">
                 {health.latencyMs > 0 ? `${health.latencyMs}ms` : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Latency graph</span>
+              <span className="font-mono text-[10px] tracking-tight">
+                {latencyHistory.map((h, i) => (
+                  <span key={i} className="mx-0.5" title={`${h}ms`}>
+                    {h > 2000 ? "█" : h > 1000 ? "▅" : h > 500 ? "▄" : "▂"}
+                  </span>
+                ))}
               </span>
             </div>
             <div className="flex justify-between px-3 py-2">

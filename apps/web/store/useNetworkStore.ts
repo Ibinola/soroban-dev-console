@@ -75,6 +75,7 @@ interface NetworkState {
   autoFailover: boolean;
   degradationThresholdMs: number;
   failoverNetworkId: string;
+  bypassCorsProxy: boolean;
 
   setNetwork: (id: string) => void;
   setHealth: (health: NetworkHealth | null) => void;
@@ -83,6 +84,7 @@ interface NetworkState {
   setAutoFailover: (enabled: boolean) => void;
   setDegradationThreshold: (ms: number) => void;
   setFailoverNetworkId: (id: string) => void;
+  setBypassCorsProxy: (bypass: boolean) => void;
 
   // Helpers
   getActiveNetworkConfig: () => NetworkConfig;
@@ -98,6 +100,7 @@ export const useNetworkStore = create<NetworkState>()(
     (set, get) => ({
       currentNetwork: "testnet",
       customNetworks: [],
+      bypassCorsProxy: false,
       health: null,
       autoFailover: false,
       degradationThresholdMs: 2000,
@@ -108,6 +111,7 @@ export const useNetworkStore = create<NetworkState>()(
       setAutoFailover: (enabled) => set({ autoFailover: enabled }),
       setDegradationThreshold: (ms) => set({ degradationThresholdMs: ms }),
       setFailoverNetworkId: (id) => set({ failoverNetworkId: id }),
+      setBypassCorsProxy: (bypass) => set({ bypassCorsProxy: bypass }),
 
       addCustomNetwork: (network) =>
         set((state) => ({
