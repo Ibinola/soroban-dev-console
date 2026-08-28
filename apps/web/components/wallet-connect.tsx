@@ -192,6 +192,11 @@ export function ConnectWalletButton() {
           <DialogTitle>Connect your wallet</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+          {/* Albedo provider status */}
+          <div className="flex items-center justify-between rounded-md border px-3 py-2 text-xs">
+            <span className="text-muted-foreground">Albedo Cloud integration</span>
+            <Badge variant="secondary" className="text-[10px]">Active</Badge>
+          </div>
           {/* Freighter extension status */}
           <div className="flex items-center justify-between rounded-md border px-3 py-2 text-xs">
             <span className="text-muted-foreground">Freighter extension</span>
