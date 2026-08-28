@@ -61,6 +61,7 @@ interface StorageEntry {
   lastModified?: number;
   found: boolean;
   error?: string;
+  ttlLedgers?: number;
 }
 
 /** Per-row XdrTooltip that memoises decoding so we avoid running
