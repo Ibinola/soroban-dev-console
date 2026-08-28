@@ -67,7 +67,11 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [polling, setPolling] = useState(false);
+  const [topicFilter, setTopicFilter] = useState("");
   const [error, setError] = useState("");
+  const filteredEvents = useMemo(() => {
+    return events.filter(e => !topicFilter || e.type.toLowerCase().includes(topicFilter.toLowerCase()));
+  }, [events, topicFilter]);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
   const refreshIntervalMs = useRef<number>(0);
