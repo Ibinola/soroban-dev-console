@@ -67,7 +67,7 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [topicFilter, setTopicFilter] = useState("");
+  const [scrollLock, setScrollLock] = useState(false);
   const [error, setError] = useState("");
   const filteredEvents = useMemo(() => {
     return events.filter(e => !topicFilter || e.type.toLowerCase().includes(topicFilter.toLowerCase()));

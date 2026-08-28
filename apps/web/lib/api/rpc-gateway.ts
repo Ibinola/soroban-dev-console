@@ -58,6 +58,16 @@ export async function rpcCall<T = unknown>(
 ): Promise<T> {
   const id = nextId();
   const correlationId = generateCorrelationId();
+  const isMock = typeof window !== "undefined" && localStorage.getItem("rpc_mock_mode") === "true";
+  if (isMock) {
+    if (method === "simulateTransaction") {
+      return { results: [], cost: { cpuInsns: "0", memBytes: "0" }, events: [], minResourceFee: "100" } as any;
+    }
+    if (method === "getLatestLedger") {
+      return { sequence: 1000 } as any;
+    }
+    return { mock: true } as any;
+  }
   const body: JsonRpcRequest & { jsonrpc: "2.0"; id: number } = {
     jsonrpc: "2.0",
     id,
