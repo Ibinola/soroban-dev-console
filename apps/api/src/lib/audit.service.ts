@@ -46,7 +46,8 @@ export class AuditService {
   private readonly retentionDays: number;
 
   constructor(private readonly prisma: PrismaService) {
-    this.retentionDays = Number(process.env.AUDIT_RETENTION_DAYS ?? 90);
+    // Issue #1130: default retention is 30 days (overridable via env).
+    this.retentionDays = Number(process.env.AUDIT_RETENTION_DAYS ?? 30);
   }
 
   async log(entry: AuditEntry): Promise<void> {
