@@ -54,4 +54,12 @@ export class ListAuditDto {
   @IsOptional()
   @IsISO8601()
   createdBefore?: string;
+
+  /**
+   * Issue #1128: Comma-separated CSV export columns.
+   * Allowed: timestamp, event, user, ip, details. Unknown values are ignored.
+   */
+  @IsOptional()
+  @IsString()
+  columns?: string;
 }

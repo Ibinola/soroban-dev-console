@@ -84,6 +84,23 @@ test("AuditController forwards createdAfter and createdBefore to the service", a
   assert.equal(capturedQuery.createdBefore, "2026-01-31T23:59:59.000Z");
 });
 
+test("AuditController forwards olderThanDays to the prune service", async () => {
+  let captured: number | undefined;
+
+  const mockService = {
+    prune: async (olderThanDays?: number) => {
+      captured = olderThanDays;
+      return { pruned: 3, olderThanDays };
+    },
+  } as unknown as AuditService;
+
+  const controller = new AuditController(mockService);
+
+  const result = await controller.prune({ olderThanDays: 14 });
+  assert.equal(captured, 14);
+  assert.equal(result.pruned, 3);
+});
+
 test("ListAuditDto rejects a take value above the 100 cap", async () => {
   const dto = plainToInstance(ListAuditDto, { take: 101 });
   const errors = await validate(dto);

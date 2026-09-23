@@ -81,6 +81,7 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
   const [isCreating, setIsCreating] = useState(false);
   const [label, setLabel] = useState("");
   const [expiryHours, setExpiryHours] = useState("");
+  const [excludeCustomAuthHeaders, setExcludeCustomAuthHeaders] = useState(true);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   const { getActiveWorkspace, syncToCloud, cloudId } = useWorkspaceStore();
@@ -146,6 +147,7 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
         snapshotJson: JSON.stringify(snapshot),
         label: label.trim() || workspace.name,
         expiresInSeconds,
+        excludeCustomAuthHeaders,
       });
 
       setShares((prev) => [link, ...prev]);
@@ -235,6 +237,19 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
               Create
             </Button>
           </div>
+          {/* Issue #1122: strip private RPC custom headers from the shared snapshot */}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={excludeCustomAuthHeaders}
+              onChange={(e) => setExcludeCustomAuthHeaders(e.target.checked)}
+              disabled={isCreating}
+              className="h-3.5 w-3.5"
+            />
+            <ShieldAlert className="h-3.5 w-3.5" />
+            Exclude Custom Auth Headers
+            <span className="text-muted-foreground/70">(strips Authorization / secret keys from the link)</span>
+          </label>
         </div>
 
         {/* Share list */}
@@ -271,6 +286,16 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
                     {isActive(s) && (
                       <Badge variant="outline" className="shrink-0 text-green-600 border-green-300">
                         Active
+                      </Badge>
+                    )}
+                    {s.sanitized && (
+                      <Badge
+                        variant="secondary"
+                        className="shrink-0 gap-1"
+                        title={s.strippedSensitiveKeys?.length ? `Removed: ${s.strippedSensitiveKeys.join(", ")}` : "Sensitive headers removed"}
+                      >
+                        <ShieldAlert className="h-3 w-3" />
+                        Sensitive headers stripped
                       </Badge>
                     )}
                   </div>

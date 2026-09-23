@@ -17,6 +17,7 @@
     "security:playbooks": "npx tsx scripts/validate-playbooks.ts",
     "check-integrity": "npx tsx scripts/check-dependency-integrity.ts",
     "check-drift": "npx tsx scripts/check-runtime-drift.ts",
+    "validate:docker": "npx tsx scripts/validate-docker-setup.ts",
     "release-evidence": "npx tsx scripts/generate-release-evidence.ts",
     "security:scan-staged": "npx tsx scripts/secret-scan-staged.ts",
     "prepare": "husky",
@@ -25,12 +26,12 @@
   "devDependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^15.5.0",
-    "prettier": "^3.2.5",
+    "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "turbo": "^2.5.4"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^16.2.0"
+    "@stellar/stellar-sdk": "^17.0.1"
   },
   "lint-staged": {
     "*": "npx tsx scripts/secret-scan-staged.ts"
