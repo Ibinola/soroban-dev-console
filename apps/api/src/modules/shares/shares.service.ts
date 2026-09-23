@@ -35,9 +35,10 @@ function sortJsonKeys(obj: any): any {
   return result;
 }
 
-import { IsString, IsOptional, IsObject, IsInt, Min, IsIn } from "class-validator";
+import { IsString, IsOptional, IsInt, Min, IsIn } from "class-validator";
 import { Type } from "class-transformer";
 import { PrismaService } from "../../lib/prisma.service.js";
+import { sanitizeSnapshotPayload } from "./share-payload-sanitizer.js";
 
 export class CreateShareDto {
   @IsString()
@@ -47,12 +48,31 @@ export class CreateShareDto {
   @IsString()
   label?: string;
 
-  @IsObject()
-  snapshotJson!: Prisma.InputJsonValue;
+  /**
+   * Raw workspace snapshot. The shared contract (`@devconsole/api-contracts`)
+   * sends this as a JSON string; legacy API clients send an object. The service
+   * normalizes both forms and enforces size/depth limits after parsing.
+   */
+  @IsOptional()
+  snapshotJson?: Prisma.InputJsonValue | string;
+
+  /**
+   * Issue #1122: When true (default), sensitive RPC custom headers and secret
+   * tokens embedded in the snapshot are stripped before persisting.
+   */
+  @IsOptional()
+  excludeCustomAuthHeaders?: boolean;
 
   @IsOptional()
   @IsString()
   expiresAt?: string;
+
+  /** Seconds from now until the share expires (used by the web client). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expiresInSeconds?: number;
 }
 
 /** BE-005: Pagination and filtering for share list */
@@ -132,24 +152,19 @@ export class SharesService {
       throw new ForbiddenException("You do not own this workspace");
     }
 
-    // DEVOPS-002: Validate expiration date
-    if (dto.expiresAt) {
-      const expiryDate = new Date(dto.expiresAt);
-      const maxExpiry = new Date();
-      maxExpiry.setFullYear(maxExpiry.getFullYear() + MAX_EXPIRY_YEARS);
-      
-      if (expiryDate <= new Date()) {
-        throw new BadRequestException("Share expiration date must be in the future");
-      }
-      if (expiryDate > maxExpiry) {
-        throw new BadRequestException(
-          `Share expiration date cannot exceed ${MAX_EXPIRY_YEARS} year from now`,
-        );
-      }
-    }
+    // DEVOPS-002: Validate expiration date (computed from either contract).
+    const expiresAt = this.resolveExpiry(dto);
+
+    // Issue #1122: Normalize the snapshot and strip sensitive RPC headers when
+    // enabled (checked by default in the share creation modal).
+    const snapshotObject = this.normalizeSnapshot(dto.snapshotJson);
+    const excludeSensitive = dto.excludeCustomAuthHeaders !== false;
+    const sanitized = excludeSensitive
+      ? sanitizeSnapshotPayload(snapshotObject)
+      : { snapshot: snapshotObject, detectedSensitiveKeys: [], sanitized: false };
 
     // BE-321: Deterministic serialization to ensure consistent state hashing and rebuilds
-    const deterministicSnapshot = sortJsonKeys(dto.snapshotJson);
+    const deterministicSnapshot = sortJsonKeys(sanitized.snapshot);
 
     // DEVOPS-002: Validate snapshot JSON size and depth
     const snapshotString = JSON.stringify(deterministicSnapshot);
@@ -172,7 +187,7 @@ export class SharesService {
         token,
         label: dto.label,
         snapshotJson: deterministicSnapshot,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        expiresAt,
       },
     });
     
@@ -189,9 +204,23 @@ export class SharesService {
       resourceType: "share",
       resourceId: share.id,
       summary: `Created share for workspace ${dto.workspaceId}`,
-      metadata: { workspaceId: dto.workspaceId, label: dto.label, correlationId },
+      metadata: {
+        workspaceId: dto.workspaceId,
+        label: dto.label,
+        correlationId,
+        ...(sanitized.sanitized
+          ? { sensitiveHeadersStripped: sanitized.detectedSensitiveKeys }
+          : {}),
+      },
     });
-    return share;
+
+    // Issue #1122: surface sanitization outcome so the web client can render a
+    // warning badge when sensitive headers were detected and removed.
+    return {
+      ...share,
+      sanitized: sanitized.sanitized,
+      strippedSensitiveKeys: sanitized.detectedSensitiveKeys,
+    };
   }
 
   /**
@@ -420,6 +449,50 @@ export class SharesService {
   async cleanup(): Promise<{ deleted: number }> {
     const deleted = await this.repository.deleteExpiredAndRevoked();
     return { deleted };
+  }
+
+  /**
+   * Accept a snapshot as either an object (legacy callers) or a JSON string
+   * (the shared web contract). Rejects scalars/arrays with a clear error.
+   */
+  private normalizeSnapshot(raw: unknown): Prisma.InputJsonValue {
+    let parsed: unknown;
+    if (typeof raw === "string") {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new BadRequestException("snapshotJson must be a valid JSON object or JSON string");
+      }
+    } else if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+      parsed = raw;
+    } else {
+      throw new BadRequestException("snapshotJson is required and must be a JSON object (or JSON string)");
+    }
+    return parsed as Prisma.InputJsonValue;
+  }
+
+  /** Resolve the effective expiry from either contract field, bounding it to MAX_EXPIRY_YEARS. */
+  private resolveExpiry(dto: CreateShareDto): Date | null {
+    let expiresAt: Date | null = null;
+    if (dto.expiresInSeconds !== undefined) {
+      expiresAt = new Date(Date.now() + dto.expiresInSeconds * 1000);
+    } else if (dto.expiresAt) {
+      expiresAt = new Date(dto.expiresAt);
+    }
+    if (!expiresAt) return null;
+
+    const maxExpiry = new Date();
+    maxExpiry.setFullYear(maxExpiry.getFullYear() + MAX_EXPIRY_YEARS);
+
+    if (expiresAt <= new Date()) {
+      throw new BadRequestException("Share expiration date must be in the future");
+    }
+    if (expiresAt > maxExpiry) {
+      throw new BadRequestException(
+        `Share expiration date cannot exceed ${MAX_EXPIRY_YEARS} year from now`,
+      );
+    }
+    return expiresAt;
   }
 
   /**
