@@ -39,13 +39,54 @@ function decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
   }
 }
 
+export interface AuditSummary {
+  windowHours: number;
+  from: string;
+  to: string;
+  totalEvents: number;
+  failedAuth: number;
+  mutations: number;
+}
+
+/** Issue #1130: default retention is 30 days (configurable via env). */
+const DEFAULT_RETENTION_DAYS = 30;
+
+/** Issue #1137: default rolling window for summary metrics. */
+const DEFAULT_METRICS_WINDOW_HOURS = 24;
+
+/** Issue #1137: event actions that denote a failed authentication attempt. */
+const FAILED_AUTH_ACTIONS: ReadonlySet<string> = new Set([
+  "auth.failed",
+  "auth.rejected",
+  "owner_key.failed",
+  "token.rejected",
+  "csrf.rejected",
+  "cors.origin.rejected",
+]);
+
+/**
+ * Issue #1137: actions treated as read-only. Everything else counts as a
+ * data mutation for the summary metric.
+ */
+const READ_ACTION_PREFIXES: ReadonlyArray<string> = [
+  "get",
+  "list",
+  "read",
+  "resolve",
+  "view",
+  "fetch",
+  "query",
+  "export",
+  "find",
+];
+
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
   private readonly retentionDays: number;
 
   constructor(private readonly prisma: PrismaService) {
-    this.retentionDays = Number(process.env.AUDIT_RETENTION_DAYS ?? 90);
+    this.retentionDays = Number(process.env.AUDIT_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS);
   }
 
   async log(entry: AuditEntry): Promise<void> {
@@ -96,6 +137,47 @@ export class AuditService {
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async handleScheduledPrune() {
     await this.prune();
+  }
+
+  /**
+   * Issue #1137: Security audit summary over a rolling window (default 24h).
+   * Events are classified as "failed auth" via the documented action set and
+   * as "mutations" whenever the action does not start with a known read prefix.
+   */
+  async summary(windowHours: number = DEFAULT_METRICS_WINDOW_HOURS): Promise<AuditSummary> {
+    const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+    const windowWhere = { createdAt: { gte: from } };
+    const failedAuthActions = [...FAILED_AUTH_ACTIONS];
+
+    const [totalEvents, failedAuth, mutations] = await Promise.all([
+      this.prisma.auditLog.count({ where: windowWhere }),
+      this.prisma.auditLog.count({
+        where: { AND: [windowWhere, { action: { in: failedAuthActions } }] },
+      }),
+      this.prisma.auditLog.count({
+        where: {
+          AND: [
+            windowWhere,
+            {
+              NOT: {
+                OR: READ_ACTION_PREFIXES.map((prefix) => ({
+                  action: { startsWith: prefix },
+                })),
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    return {
+      windowHours,
+      from: from.toISOString(),
+      to: new Date().toISOString(),
+      totalEvents,
+      failedAuth,
+      mutations,
+    };
   }
 
   /**

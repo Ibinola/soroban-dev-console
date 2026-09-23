@@ -46,6 +46,12 @@ export class AuditController {
     });
   }
 
+  // Issue #1137: 24-hour summary metrics for security dashboards.
+  @Get("summary")
+  async summary() {
+    return this.auditService.summary();
+  }
+
   @Delete("prune")
   @HttpCode(HttpStatus.OK)
   prune(@Body() dto: PruneAuditLogsDto) {
