@@ -8,6 +8,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service.js";
 import { redactJsonValue, redactText } from "../modules/security/services/redaction.service.js";
+import { buildAuditCsv } from "../modules/audit/audit-csv.js";
 
 export interface AuditEntry {
   actor: string;
@@ -112,21 +113,7 @@ export class AuditService {
     createdAfter?: string;
     createdBefore?: string;
   }): Promise<{ filename: string; payload: string }> {
-    const createdAtFilter =
-      filters?.createdAfter || filters?.createdBefore
-        ? {
-            ...(filters.createdAfter && { gte: new Date(filters.createdAfter) }),
-            ...(filters.createdBefore && { lte: new Date(filters.createdBefore) }),
-          }
-        : undefined;
-
-    const where = {
-      ...(filters?.actor && { actor: filters.actor }),
-      ...(filters?.action && { action: filters.action }),
-      ...(filters?.resourceType && { resourceType: filters.resourceType }),
-      ...(filters?.resourceId && { resourceId: filters.resourceId }),
-      ...(createdAtFilter && { createdAt: createdAtFilter }),
-    };
+    const where = this.buildFilterWhere(filters);
 
     const rows = await this.prisma.auditLog.findMany({
       where,
@@ -148,6 +135,61 @@ export class AuditService {
     );
 
     return { filename, payload };
+  }
+
+  /**
+   * Issue #1128: Export audit logs as a CSV document with customizable column
+   * selection. Respects the same active search and date filters as the JSON
+   * export and the on-screen list.
+   */
+  async exportToCsv(
+    filters?: {
+      actor?: string;
+      action?: string;
+      resourceType?: string;
+      resourceId?: string;
+      createdAfter?: string;
+      createdBefore?: string;
+    },
+    columns?: string[],
+  ): Promise<{ filename: string; csv: string }> {
+    const where = this.buildFilterWhere(filters);
+
+    const rows = await this.prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const csv = buildAuditCsv(rows, columns);
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `audit-log-${date}.csv`;
+
+    return { filename, csv };
+  }
+
+  private buildFilterWhere(filters?: {
+    actor?: string;
+    action?: string;
+    resourceType?: string;
+    resourceId?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+  }): Record<string, unknown> {
+    const createdAtFilter =
+      filters?.createdAfter || filters?.createdBefore
+        ? {
+            ...(filters.createdAfter && { gte: new Date(filters.createdAfter) }),
+            ...(filters.createdBefore && { lte: new Date(filters.createdBefore) }),
+          }
+        : undefined;
+
+    return {
+      ...(filters?.actor && { actor: filters.actor }),
+      ...(filters?.action && { action: filters.action }),
+      ...(filters?.resourceType && { resourceType: filters.resourceType }),
+      ...(filters?.resourceId && { resourceId: filters.resourceId }),
+      ...(createdAtFilter && { createdAt: createdAtFilter }),
+    };
   }
 
   async query(query: {

@@ -28,6 +28,30 @@ export class AuditController {
     return payload;
   }
 
+  // Issue #1128: export audit logs as a CSV file with customizable columns.
+  @Get("export/csv")
+  async exportAuditCsv(
+    @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const columns = query.columns?.split(",").map((c) => c.trim()).filter(Boolean);
+    const { filename, csv } = await this.auditService.exportToCsv(
+      {
+        actor: query.actor,
+        action: query.action,
+        resourceType: query.resourceType,
+        resourceId: query.resourceId,
+        createdAfter: query.createdAfter,
+        createdBefore: query.createdBefore,
+      },
+      columns,
+    );
+
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return csv;
+  }
+
   @Get()
   async getAuditLogs(@Query(new ValidationPipe({ transform: true })) query: ListAuditDto) {
     return this.auditService.query({
