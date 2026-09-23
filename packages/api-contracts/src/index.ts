@@ -90,6 +90,10 @@ export interface ShareSummary {
   expiresAt?: string | null;
   revokedAt?: string | null;
   createdAt: string;
+  /** Issue #1122: true when sensitive RPC headers were stripped from the snapshot. */
+  sanitized?: boolean;
+  /** Issue #1122: dotted paths of sensitive keys removed during link generation. */
+  strippedSensitiveKeys?: string[];
 }
 
 export interface ShareDetail extends ShareSummary {
@@ -102,4 +106,6 @@ export interface CreateSharePayload {
   snapshotJson?: string;
   label?: string;
   expiresInSeconds?: number;
+  /** Issue #1122: strip sensitive RPC custom headers/secret tokens (default true). */
+  excludeCustomAuthHeaders?: boolean;
 }
