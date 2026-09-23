@@ -11,6 +11,14 @@ import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
 import { DEFAULT_API_PORT } from "@devconsole/api-contracts";
 // Issue #941: CSRF protection
 import { CsrfGuard } from "./common/guards/csrf.guard.js";
+// Issue #1138: audit rejected CORS origin attempts
+import { AuditService } from "./lib/audit.service.js";
+import {
+  CorsRejectionRecorder,
+  isOriginAllowed,
+  mapCorsRejectionToAuditEntry,
+  resolveCorsAllowlist,
+} from "./common/cors/cors-rejection-recorder.js";
 
 function buildCspHeader(): string {
   const directives = [
@@ -23,15 +31,8 @@ function buildCspHeader(): string {
   return directives.join("; ");
 }
 
-function buildCorsOrigin() {
-  // Issue #944: ALLOWED_ORIGINS is the documented env var for the proxy
-  // backend's CORS allowlist; CORS_ORIGINS is kept as a legacy alias.
-  const corsOrigins = process.env.ALLOWED_ORIGINS ?? process.env.CORS_ORIGINS;
-  if (corsOrigins) {
-    const allowlist = corsOrigins
-      .split(",")
-      .map((o) => o.trim())
-      .filter(Boolean);
+function buildCorsOrigin(allowlist: string[]) {
+  if (allowlist.length > 0) {
     return (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
       if (!origin || allowlist.includes(origin)) {
         cb(null, true);
@@ -48,7 +49,7 @@ function buildCorsOrigin() {
     };
   }
 
-  return process.env.WEB_ORIGIN ?? "http://localhost:3000";
+  return allowlist[0] ?? "http://localhost:3000";
 }
 
 async function bootstrap() {
@@ -57,8 +58,12 @@ async function bootstrap() {
     cors: false
   });
 
+  // Issue #1138: one allowlist source of truth for CORS AND rejection logging.
+  const corsAllowlist = resolveCorsAllowlist();
+  const corsRejectionRecorder = new CorsRejectionRecorder();
+
   app.enableCors({
-    origin: buildCorsOrigin(),
+    origin: buildCorsOrigin(corsAllowlist),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     // DEVOPS-002: Removed x-owner-key from allowedHeaders to avoid advertising
     // sensitive authentication headers in CORS preflight responses.
@@ -77,6 +82,20 @@ async function bootstrap() {
     res.setHeader("X-XSS-Protection", "0"); // Modern browsers use CSP instead
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Content-Security-Policy", cspHeader);
+    next();
+  });
+
+  // Issue #1138: dispatch a throttled CORS_ORIGIN_REJECTED audit event for any
+  // cross-site request whose Origin is not on the allowlist. Throttling caps
+  // writes at 5 per minute per origin to prevent log flooding.
+  const auditService = app.get(AuditService);
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    const origin = req.headers["origin"];
+    if (typeof origin === "string" && origin.length > 0 && !isOriginAllowed(origin, corsAllowlist)) {
+      if (corsRejectionRecorder.note(origin)) {
+        void auditService.log(mapCorsRejectionToAuditEntry(origin, req.path));
+      }
+    }
     next();
   });
   app.useGlobalFilters(new ApiErrorFilter());
