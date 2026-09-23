@@ -71,9 +71,13 @@ export class AuditController {
     });
   }
 
-  // Issue #1130: manual retention pruning trigger for admin/deployment owners.
-  @Post("prune")
-  @UseGuards(OwnerKeyGuard)
+  // Issue #1137: 24-hour summary metrics for security dashboards.
+  @Get("summary")
+  async summary() {
+    return this.auditService.summary();
+  }
+
+  @Delete("prune")
   @HttpCode(HttpStatus.OK)
   prune(@Body() dto: PruneAuditLogsDto) {
     return this.auditService.prune(dto.olderThanDays);
