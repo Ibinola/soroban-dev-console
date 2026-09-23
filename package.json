@@ -17,6 +17,7 @@
     "security:playbooks": "npx tsx scripts/validate-playbooks.ts",
     "check-integrity": "npx tsx scripts/check-dependency-integrity.ts",
     "check-drift": "npx tsx scripts/check-runtime-drift.ts",
+    "validate:docker": "npx tsx scripts/validate-docker-setup.ts",
     "release-evidence": "npx tsx scripts/generate-release-evidence.ts",
     "security:scan-staged": "npx tsx scripts/secret-scan-staged.ts",
     "prepare": "husky",
