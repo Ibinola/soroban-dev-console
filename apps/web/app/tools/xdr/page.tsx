@@ -38,7 +38,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@devconsole/ui";
-import { AlertCircle, CheckCircle, Copy, Trash2, Code, ArrowRightLeft, ShieldAlert, FolderOpen, Save, X } from "lucide-react";
+import { AlertCircle, CheckCircle, Copy, Trash2, Code, ArrowRightLeft, ShieldAlert, FolderOpen, Save, X, Search, Terminal } from "lucide-react";
 import { toast } from "sonner";
 // Issue #937: XDR schema validator
 import { validateXdr, XDR_TYPE_NAMES } from "@/lib/xdr-schema-validator";
@@ -55,6 +55,8 @@ import {
   type CustomXdrPreset,
 } from "@/lib/xdr-custom-presets";
 import { XDR_PRESETS } from "./xdr-presets";
+import { filterPresets } from "@/lib/xdr-preset-search";
+import { buildStellarCliCommand, XDR_CLI_COMMAND_LABELS, type XdrCliCommandType } from "@/lib/xdr-cli-command";
 
 const jsonReplacer = (_key: string, value: any) => {
   if (typeof value === "bigint") return value.toString();
@@ -297,6 +299,30 @@ export default function XdrToolsPage() {
   const [presetLabel, setPresetLabel] = useState("");
   const [presetError, setPresetError] = useState<string | null>(null);
   const [presetsOpen, setPresetsOpen] = useState(false);
+  // Issue #1106: search + keyboard nav over the presets drawer.
+  const [presetSearch, setPresetSearch] = useState("");
+  const [presetsActiveTab, setPresetsActiveTab] = useState<"samples" | "mine">("samples");
+  const [highlightedPresetIndex, setHighlightedPresetIndex] = useState(0);
+  // Issue #1107: CLI command type selector for the "Copy as CLI Flag" action.
+  const [cliCommandType, setCliCommandType] = useState<XdrCliCommandType>("xdr-decode");
+  const filteredSamplePresets = filterPresets(XDR_PRESETS, presetSearch);
+  const filteredCustomPresets = filterPresets(customPresets, presetSearch);
+  const activeFilteredPresets = presetsActiveTab === "samples" ? filteredSamplePresets : filteredCustomPresets;
+
+  const handlePresetSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (activeFilteredPresets.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedPresetIndex((i) => (i + 1) % activeFilteredPresets.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedPresetIndex((i) => (i - 1 + activeFilteredPresets.length) % activeFilteredPresets.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const selected = activeFilteredPresets[highlightedPresetIndex];
+      if (selected) applyPreset(selected.value);
+    }
+  };
 
   // Issue #1108: characters / bytes / padding state of whatever is pasted.
   const inputMetrics = analyzeXdrInput(decodeInput);
@@ -393,6 +419,17 @@ export default function XdrToolsPage() {
     toast.success("Copied to clipboard");
   };
 
+  // Issue #1107: copy a ready-to-run Stellar CLI command for the current input.
+  const handleCopyCliCommand = () => {
+    const command = buildStellarCliCommand({
+      xdr: decodeInput,
+      commandType: cliCommandType,
+      typeHint,
+    });
+    navigator.clipboard.writeText(command);
+    toast.success("CLI command copied to clipboard");
+  };
+
   const clearAll = () => {
     setDecodeInput("");
     setDecoded(null);
@@ -467,7 +504,30 @@ export default function XdrToolsPage() {
                         Load a stock sample or one of your own saved payloads.
                       </SheetDescription>
                     </SheetHeader>
-                    <Tabs defaultValue="samples" className="flex-1 overflow-hidden">
+                    {/* Issue #1106: filter presets by name/description; Arrow keys + Enter select */}
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search presets…"
+                        className="pl-7"
+                        value={presetSearch}
+                        onChange={(e) => {
+                          setPresetSearch(e.target.value);
+                          setHighlightedPresetIndex(0);
+                        }}
+                        onKeyDown={handlePresetSearchKeyDown}
+                        data-testid="xdr-preset-search"
+                        aria-label="Search XDR presets"
+                      />
+                    </div>
+                    <Tabs
+                      value={presetsActiveTab}
+                      onValueChange={(v) => {
+                        setPresetsActiveTab(v as "samples" | "mine");
+                        setHighlightedPresetIndex(0);
+                      }}
+                      className="flex-1 overflow-hidden"
+                    >
                       <TabsList>
                         <TabsTrigger value="samples">Samples</TabsTrigger>
                         <TabsTrigger value="mine">
@@ -475,32 +535,48 @@ export default function XdrToolsPage() {
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="samples" className="space-y-2 overflow-y-auto">
-                        {XDR_PRESETS.map((preset) => (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            onClick={() => applyPreset(preset.value)}
-                            className="w-full rounded-md border p-2 text-left text-xs hover:bg-accent"
-                          >
-                            <span className="font-medium">{preset.label}</span>
-                            <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
-                              {preset.value}
-                            </span>
-                          </button>
-                        ))}
+                        {filteredSamplePresets.length === 0 ? (
+                          <p className="text-xs italic text-muted-foreground">No presets match your search.</p>
+                        ) : (
+                          filteredSamplePresets.map((preset, i) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => applyPreset(preset.value)}
+                              data-testid="xdr-preset-item"
+                              className={`w-full rounded-md border p-2 text-left text-xs hover:bg-accent ${
+                                presetsActiveTab === "samples" && i === highlightedPresetIndex
+                                  ? "border-primary bg-accent"
+                                  : ""
+                              }`}
+                            >
+                              <span className="font-medium">{preset.label}</span>
+                              <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+                                {preset.value}
+                              </span>
+                            </button>
+                          ))
+                        )}
                       </TabsContent>
                       <TabsContent value="mine" className="space-y-3 overflow-y-auto">
                         {customPresets.length === 0 ? (
                           <p className="text-xs italic text-muted-foreground">
                             No saved presets yet. Paste an XDR string and save it below.
                           </p>
+                        ) : filteredCustomPresets.length === 0 ? (
+                          <p className="text-xs italic text-muted-foreground">No presets match your search.</p>
                         ) : (
-                          customPresets.map((preset) => (
+                          filteredCustomPresets.map((preset, i) => (
                             <div key={preset.id} className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => applyPreset(preset.value)}
-                                className="flex-1 rounded-md border p-2 text-left text-xs hover:bg-accent"
+                                data-testid="xdr-preset-item"
+                                className={`flex-1 rounded-md border p-2 text-left text-xs hover:bg-accent ${
+                                  presetsActiveTab === "mine" && i === highlightedPresetIndex
+                                    ? "border-primary bg-accent"
+                                    : ""
+                                }`}
                               >
                                 <span className="font-medium">{preset.label}</span>
                                 <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
@@ -645,9 +721,34 @@ export default function XdrToolsPage() {
                   </CardDescription>
                 </div>
                 {decoded && (
-                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(decoded)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {/* Issue #1107: pick the target CLI command, then copy it */}
+                    <Select value={cliCommandType} onValueChange={(v) => setCliCommandType(v as XdrCliCommandType)}>
+                      <SelectTrigger className="h-8 w-[150px]" aria-label="CLI command type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(XDR_CLI_COMMAND_LABELS) as XdrCliCommandType[]).map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {XDR_CLI_COMMAND_LABELS[type]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyCliCommand}
+                      title="Copy as CLI Flag"
+                      data-testid="xdr-copy-cli-command"
+                    >
+                      <Terminal className="mr-1 h-3.5 w-3.5" />
+                      Copy as CLI
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(decoded)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
                 )}
               </CardHeader>
               <CardContent className="relative min-h-[300px] flex-1">
