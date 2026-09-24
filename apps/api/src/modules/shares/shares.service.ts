@@ -352,7 +352,24 @@ export class SharesService {
       this.repository.count({ where }),
     ]);
 
-    return { data, pagination: { total, skip, take } };
+    // Issue #1115: attach each share's most recent recipient-access timestamp.
+    const shareIds = data.map((s: { id: string }) => s.id);
+    const lastAccessRows = shareIds.length
+      ? await this.prisma.shareAccessLog.groupBy({
+          by: ["shareId"],
+          where: { shareId: { in: shareIds } },
+          _max: { accessedAt: true },
+        })
+      : [];
+    const lastAccessedByShareId = new Map(
+      lastAccessRows.map((row) => [row.shareId, row._max.accessedAt ?? null]),
+    );
+    const dataWithLastAccessed = data.map((s: { id: string }) => ({
+      ...s,
+      lastAccessedAt: lastAccessedByShareId.get(s.id) ?? null,
+    }));
+
+    return { data: dataWithLastAccessed, pagination: { total, skip, take } };
   }
 
   @MapDbErrors()

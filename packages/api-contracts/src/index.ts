@@ -87,6 +87,8 @@ export interface ShareSummary {
   workspaceId?: string;
   label?: string;
   viewCount: number;
+  /** Issue #1115: timestamp of the most recent recipient access, or null if never accessed. */
+  lastAccessedAt?: string | null;
   expiresAt?: string | null;
   revokedAt?: string | null;
   createdAt: string;
