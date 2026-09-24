@@ -7,9 +7,10 @@ import {
   Logger,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { AuditService } from "../../lib/audit.service.js";
 
 /**
- * Issue #945: Rate limit public share link resolution to prevent
+ * Issue #945 / #1120: Rate limit public share link resolution to prevent
  * brute-force enumeration of shared workspace IDs/tokens.
  */
 
@@ -19,7 +20,7 @@ type RateLimitEntry = {
 };
 
 const WINDOW_MS = 60_000;
-const MAX_REQUESTS = 20;
+const MAX_REQUESTS = 30;
 
 function getClientIp(req: Request): string {
   const fallbackIp = req.ip ?? "unknown";
@@ -40,6 +41,8 @@ function getClientIp(req: Request): string {
 export class ShareResolveRateLimitGuard implements CanActivate {
   private readonly logger = new Logger(ShareResolveRateLimitGuard.name);
   private readonly buckets = new Map<string, RateLimitEntry>();
+
+  constructor(private readonly auditService: AuditService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const http = context.switchToHttp();
@@ -63,6 +66,14 @@ export class ShareResolveRateLimitGuard implements CanActivate {
       this.logger.warn(
         `Rate limit exceeded for share link resolution from ip=${ip} token=${token}`,
       );
+      void this.auditService.log({
+        actor: "system",
+        action: "share.resolve.rate_limited",
+        resourceType: "share_link",
+        resourceId: token,
+        summary: `Rate limit exceeded for share link resolution from ip=${ip}`,
+        metadata: { ip, token, retryAfterSeconds },
+      });
       throw new HttpException("Too many share link resolution requests", HttpStatus.TOO_MANY_REQUESTS);
     }
 
