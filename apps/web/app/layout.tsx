@@ -29,7 +29,7 @@ export default async function RootLayout({
       <head>
         {/*
           Issue #952: External assets are loaded via the SRI manifest helper
-          (lib/sri-manifest.ts) which injects integrity + crossorigin attributes
+          (lib/sri-manifest.tsx) which injects integrity + crossorigin attributes
           automatically.  Add third-party fonts / scripts to the manifest and
           render them here using <SriStylesheet name="…" /> or <SriScript name="…" />.
 
