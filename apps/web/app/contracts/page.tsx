@@ -154,13 +154,21 @@ export default function ContractsPage() {
             ) : (
               contracts.map((contract) => (
                 <TableRow key={contract.id}>
-                  <TableCell className="flex items-center gap-2 font-mono text-sm font-medium">
+                  <TableCell className="font-mono text-sm font-medium">
                     <Link
                       href={`/contracts/${contract.id}`}
                       className="flex items-center gap-2 transition-colors hover:text-blue-500 hover:underline"
                     >
-                      <FileCode className="h-4 w-4 text-blue-500" />
-                      {contract.id}
+                      <FileCode className="h-4 w-4 shrink-0 text-blue-500" />
+                      <span className="flex flex-col">
+                        {/* Issue #1098: show the deploy-time alias, when set, above the raw ID */}
+                        {contract.name && !contract.name.startsWith("Contract ") && (
+                          <span className="font-sans text-xs font-semibold text-foreground">
+                            {contract.name}
+                          </span>
+                        )}
+                        <span>{contract.id}</span>
+                      </span>
                     </Link>
                   </TableCell>
                   <TableCell>
