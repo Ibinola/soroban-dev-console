@@ -38,10 +38,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@devconsole/ui";
-import { AlertCircle, CheckCircle, Copy, Trash2, Code, ArrowRightLeft, ShieldAlert, FolderOpen, Save, X } from "lucide-react";
+import { AlertCircle, CheckCircle, Copy, Trash2, Code, ArrowRightLeft, ShieldAlert, FolderOpen, Save, X, Upload } from "lucide-react";
 import { toast } from "sonner";
 // Issue #937: XDR schema validator
 import { validateXdr, XDR_TYPE_NAMES } from "@/lib/xdr-schema-validator";
+import { isAcceptedXdrFile, readXdrFileAsText, ACCEPTED_XDR_FILE_EXTENSIONS } from "@/lib/xdr-file-reader";
+import { findBase64ErrorPosition, type XdrErrorLocation } from "@/lib/xdr-error-locator";
 // Issue #938: Secret key detector
 import { containsSecret, useSecretPasteGuard } from "@/lib/secret-redaction";
 // Issue #1108: live char/byte metrics for the XDR textarea
@@ -267,6 +269,30 @@ function getPlaceholder(type: ScValType): string {
   }
 }
 
+// Issue #1105: render a short excerpt of the input around the error
+// position, with the offending character underlined in red.
+const ERROR_EXCERPT_RADIUS = 20;
+
+function renderErrorExcerpt(input: string, position: number) {
+  const start = Math.max(0, position - ERROR_EXCERPT_RADIUS);
+  const end = Math.min(input.length, position + ERROR_EXCERPT_RADIUS + 1);
+  const before = input.slice(start, position);
+  const flagged = input[position] ?? "";
+  const after = input.slice(position + 1, end);
+
+  return (
+    <>
+      {start > 0 && "…"}
+      {before}
+      <span className="rounded bg-red-500/20 underline decoration-red-500 decoration-2 underline-offset-2">
+        {flagged || " "}
+      </span>
+      {after}
+      {end < input.length && "…"}
+    </>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function XdrToolsPage() {
@@ -289,9 +315,13 @@ export default function XdrToolsPage() {
   const [decoded, setDecoded] = useState<string | null>(null);
   const [detectedType, setDetectedType] = useState<string | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
+  // Issue #1105: precise error location for Base64-syntax decode failures.
+  const [errorLocation, setErrorLocation] = useState<XdrErrorLocation | null>(null);
   const [typeHint, setTypeHint] = useState<string>("auto");
   // Issue #938: secret alert
   const [secretAlert, setSecretAlert] = useState(false);
+  // Issue #1102: drag-and-drop XDR file reader
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   // Issue #1113: user-defined presets (browser local storage)
   const [customPresets, setCustomPresets] = useState<CustomXdrPreset[]>([]);
   const [presetLabel, setPresetLabel] = useState("");
@@ -351,13 +381,14 @@ export default function XdrToolsPage() {
   };
 
   // Issue #937: validate using XDR schema validator
-  const handleDecode = () => {
+  const decodeAndSetState = (input: string) => {
     setDecodeError(null);
+    setErrorLocation(null);
     setDecoded(null);
     setDetectedType(null);
 
     const hint = typeHint === "auto" ? undefined : typeHint;
-    const result = validateXdr(decodeInput, hint);
+    const result = validateXdr(input, hint);
 
     if (result.valid && result.decoded) {
       setDetectedType(result.typeName ?? null);
@@ -365,8 +396,46 @@ export default function XdrToolsPage() {
       toast.success(`Decoded as ${result.typeName}`);
     } else {
       setDecodeError(result.errors.join("\n"));
+      // Issue #1105: pinpoint the exact character when the failure is a
+      // Base64-syntax problem — see xdr-error-locator.ts for why deeper
+      // XDR-schema mismatches can't get a precise byte offset.
+      setErrorLocation(findBase64ErrorPosition(input));
       toast.error("Decoding failed");
     }
+  };
+
+  const handleDecode = () => decodeAndSetState(decodeInput);
+
+  // Issue #1102: read a dropped/selected .xdr, .base64, or .txt file
+  // client-side (FileReader — nothing is sent to a backend) and decode it
+  // immediately.
+  const handleXdrFile = async (file: File) => {
+    if (!isAcceptedXdrFile(file.name)) {
+      toast.error(
+        `Unsupported file type — accepted extensions: ${ACCEPTED_XDR_FILE_EXTENSIONS.join(", ")}`,
+      );
+      return;
+    }
+    try {
+      const text = await readXdrFileAsText(file);
+      setDecodeInput(text);
+      decodeAndSetState(text);
+    } catch {
+      toast.error(`Failed to read ${file.name}`);
+    }
+  };
+
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingFile(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void handleXdrFile(file);
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void handleXdrFile(file);
+    e.target.value = "";
   };
 
   const handleEncode = () => {
@@ -398,6 +467,7 @@ export default function XdrToolsPage() {
     setDecoded(null);
     setDetectedType(null);
     setDecodeError(null);
+    setErrorLocation(null);
     setEncodeValue("");
     setEncodedBase64(null);
     setEncodedHex(null);
@@ -580,14 +650,47 @@ export default function XdrToolsPage() {
                 </div>
 
                 <div className="grid w-full gap-1.5">
-                  <Label htmlFor="xdr-decode-input">Base64 or Hex XDR String</Label>
-                  <Textarea
-                    id="xdr-decode-input"
-                    placeholder="AAAAAgAAA..."
-                    className="min-h-[240px] resize-none font-mono text-xs"
-                    value={decodeInput}
-                    onChange={guardedOnChange((e) => setDecodeInput(e.target.value))}
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="xdr-decode-input">Base64 or Hex XDR String</Label>
+                    <label className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      Browse file
+                      <input
+                        type="file"
+                        accept={ACCEPTED_XDR_FILE_EXTENSIONS.join(",")}
+                        className="sr-only"
+                        onChange={handleFileInputChange}
+                        data-testid="xdr-file-input"
+                      />
+                    </label>
+                  </div>
+                  {/* Issue #1102: drag-and-drop zone — reads .xdr/.base64/.txt files client-side only */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingFile(true);
+                    }}
+                    onDragLeave={() => setIsDraggingFile(false)}
+                    onDrop={handleFileDrop}
+                    data-testid="xdr-drop-zone"
+                    className={`relative rounded-md transition-colors ${
+                      isDraggingFile ? "ring-2 ring-primary ring-offset-2" : ""
+                    }`}
+                  >
+                    <Textarea
+                      id="xdr-decode-input"
+                      placeholder="AAAAAgAAA... (or drag & drop a .xdr / .base64 / .txt file)"
+                      className="min-h-[240px] resize-none font-mono text-xs"
+                      value={decodeInput}
+                      onChange={guardedOnChange((e) => setDecodeInput(e.target.value))}
+                    />
+                    {isDraggingFile && (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-md bg-primary/10 text-sm font-medium text-primary">
+                        <Upload className="h-4 w-4" />
+                        Drop XDR file to load
+                      </div>
+                    )}
+                  </div>
                   {/* Issue #1108: live character count, byte length and Base64 padding check */}
                   <div className="flex flex-wrap items-center gap-2" aria-live="polite">
                     <Badge variant="outline" data-testid="xdr-char-count">
@@ -622,6 +725,20 @@ export default function XdrToolsPage() {
                   <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-500 dark:bg-red-900/20">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     <pre className="whitespace-pre-wrap">{decodeError}</pre>
+                  </div>
+                )}
+                {/* Issue #1105: pinpoint the exact character for Base64-syntax failures */}
+                {errorLocation && (
+                  <div
+                    className="space-y-1 rounded-md border border-red-200 bg-red-50/50 p-3 text-xs dark:border-red-900 dark:bg-red-900/10"
+                    data-testid="xdr-error-location"
+                  >
+                    <p className="font-medium text-red-600 dark:text-red-400">
+                      {errorLocation.message} (line {errorLocation.line}, column {errorLocation.column})
+                    </p>
+                    <pre className="overflow-x-auto whitespace-pre rounded bg-zinc-950 p-2 font-mono text-zinc-50">
+                      {renderErrorExcerpt(decodeInput, errorLocation.position)}
+                    </pre>
                   </div>
                 )}
               </CardContent>
