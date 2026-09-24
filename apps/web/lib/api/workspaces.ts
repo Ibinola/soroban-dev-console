@@ -128,6 +128,10 @@ export const sharesApi = {
       method: "DELETE",
     }),
 
+  // The backend returns a paginated envelope ({ data, pagination }), not a
+  // bare array — unwrap it here so callers get the ShareSummary[] they expect.
   listForWorkspace: (workspaceId: string) =>
-    apiFetch<ShareSummary[]>(`/api/shares/workspace/${workspaceId}`),
+    apiFetch<{ data: ShareSummary[]; pagination: { total: number; skip: number; take: number } }>(
+      `/api/shares/workspace/${workspaceId}`,
+    ).then((res) => res.data),
 };

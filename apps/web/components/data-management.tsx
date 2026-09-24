@@ -18,6 +18,13 @@ import {
 import { Badge } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@devconsole/ui";
+import {
   Download,
   Upload,
   AlertTriangle,
@@ -34,6 +41,7 @@ import {
   Clock,
   ShieldOff,
   XCircle,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
@@ -75,12 +83,30 @@ const STORAGE_KEYS = {
 
 // ── Share management sub-component ───────────────────────────────────────────
 
+/** Issue #1114: fixed expiration duration options for the share modal. */
+type ExpiryOption = "1h" | "24h" | "7d" | "never";
+
+const EXPIRY_OPTION_LABELS: Record<ExpiryOption, string> = {
+  "1h": "1 Hour",
+  "24h": "24 Hours",
+  "7d": "7 Days",
+  never: "Never",
+};
+
+const EXPIRY_OPTION_SECONDS: Record<ExpiryOption, number | undefined> = {
+  "1h": 3600,
+  "24h": 24 * 3600,
+  "7d": 7 * 24 * 3600,
+  never: undefined,
+};
+
 function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null }) {
   const [shares, setShares] = useState<ShareSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [label, setLabel] = useState("");
-  const [expiryHours, setExpiryHours] = useState("");
+  /** Issue #1114: fixed duration options instead of a free-text hours field. */
+  const [expiryOption, setExpiryOption] = useState<ExpiryOption>("24h");
   const [excludeCustomAuthHeaders, setExcludeCustomAuthHeaders] = useState(true);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
@@ -140,7 +166,7 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
         savedCalls,
         getNotesForWorkspace(workspace.id),
       );
-      const expiresInSeconds = expiryHours ? parseInt(expiryHours) * 3600 : undefined;
+      const expiresInSeconds = EXPIRY_OPTION_SECONDS[expiryOption];
 
       const link = await sharesApi.create({
         workspaceId: wsCloudId,
@@ -152,7 +178,7 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
 
       setShares((prev) => [link, ...prev]);
       setLabel("");
-      setExpiryHours("");
+      setExpiryOption("24h");
       toast.success("Share link created");
     } catch (err) {
       toast.error(`Failed to create share: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -187,6 +213,18 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
     s.expiresAt != null && new Date(s.expiresAt) < new Date();
   const isRevoked = (s: ShareSummary) => s.revokedAt != null;
   const isActive = (s: ShareSummary) => !isRevoked(s) && !isExpired(s);
+
+  /** Issue #1115: relative "time ago" for a share link's last recipient access. */
+  const formatRelativeDate = (iso: string): string => {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const diffMinutes = Math.round(diffMs / 60_000);
+    if (diffMinutes < 1) return "just now";
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.round(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
 
   return (
     <Card>
@@ -223,15 +261,22 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
               disabled={isCreating}
               className="flex-1"
             />
-            <Input
-              placeholder="Expires in (hours)"
-              type="number"
-              min="1"
-              value={expiryHours}
-              onChange={(e) => setExpiryHours(e.target.value)}
+            <Select
+              value={expiryOption}
+              onValueChange={(v) => setExpiryOption(v as ExpiryOption)}
               disabled={isCreating}
-              className="w-40"
-            />
+            >
+              <SelectTrigger className="w-40" aria-label="Share link expiration">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(EXPIRY_OPTION_LABELS) as ExpiryOption[]).map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {EXPIRY_OPTION_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button onClick={handleCreate} disabled={isCreating} className="gap-2 shrink-0">
               {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
               Create
@@ -303,6 +348,20 @@ function ShareManagement({ workspaceCloudId }: { workspaceCloudId: string | null
                     Created {new Date(s.createdAt).toLocaleDateString()}
                     {s.expiresAt && (
                       <> · Expires {new Date(s.expiresAt).toLocaleDateString()}</>
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span
+                      className="flex items-center gap-1"
+                      title={`${s.viewCount} view${s.viewCount === 1 ? "" : "s"}`}
+                    >
+                      <Eye className="h-3 w-3" />
+                      {s.viewCount}
+                    </span>
+                    {s.lastAccessedAt && (
+                      <span title={new Date(s.lastAccessedAt).toLocaleString()}>
+                        · Last accessed {formatRelativeDate(s.lastAccessedAt)}
+                      </span>
                     )}
                   </div>
                 </div>
