@@ -9,6 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { xdr, nativeToScVal } from "@stellar/stellar-sdk";
 import { StrKey } from "@stellar/stellar-sdk";
 import { Button } from "@devconsole/ui";
@@ -29,37 +30,81 @@ import {
   SelectValue,
 } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
-import { Badge, Tabs, TabsList, TabsTrigger, TabsContent } from "@devconsole/ui";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@devconsole/ui";
-import { AlertCircle, CheckCircle, Copy, Trash2, Code, ArrowRightLeft, ShieldAlert, FolderOpen, Save, X } from "lucide-react";
+import { AlertCircle, CheckCircle, Copy, Trash2, Code, ArrowRightLeft, ShieldAlert, Link2 } from "lucide-react";
 import { toast } from "sonner";
 // Issue #937: XDR schema validator
 import { validateXdr, XDR_TYPE_NAMES } from "@/lib/xdr-schema-validator";
+import { isAcceptedXdrFile, readXdrFileAsText, ACCEPTED_XDR_FILE_EXTENSIONS } from "@/lib/xdr-file-reader";
+import { findBase64ErrorPosition, type XdrErrorLocation } from "@/lib/xdr-error-locator";
 // Issue #938: Secret key detector
 import { containsSecret, useSecretPasteGuard } from "@/lib/secret-redaction";
-// Issue #1108: live char/byte metrics for the XDR textarea
-import { analyzeXdrInput } from "@/lib/xdr-base64-metrics";
-// Issue #1113: user-defined presets persisted in browser local storage
-import {
-  addCustomPreset,
-  loadCustomPresets,
-  removeCustomPreset,
-  MAX_PRESET_LABEL_LENGTH,
-  type CustomXdrPreset,
-} from "@/lib/xdr-custom-presets";
-import { XDR_PRESETS } from "./xdr-presets";
 
 const jsonReplacer = (_key: string, value: any) => {
   if (typeof value === "bigint") return value.toString();
   return value;
 };
+
+// ─── Issue #1111: JSON output beautifier ───────────────────────────────────
+
+export type JsonIndentOption = "compact" | "2" | "4";
+
+const JSON_INDENT_STORAGE_KEY = "xdr-tools-json-indent";
+const JSON_INDENT_LABELS: Record<JsonIndentOption, string> = {
+  compact: "Compact",
+  "2": "2 Spaces",
+  "4": "4 Spaces",
+};
+
+/** Re-format an already-decoded value using the given indentation preference, without re-decoding. */
+export function formatDecodedJson(value: unknown, indent: JsonIndentOption): string {
+  if (indent === "compact") return JSON.stringify(value, jsonReplacer);
+  return JSON.stringify(value, jsonReplacer, indent === "4" ? 4 : 2);
+}
+
+function loadJsonIndentPreference(): JsonIndentOption {
+  if (typeof window === "undefined") return "2";
+  const stored = window.localStorage.getItem(JSON_INDENT_STORAGE_KEY);
+  return stored === "compact" || stored === "2" || stored === "4" ? stored : "2";
+}
+
+// ─── Issue #1110: shareable XDR URL links ──────────────────────────────────
+
+/** Practical, cross-browser/server-safe upper bound for a full share URL. */
+export const MAX_SHARE_URL_LENGTH = 2000;
+
+/** Convert standard base64 (as produced by Stellar XDR encoding) to the URL-safe variant. */
+export function toBase64Url(base64: string): string {
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Reverse of toBase64Url — restores padding so it can be passed back to base64 decoders. */
+export function fromBase64Url(base64url: string): string {
+  const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = (4 - (base64.length % 4)) % 4;
+  return base64 + "=".repeat(padding);
+}
+
+export interface XdrShareParams {
+  typeHint: string;
+  xdr: string;
+}
+
+/** Build the shareable query string (`?type=...&xdr=...`) for an XDR payload. */
+export function buildXdrShareQuery(params: XdrShareParams): string {
+  const query = new URLSearchParams({
+    type: params.typeHint,
+    xdr: toBase64Url(params.xdr),
+  });
+  return query.toString();
+}
+
+/** Parse `type`/`xdr` back out of a URLSearchParams instance, or null if absent. */
+export function parseXdrShareQuery(searchParams: URLSearchParams): XdrShareParams | null {
+  const xdr = searchParams.get("xdr");
+  if (!xdr) return null;
+  const typeHint = searchParams.get("type") ?? "auto";
+  return { typeHint, xdr: fromBase64Url(xdr) };
+}
 
 // ─── Issue #936: All 20+ ScValType variants ───────────────────────────────────
 
@@ -267,6 +312,30 @@ function getPlaceholder(type: ScValType): string {
   }
 }
 
+// Issue #1105: render a short excerpt of the input around the error
+// position, with the offending character underlined in red.
+const ERROR_EXCERPT_RADIUS = 20;
+
+function renderErrorExcerpt(input: string, position: number) {
+  const start = Math.max(0, position - ERROR_EXCERPT_RADIUS);
+  const end = Math.min(input.length, position + ERROR_EXCERPT_RADIUS + 1);
+  const before = input.slice(start, position);
+  const flagged = input[position] ?? "";
+  const after = input.slice(position + 1, end);
+
+  return (
+    <>
+      {start > 0 && "…"}
+      {before}
+      <span className="rounded bg-red-500/20 underline decoration-red-500 decoration-2 underline-offset-2">
+        {flagged || " "}
+      </span>
+      {after}
+      {end < input.length && "…"}
+    </>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function XdrToolsPage() {
@@ -286,20 +355,19 @@ export default function XdrToolsPage() {
 
   // Decoder state
   const [decodeInput, setDecodeInput] = useState("");
-  const [decoded, setDecoded] = useState<string | null>(null);
+  // Issue #1111: keep the raw decoded value so the JSON view can be
+  // re-formatted on indentation-preference changes without re-decoding.
+  const [decodedValue, setDecodedValue] = useState<unknown>(null);
   const [detectedType, setDetectedType] = useState<string | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
+  // Issue #1105: precise error location for Base64-syntax decode failures.
+  const [errorLocation, setErrorLocation] = useState<XdrErrorLocation | null>(null);
   const [typeHint, setTypeHint] = useState<string>("auto");
   // Issue #938: secret alert
   const [secretAlert, setSecretAlert] = useState(false);
-  // Issue #1113: user-defined presets (browser local storage)
-  const [customPresets, setCustomPresets] = useState<CustomXdrPreset[]>([]);
-  const [presetLabel, setPresetLabel] = useState("");
-  const [presetError, setPresetError] = useState<string | null>(null);
-  const [presetsOpen, setPresetsOpen] = useState(false);
-
-  // Issue #1108: characters / bytes / padding state of whatever is pasted.
-  const inputMetrics = analyzeXdrInput(decodeInput);
+  // Issue #1111: JSON beautifier indentation preference, persisted per-browser.
+  const [jsonIndent, setJsonIndent] = useState<JsonIndentOption>(() => loadJsonIndentPreference());
+  const decoded = decodedValue !== null ? formatDecodedJson(decodedValue, jsonIndent) : null;
 
   // Encoder state
   const [encodeType, setEncodeType] = useState<ScValType>("u32");
@@ -307,6 +375,47 @@ export default function XdrToolsPage() {
   const [encodedBase64, setEncodedBase64] = useState<string | null>(null);
   const [encodedHex, setEncodedHex] = useState<string | null>(null);
   const [encodeError, setEncodeError] = useState<string | null>(null);
+
+  // Issue #1110: auto-populate + auto-decode from a shared ?type=&xdr= link.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const shared = parseXdrShareQuery(searchParams);
+    if (!shared) return;
+
+    setDecodeInput(shared.xdr);
+    setTypeHint(shared.typeHint);
+
+    const hint = shared.typeHint === "auto" ? undefined : shared.typeHint;
+    const result = validateXdr(shared.xdr, hint);
+    if (result.valid && result.decoded) {
+      setDetectedType(result.typeName ?? null);
+      setDecodedValue(result.decoded);
+      toast.success(`Loaded shared XDR — decoded as ${result.typeName}`);
+    } else {
+      setDecodeError(result.errors.join("\n"));
+      toast.error("Failed to decode shared XDR link");
+    }
+    // Only ever runs against the URL params present on initial mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Issue #1110: build a shareable URL for the current decode input and copy it.
+  const handleShareLink = () => {
+    if (!decodeInput.trim()) {
+      toast.error("Nothing to share — decode an XDR payload first");
+      return;
+    }
+    const query = buildXdrShareQuery({ typeHint, xdr: decodeInput });
+    const shareUrl = `${window.location.origin}${window.location.pathname}?${query}`;
+
+    if (shareUrl.length > MAX_SHARE_URL_LENGTH) {
+      toast.warning(
+        `Share link is ${shareUrl.length} characters, over the ${MAX_SHARE_URL_LENGTH}-character safe limit — some tools/messengers may truncate it.`,
+      );
+    }
+    navigator.clipboard.writeText(shareUrl);
+    toast.success("Share link copied to clipboard");
+  };
 
   // Issue #938: secret paste guard hook
   const { guardedOnChange } = useSecretPasteGuard({
@@ -316,56 +425,37 @@ export default function XdrToolsPage() {
     },
   });
 
-  // Issue #1113: hydrate saved presets after mount — localStorage does not exist
-  // during SSR, so this cannot be a useState initialiser.
-  useEffect(() => {
-    setCustomPresets(loadCustomPresets());
-  }, []);
-
-  // Issue #1113: drop a preset into the decode input.
-  const applyPreset = (value: string) => {
-    setDecodeInput(value);
-    setActiveTab("decode");
-    setPresetsOpen(false);
-    toast.success("Preset loaded");
-  };
-
-  // Issue #1113: persist the current input as a named preset.
-  const handleSavePreset = () => {
-    const result = addCustomPreset(presetLabel, decodeInput, customPresets);
-    if (!result.ok) {
-      setPresetError(result.error ?? "Could not save the preset.");
-      toast.error(result.error ?? "Could not save the preset.");
-      return;
-    }
-    setCustomPresets(result.presets);
-    setPresetLabel("");
-    setPresetError(null);
-    toast.success("Preset saved");
-  };
-
-  // Issue #1113: remove a stored preset.
-  const handleDeletePreset = (id: string) => {
-    setCustomPresets(removeCustomPreset(id, customPresets));
-    toast.success("Preset deleted");
-  };
-
   // Issue #937: validate using XDR schema validator
-  const handleDecode = () => {
+  const decodeAndSetState = (input: string) => {
     setDecodeError(null);
-    setDecoded(null);
+    setDecodedValue(null);
     setDetectedType(null);
 
     const hint = typeHint === "auto" ? undefined : typeHint;
-    const result = validateXdr(decodeInput, hint);
+    const result = validateXdr(input, hint);
 
     if (result.valid && result.decoded) {
       setDetectedType(result.typeName ?? null);
-      setDecoded(JSON.stringify(result.decoded, jsonReplacer, 2));
+      setDecodedValue(result.decoded);
       toast.success(`Decoded as ${result.typeName}`);
     } else {
       setDecodeError(result.errors.join("\n"));
+      // Issue #1105: pinpoint the exact character when the failure is a
+      // Base64-syntax problem — see xdr-error-locator.ts for why deeper
+      // XDR-schema mismatches can't get a precise byte offset.
+      setErrorLocation(findBase64ErrorPosition(input));
       toast.error("Decoding failed");
+    }
+  };
+
+  // Issue #1111: change the indentation preference and persist it; re-formats
+  // the already-decoded value instantly without touching decodeInput/decode.
+  const handleJsonIndentChange = (next: JsonIndentOption) => {
+    setJsonIndent(next);
+    try {
+      window.localStorage.setItem(JSON_INDENT_STORAGE_KEY, next);
+    } catch {
+      // localStorage unavailable (private mode, SSR) — preference just won't persist.
     }
   };
 
@@ -393,11 +483,23 @@ export default function XdrToolsPage() {
     toast.success("Copied to clipboard");
   };
 
+  // Issue #1107: copy a ready-to-run Stellar CLI command for the current input.
+  const handleCopyCliCommand = () => {
+    const command = buildStellarCliCommand({
+      xdr: decodeInput,
+      commandType: cliCommandType,
+      typeHint,
+    });
+    navigator.clipboard.writeText(command);
+    toast.success("CLI command copied to clipboard");
+  };
+
   const clearAll = () => {
     setDecodeInput("");
-    setDecoded(null);
+    setDecodedValue(null);
     setDetectedType(null);
     setDecodeError(null);
+    setErrorLocation(null);
     setEncodeValue("");
     setEncodedBase64(null);
     setEncodedHex(null);
@@ -450,99 +552,8 @@ export default function XdrToolsPage() {
         <div id="decode-panel" role="tabpanel" aria-label="Decode XDR" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Card className="flex h-full flex-col">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0">
+              <CardHeader>
                 <CardTitle>Input</CardTitle>
-                {/* Issue #1113: presets drawer — stock samples plus the user's own saved payloads */}
-                <Sheet open={presetsOpen} onOpenChange={setPresetsOpen}>
-                  <SheetTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1" data-testid="xdr-presets-trigger">
-                      <FolderOpen className="h-3 w-3" />
-                      Presets
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent className="flex w-full flex-col gap-4 sm:max-w-md">
-                    <SheetHeader>
-                      <SheetTitle>XDR presets</SheetTitle>
-                      <SheetDescription>
-                        Load a stock sample or one of your own saved payloads.
-                      </SheetDescription>
-                    </SheetHeader>
-                    <Tabs defaultValue="samples" className="flex-1 overflow-hidden">
-                      <TabsList>
-                        <TabsTrigger value="samples">Samples</TabsTrigger>
-                        <TabsTrigger value="mine">
-                          My Presets{customPresets.length > 0 ? ` (${customPresets.length})` : ""}
-                        </TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="samples" className="space-y-2 overflow-y-auto">
-                        {XDR_PRESETS.map((preset) => (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            onClick={() => applyPreset(preset.value)}
-                            className="w-full rounded-md border p-2 text-left text-xs hover:bg-accent"
-                          >
-                            <span className="font-medium">{preset.label}</span>
-                            <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
-                              {preset.value}
-                            </span>
-                          </button>
-                        ))}
-                      </TabsContent>
-                      <TabsContent value="mine" className="space-y-3 overflow-y-auto">
-                        {customPresets.length === 0 ? (
-                          <p className="text-xs italic text-muted-foreground">
-                            No saved presets yet. Paste an XDR string and save it below.
-                          </p>
-                        ) : (
-                          customPresets.map((preset) => (
-                            <div key={preset.id} className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => applyPreset(preset.value)}
-                                className="flex-1 rounded-md border p-2 text-left text-xs hover:bg-accent"
-                              >
-                                <span className="font-medium">{preset.label}</span>
-                                <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
-                                  {preset.value}
-                                </span>
-                              </button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Delete preset ${preset.label}`}
-                                onClick={() => handleDeletePreset(preset.id)}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))
-                        )}
-                        <div className="space-y-1.5 border-t pt-3">
-                          <Label htmlFor="preset-label">Save the current input as a preset</Label>
-                          <Input
-                            id="preset-label"
-                            value={presetLabel}
-                            maxLength={MAX_PRESET_LABEL_LENGTH}
-                            placeholder="My SEP-41 LedgerKey"
-                            onChange={(e) => setPresetLabel(e.target.value)}
-                          />
-                          {presetError && <p className="text-xs text-red-500">{presetError}</p>}
-                          <Button
-                            size="sm"
-                            className="w-full gap-1"
-                            onClick={handleSavePreset}
-                            disabled={!decodeInput.trim()}
-                            data-testid="xdr-save-preset"
-                          >
-                            <Save className="h-3 w-3" />
-                            Save as Preset
-                          </Button>
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </SheetContent>
-                </Sheet>
               </CardHeader>
               <CardContent className="flex-1 space-y-4">
                 {/* Issue #938: secret alert popover */}
@@ -588,31 +599,20 @@ export default function XdrToolsPage() {
                     value={decodeInput}
                     onChange={guardedOnChange((e) => setDecodeInput(e.target.value))}
                   />
-                  {/* Issue #1108: live character count, byte length and Base64 padding check */}
-                  <div className="flex flex-wrap items-center gap-2" aria-live="polite">
-                    <Badge variant="outline" data-testid="xdr-char-count">
-                      {inputMetrics.charCount} chars
-                    </Badge>
-                    <Badge variant="outline" data-testid="xdr-byte-length">
-                      {inputMetrics.byteLength} bytes
-                    </Badge>
-                    {inputMetrics.kind !== "empty" && (
-                      <Badge variant="secondary" className="uppercase" data-testid="xdr-input-kind">
-                        {inputMetrics.kind}
-                      </Badge>
-                    )}
-                    {inputMetrics.warning && (
-                      <Badge variant="destructive" className="gap-1" data-testid="xdr-input-warning">
-                        <AlertCircle className="h-3 w-3" />
-                        {inputMetrics.warning}
-                      </Badge>
-                    )}
-                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button onClick={handleDecode} disabled={!decodeInput} className="flex-1 gap-2">
                     <Code className="h-4 w-4" />
                     Decode &amp; Validate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleShareLink}
+                    disabled={!decodeInput}
+                    aria-label="Share XDR link"
+                    title="Copy a shareable link to this XDR payload"
+                  >
+                    <Link2 className="h-4 w-4" />
                   </Button>
                   <Button variant="outline" onClick={clearAll} disabled={!decodeInput} aria-label="Clear input">
                     <Trash2 className="h-4 w-4" />
@@ -622,6 +622,20 @@ export default function XdrToolsPage() {
                   <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-500 dark:bg-red-900/20">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     <pre className="whitespace-pre-wrap">{decodeError}</pre>
+                  </div>
+                )}
+                {/* Issue #1105: pinpoint the exact character for Base64-syntax failures */}
+                {errorLocation && (
+                  <div
+                    className="space-y-1 rounded-md border border-red-200 bg-red-50/50 p-3 text-xs dark:border-red-900 dark:bg-red-900/10"
+                    data-testid="xdr-error-location"
+                  >
+                    <p className="font-medium text-red-600 dark:text-red-400">
+                      {errorLocation.message} (line {errorLocation.line}, column {errorLocation.column})
+                    </p>
+                    <pre className="overflow-x-auto whitespace-pre rounded bg-zinc-950 p-2 font-mono text-zinc-50">
+                      {renderErrorExcerpt(decodeInput, errorLocation.position)}
+                    </pre>
                   </div>
                 )}
               </CardContent>
@@ -644,11 +658,27 @@ export default function XdrToolsPage() {
                     )}
                   </CardDescription>
                 </div>
-                {decoded && (
-                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(decoded)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {decoded && (
+                    <Select value={jsonIndent} onValueChange={(v) => handleJsonIndentChange(v as JsonIndentOption)}>
+                      <SelectTrigger className="h-8 w-[130px]" aria-label="JSON indentation">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(JSON_INDENT_LABELS) as JsonIndentOption[]).map((opt) => (
+                          <SelectItem key={opt} value={opt}>
+                            {JSON_INDENT_LABELS[opt]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {decoded && (
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(decoded)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="relative min-h-[300px] flex-1">
                 {decoded ? (

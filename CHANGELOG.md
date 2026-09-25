@@ -8,14 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Wave 7] - Unreleased
 
 ### Added
-- XDR tools: live input metrics under the decode textarea — total character
-  count, decoded byte length, detected encoding, and a warning badge when the
-  Base64 length is not a multiple of 4 (truncated payload) or the input is not
-  valid Base64/hex (#1108).
-- XDR tools: presets drawer with a **My Presets** tab. Custom payloads are
-  saved to browser local storage with a label, can be reloaded with one click
-  and deleted individually; malformed or foreign storage entries are ignored,
-  and the list is capped at 50 entries (#1113).
 - Wallet session revalidation for Albedo (`albedoRevalidate` now attempts
   `albedo.publicKey({})` and clears the wallet store on rejection).
 - Wallet-vs-app network mismatch detection. After connect we capture the
@@ -39,14 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   store can use the latest wallet passphrase for mismatch detection.
 - `useWallet` state now persists `networkPassphraseAtConnect` (via
   `version: 1`) so legacy localStorage entries hydrate cleanly.
-
-### Fixed
-- `app/tools/xdr/page.tsx` carried the whole page twice — two
-  `export default function XdrToolsPage()` blocks and two copies of
-  `encodeScValToXdr` — so the route failed to compile. The stale pre-merge
-  copy (the one matching `713816a^`) was dropped, restoring a single
-  component. `lib/sri-manifest.ts` and `components/abi-input-field.tsx`
-  still fail `tsc` on `main` and are not touched here.
 
 ## [Wave 6] - 2026-07-09
 
