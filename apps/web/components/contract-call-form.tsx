@@ -84,6 +84,11 @@ import { toast } from "sonner";
 import { useResultBundlesStore } from "@/store/useResultBundlesStore";
 import { exportResultBundle } from "@/lib/result-bundles";
 import { stateChangesToDiffs } from "@/lib/diff-utils";
+import {
+  isAccordionArg,
+  serializePreset,
+  prefillArgsFromPreset,
+} from "@/lib/preset-serialization";
 
 interface ContractCallFormProps {
   contractId: string;
@@ -177,6 +182,7 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
   const [fnName, setFnName] = useState(initialMethod || "");
   const [args, setArgs] = useState<ContractArg[]>([]);
+  const [presetLoadValue, setPresetLoadValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [autoExecute, setAutoExecute] = useState(true);
   const [result, setResult] = useState<string | null>(null);
@@ -217,6 +223,19 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchQueue, setBatchQueue] = useState<BatchCallItem[]>([]);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
+  // #1032: accordion collapse state for nested struct/map args (values are never
+  // cleared on collapse - args state is the single source of truth)
+  const [collapsedArgIds, setCollapsedArgIds] = useState<Set<string>>(new Set());
+  const toggleArgCollapsed = (id: string) =>
+    setCollapsedArgIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const collapseAllArgs = () =>
+    setCollapsedArgIds(new Set(args.filter((a) => isAccordionArg(a)).map((a) => a.id)));
+  const expandAllArgs = () => setCollapsedArgIds(new Set());
 
   // FE-044: validate overrides before use
   const feeOverride = (() => {
@@ -628,7 +647,14 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
     const newArgs = call.args.map((a) => ({ ...a, id: crypto.randomUUID() }));
     setArgs(newArgs);
-    toast.info(`Loaded: ${call.name}`);
+
+  const handleLoadPreset = (presetId: string) => {
+    const preset = contractPresets.find((p) => p.id === presetId);
+    if (!preset) return;
+    setFnName(preset.fnName);
+    setSimulation(null);
+    setArgs(prefillArgsFromPreset(preset));
+    toast.success(`Loaded preset: ${preset.name}`);
   };
 
   const handleSavePreset = () => {
@@ -882,6 +908,37 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label>Arguments ({args.length})</Label>
+            <div className="flex items-center gap-2">
+              {contractPresets.length > 0 && (
+                <Select
+                  value={presetLoadValue}
+                  onValueChange={(id) => {
+                    handleLoadPreset(id);
+                    setPresetLoadValue("");
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Load operation preset">
+                    <SelectValue placeholder="Load preset…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contractPresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {args.some((a) => isAccordionArg(a)) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={collapsedArgIds.size > 0 ? expandAllArgs : collapseAllArgs}
+                >
+                  {collapsedArgIds.size > 0 ? "Expand All" : "Collapse All"}
+                </Button>
+              )}
+            </div>
             {!usesAbiInputs && (
               <Button size="sm" variant="outline" onClick={addArg}>
                 <Plus className="mr-1 h-3 w-3" /> Add Arg
@@ -926,6 +983,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               )}
               <AbiInputField
                 arg={arg}
+                expanded={!collapsedArgIds.has(arg.id)}
+                onToggleCollapse={toggleArgCollapsed}
                 onChange={(id, val) => updateArg(id, "value", val)}
               />
               {!usesAbiInputs && (
