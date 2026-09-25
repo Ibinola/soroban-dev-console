@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, type ChangeEvent } from "react";
+import { Fragment, useState, useEffect, type ChangeEvent } from "react";
 import { usePathname } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
@@ -59,6 +59,9 @@ import {
   createNormalizedContractSpecFromFunctionNames,
   parseWasmMetadata,
   extractContractIdFromDeployResult,
+  fetchMaxWasmSize,
+  validateWasmSize,
+  DEFAULT_MAX_WASM_SIZE_BYTES,
 } from "@devconsole/soroban-utils";
 import { parseWasmSectionSizes, type WasmSectionSizes } from "@/lib/artifact-introspection";
 import { registerSource } from "@/lib/source-registry";
@@ -240,7 +243,7 @@ function DeployPipelinePanel() {
 export default function WasmRegistryPage() {
   const pathname = usePathname();
   const { isConnected, address, isSandboxMode } = useWallet();
-  const { getActiveNetworkConfig } = useNetworkStore();
+  const { getActiveNetworkConfig, currentNetwork } = useNetworkStore();
   const { wasms, addWasm, removeWasm, associateContract, addProvenanceNode, advancePipeline, resetPipeline } = useWasmStore();
   const { activeWorkspaceId, attachArtifact } = useWorkspaceStore();
   const { addContract } = useContractStore();
@@ -249,9 +252,15 @@ export default function WasmRegistryPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [wasmName, setWasmName] = useState("");
   const [deployingHash, setDeployingHash] = useState<string | null>(null);
+  // Issue #1098: optional per-WASM-hash contract alias, applied to the
+  // workspace contract entry on successful deployment.
+  const [contractAliases, setContractAliases] = useState<Record<string, string>>({});
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [previewFunctions, setPreviewFunctions] = useState<string[]>([]);
   const [wasmStats, setWasmStats] = useState<{ size: number; hash: string; sections: WasmSectionSizes } | null>(null);
+  // Issue #1099: max WASM size for the active network, fetched from its
+  // CONTRACT_MAX_SIZE_BYTES config setting (falls back to a safe default).
+  const [maxWasmSize, setMaxWasmSize] = useState<number>(DEFAULT_MAX_WASM_SIZE_BYTES);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -284,8 +293,31 @@ export default function WasmRegistryPage() {
     }
   };
 
+  // Issue #1099: refresh the network's max WASM size whenever the active
+  // network changes, so the size check below is always current.
+  useEffect(() => {
+    let cancelled = false;
+    fetchMaxWasmSize(getActiveNetworkConfig().rpcUrl).then((size) => {
+      if (!cancelled) setMaxWasmSize(size);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentNetwork]);
+
   const handleInstall = async () => {
     if (!file || !address || !isConnected) return;
+
+    // Issue #1099: block submission client-side when the file exceeds the
+    // network's actual max contract size, instead of only warning.
+    if (wasmStats) {
+      const sizeCheck = validateWasmSize(wasmStats.size, maxWasmSize);
+      if (!sizeCheck.valid) {
+        toast.error(sizeCheck.message);
+        return;
+      }
+    }
     setIsUploading(true);
     advancePipeline("install"); // FE-048
 
@@ -391,7 +423,7 @@ export default function WasmRegistryPage() {
         contractId,
         relationship,
       });
-      addContract(contractId, network.id);
+      addContract(contractId, network.id, contractAliases[wasmHash]);
       toast.success(`Contract deployed! ID: ${contractId.slice(0, 10)}…`);
       advancePipeline("publish", { contractId, txHash: txResult.hash ?? null });
       setTimeout(() => advancePipeline("done", { contractId }), 800);
@@ -491,14 +523,15 @@ export default function WasmRegistryPage() {
               <div className="mt-2 space-y-2 rounded-md border bg-muted/30 p-3 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Size</span>
-                  <span className={wasmStats.size > 256 * 1024 ? "font-bold text-destructive" : "font-medium"}>
+                  <span className={wasmStats.size > maxWasmSize ? "font-bold text-destructive" : "font-medium"}>
                     {(wasmStats.size / 1024).toFixed(2)} KB
                   </span>
                 </div>
-                {wasmStats.size > 256 * 1024 && (
+                {/* Issue #1099: real network max (fetched via RPC), not a hardcoded guess */}
+                {wasmStats.size > maxWasmSize && (
                   <div className="text-destructive">
                     <AlertCircle className="mr-1 inline h-3 w-3" />
-                    Warning: File exceeds the Soroban max contract size (~256KB)
+                    {validateWasmSize(wasmStats.size, maxWasmSize).message}
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -557,7 +590,7 @@ export default function WasmRegistryPage() {
               <Button
                 className="w-full"
                 onClick={handleInstall}
-                disabled={!file || isUploading}
+                disabled={!file || isUploading || (!!wasmStats && wasmStats.size > maxWasmSize)}
               >
                 {isUploading ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -677,6 +710,22 @@ export default function WasmRegistryPage() {
                       {expandedHash === entry.hash && (
                         <TableRow>
                           <TableCell colSpan={5} className="bg-muted/20 pb-3 pt-0">
+                            {!entry.deployedContractId && (
+                              <div className="space-y-1 py-2" onClick={(e) => e.stopPropagation()}>
+                                <Label htmlFor={`alias-${entry.hash}`} className="text-[10px] font-bold uppercase">
+                                  Contract Alias Name (Optional)
+                                </Label>
+                                <Input
+                                  id={`alias-${entry.hash}`}
+                                  placeholder="e.g. My Custom Token"
+                                  className="max-w-xs"
+                                  value={contractAliases[entry.hash] ?? ""}
+                                  onChange={(e) =>
+                                    setContractAliases((prev) => ({ ...prev, [entry.hash]: e.target.value }))
+                                  }
+                                />
+                              </div>
+                            )}
                             <ProvenancePanel nodes={entry.provenance ?? []} />
                             <VerifySourcePanel
                               entry={entry}
