@@ -2,10 +2,12 @@
 
 import { Fragment, useState, useEffect, type ChangeEvent } from "react";
 import { usePathname } from "next/navigation";
+import NextLink from "next/link";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWasmStore, type WasmEntry, type ProvenanceNode, type DeployPhase } from "@/store/useWasmStore";
 import { useContractStore } from "@/store/useContractStore";
+import { useDeploymentLogStore } from "@/store/useDeploymentLogStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import {
   TransactionBuilder,
@@ -34,6 +36,7 @@ import {
   AlertCircle,
   FlaskConical,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@devconsole/ui";
 import {
@@ -56,6 +59,14 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@devconsole/ui";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@devconsole/ui";
+import {
   createNormalizedContractSpecFromFunctionNames,
   parseWasmMetadata,
   extractContractIdFromDeployResult,
@@ -64,6 +75,7 @@ import {
   DEFAULT_MAX_WASM_SIZE_BYTES,
 } from "@devconsole/soroban-utils";
 import { parseWasmSectionSizes, type WasmSectionSizes } from "@/lib/artifact-introspection";
+import { buildContractExplorerHref, copyContractId } from "@/lib/contract-explorer-link";
 import { registerSource } from "@/lib/source-registry";
 import { InstantiateWizard } from "@/components/instantiate-wizard";
 import { ActionGuard } from "@/components/action-guard";
@@ -247,6 +259,7 @@ export default function WasmRegistryPage() {
   const { wasms, addWasm, removeWasm, associateContract, addProvenanceNode, advancePipeline, resetPipeline } = useWasmStore();
   const { activeWorkspaceId, attachArtifact } = useWorkspaceStore();
   const { addContract } = useContractStore();
+  const { entries: deploymentLog, logDeployment } = useDeploymentLogStore();
 
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -380,6 +393,10 @@ export default function WasmRegistryPage() {
       const server = new SorobanServer(network.rpcUrl);
       const sourceAccount = await server.getAccount(address);
 
+      const saltBuffer = Buffer.alloc(32).fill(Math.floor(Math.random() * 255));
+      const saltHex = saltBuffer.toString("hex");
+      const wasmFileName = wasms.find((w) => w.hash === wasmHash)?.name ?? wasmHash;
+
       const tx = new TransactionBuilder(sourceAccount, {
         fee: "10000",
         networkPassphrase: network.networkPassphrase,
@@ -388,7 +405,7 @@ export default function WasmRegistryPage() {
           Operation.createCustomContract({
             wasmHash: Buffer.from(wasmHash, "hex"),
             address: new Address(address),
-            salt: Buffer.alloc(32).fill(Math.floor(Math.random() * 255)),
+            salt: saltBuffer,
           }),
         )
         .setTimeout(TimeoutInfinite)
@@ -428,10 +445,32 @@ export default function WasmRegistryPage() {
       advancePipeline("publish", { contractId, txHash: txResult.hash ?? null });
       setTimeout(() => advancePipeline("done", { contractId }), 800);
       toast.success("Contract instantiated successfully!");
+      // Issue #1094: show the success card with a copy widget + Explorer link.
+      setDeploySuccess({ contractId, txHash: txResult.hash ?? null });
+      // Issue #1096: record this deployment in the persisted history log.
+      logDeployment({
+        wasmFileName,
+        wasmHash,
+        salt: saltHex,
+        contractId,
+        txHash: txResult.hash ?? null,
+        status: "success",
+        network: network.id,
+      });
     } catch (e: any) {
       console.error(e);
       advancePipeline("error", { error: e.message }); // FE-048
       toast.error(`Deploy failed: ${e.message}`);
+      logDeployment({
+        wasmFileName: wasms.find((w) => w.hash === wasmHash)?.name ?? wasmHash,
+        wasmHash,
+        salt: null,
+        contractId: null,
+        txHash: null,
+        status: "failed",
+        errorMessage: e?.message,
+        network: getActiveNetworkConfig().id,
+      });
     } finally {
       setDeployingHash(null);
     }
@@ -457,6 +496,60 @@ export default function WasmRegistryPage() {
 
   return (
     <div className="container mx-auto space-y-8 p-6">
+      {/* Issue #1094: deployment success card with copy + Explorer link */}
+      <Dialog open={!!deploySuccess} onOpenChange={(open) => !open && setDeploySuccess(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              Contract Deployed
+            </DialogTitle>
+            <DialogDescription>
+              Your contract instance was created successfully.
+            </DialogDescription>
+          </DialogHeader>
+          {deploySuccess && (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-muted-foreground">
+                  Contract ID
+                </Label>
+                <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2">
+                  <Badge variant="outline" className="flex-1 justify-start truncate font-mono text-xs">
+                    {deploySuccess.contractId}
+                  </Badge>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0"
+                    aria-label="Copy contract ID"
+                    onClick={() => {
+                      copyContractId(deploySuccess.contractId);
+                      toast.success("Contract ID copied to clipboard");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:justify-between">
+            <NextLink
+              href={deploySuccess ? buildContractExplorerHref(deploySuccess.contractId) : "#"}
+              className="inline-flex items-center gap-2 text-sm text-blue-500 hover:underline"
+              onClick={() => setDeploySuccess(null)}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open in Explorer
+            </NextLink>
+            <Button variant="outline" onClick={() => setDeploySuccess(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">WASM Registry</h1>
@@ -756,6 +849,72 @@ export default function WasmRegistryPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Issue #1096: deployment history log for this browser session's workspace */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Deployment Log</CardTitle>
+            <CardDescription>History of contract deployment attempts in this workspace.</CardDescription>
+          </div>
+          {deploymentLog.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => useDeploymentLogStore.getState().clearLog()}>
+              <Trash2 className="mr-1 h-3 w-3" /> Clear
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {deploymentLog.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No deployments recorded yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Timestamp</TableHead>
+                  <TableHead>WASM File</TableHead>
+                  <TableHead>Salt</TableHead>
+                  <TableHead>Contract ID</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Tx Hash</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deploymentLog.map((entry) => (
+                  <TableRow key={entry.id} data-testid="deployment-log-row">
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(entry.timestamp).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="max-w-[160px] truncate font-mono text-xs">{entry.wasmFileName}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {entry.salt ? `${entry.salt.slice(0, 8)}…` : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {entry.contractId ? `${entry.contractId.slice(0, 10)}…` : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={entry.status === "success" ? "outline" : "destructive"} className="text-[10px]">
+                        {entry.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {entry.txHash ? (
+                        <NextLink
+                          href={`/tx/${entry.txHash}`}
+                          className="font-mono text-xs text-blue-500 hover:underline"
+                        >
+                          {entry.txHash.slice(0, 10)}…
+                        </NextLink>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
