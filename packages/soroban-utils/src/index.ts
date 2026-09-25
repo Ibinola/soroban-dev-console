@@ -4,3 +4,4 @@ export * from "./soroban-types";
 export * from "./contract-spec";
 export * from "./simulation";
 export * from "./simulation-explainer";
+export * from "./wasm-size-limit";
