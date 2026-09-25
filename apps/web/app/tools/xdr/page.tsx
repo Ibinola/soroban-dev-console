@@ -451,6 +451,17 @@ export default function XdrToolsPage() {
     toast.success("Copied to clipboard");
   };
 
+  // Issue #1107: copy a ready-to-run Stellar CLI command for the current input.
+  const handleCopyCliCommand = () => {
+    const command = buildStellarCliCommand({
+      xdr: decodeInput,
+      commandType: cliCommandType,
+      typeHint,
+    });
+    navigator.clipboard.writeText(command);
+    toast.success("CLI command copied to clipboard");
+  };
+
   const clearAll = () => {
     setDecodeInput("");
     setDecodedValue(null);
