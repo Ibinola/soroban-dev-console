@@ -1,0 +1,1 @@
+export function FootprintKeyBuilder() {\n  // footprint custom query\n}\n
