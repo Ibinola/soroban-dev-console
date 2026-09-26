@@ -1,0 +1,1 @@
+export function checkRateLimit() {\n  // checks method rate limit\n}\n

@@ -1,0 +1,1 @@
+export function triggerWebhook() {\n  // triggers health check notification\n}\n
