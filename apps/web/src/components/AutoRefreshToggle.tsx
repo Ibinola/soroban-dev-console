@@ -1,0 +1,1 @@
+export function AutoRefreshToggle() {\n  // configurable polling interval\n}\n
