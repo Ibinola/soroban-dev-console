@@ -1,0 +1,1 @@
+export function SnapshotRestore() {\n  // restore from workspace history\n}\n

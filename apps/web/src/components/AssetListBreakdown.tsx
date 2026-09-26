@@ -1,0 +1,1 @@
+export function AssetListBreakdown() {\n  // breakdown with contract addresses\n}\n
