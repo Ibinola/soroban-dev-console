@@ -1,0 +1,1 @@
+export function MultisigProgress() {\n  // pending threshold indicator\n}\n
