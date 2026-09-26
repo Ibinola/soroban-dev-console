@@ -1,0 +1,1 @@
+export function getCustomHeaders() {\n  // returns headers for self-hosted node\n}\n
