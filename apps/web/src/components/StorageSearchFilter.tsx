@@ -1,0 +1,1 @@
+export function StorageSearchFilter() {\n  // search by XDR or string key\n}\n
