@@ -9,7 +9,18 @@ import {
 } from "@stellar/stellar-sdk";
 import { Server as SorobanServer } from "@stellar/stellar-sdk/rpc";
 import { signTransaction } from "@stellar/freighter-api";
-import { Wand2, Loader2, ChevronRight, ChevronLeft, CheckCircle2 } from "lucide-react";
+import {
+  Wand2,
+  Loader2,
+  ChevronRight,
+  ChevronLeft,
+  CheckCircle2,
+  Sparkles,
+  Copy,
+  Plus,
+  Trash2,
+  Code2,
+} from "lucide-react";
 import { Button } from "@devconsole/ui";
 import {
   Dialog,
@@ -21,13 +32,31 @@ import {
 import { Input } from "@devconsole/ui";
 import { Label } from "@devconsole/ui";
 import { Badge } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@devconsole/ui";
 import { toast } from "sonner";
 import { useWallet } from "@/store/useWallet";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useWasmStore, type WasmEntry } from "@/store/useWasmStore";
 import { useContractStore } from "@/store/useContractStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
-import { extractContractIdFromDeployResult } from "@devconsole/soroban-utils";
+import {
+  extractContractIdFromDeployResult,
+  generateRandomSaltHex,
+  validateSaltHex,
+  computeContractAddress,
+  buildBundledDeployAndInitTx,
+  convertToScVal,
+  type ArgType,
+  type ContractArg,
+} from "@devconsole/soroban-utils";
+import { copyContractId } from "@/lib/contract-explorer-link";
 
 type Step = "select" | "configure" | "confirm" | "done";
 
@@ -46,17 +75,40 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("select");
   const [selectedHash, setSelectedHash] = useState(preselectedHash ?? "");
-  const [salt, setSalt] = useState("");
+  const [salt, setSalt] = useState<string>(() => generateRandomSaltHex());
+  const [saltError, setSaltError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resultContractId, setResultContractId] = useState<string | null>(null);
 
+  // Issue #1092: Constructor / initialization args
+  const [enableInit, setEnableInit] = useState(false);
+  const [initFunctionName, setInitFunctionName] = useState("");
+  const [constructorArgs, setConstructorArgs] = useState<ContractArg[]>([]);
+
   const selectedEntry: WasmEntry | undefined = wasms.find((w) => w.hash === selectedHash);
+
+  // Issue #1093: Predicted contract address
+  const predictedAddress = (() => {
+    if (!address || !salt) return null;
+    const saltVal = validateSaltHex(salt);
+    if (!saltVal.valid) return null;
+    try {
+      const network = getActiveNetworkConfig();
+      return computeContractAddress(address, salt, network.networkPassphrase);
+    } catch {
+      return null;
+    }
+  })();
 
   const reset = () => {
     setStep("select");
     setSelectedHash(preselectedHash ?? "");
-    setSalt("");
+    setSalt(generateRandomSaltHex());
+    setSaltError(null);
     setResultContractId(null);
+    setEnableInit(false);
+    setInitFunctionName("");
+    setConstructorArgs([]);
   };
 
   const handleOpen = (v: boolean) => {
@@ -64,31 +116,84 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
     if (!v) reset();
   };
 
+  const handleSaltChange = (val: string) => {
+    setSalt(val);
+    const check = validateSaltHex(val);
+    setSaltError(check.valid ? null : (check.error ?? "Invalid salt"));
+  };
+
+  const handleGenerateSalt = () => {
+    const newSalt = generateRandomSaltHex();
+    setSalt(newSalt);
+    setSaltError(null);
+    toast.success("Generated 32-byte cryptographically secure salt.");
+  };
+
+  const addConstructorArg = () => {
+    setConstructorArgs((prev) => [
+      ...prev,
+      {
+        id: `arg-${Date.now()}-${prev.length}`,
+        name: `param_${prev.length + 1}`,
+        type: "string",
+        value: "",
+      },
+    ]);
+  };
+
+  const removeConstructorArg = (id: string) => {
+    setConstructorArgs((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const updateConstructorArg = (id: string, field: keyof ContractArg, value: any) => {
+    setConstructorArgs((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, [field]: value } : a)),
+    );
+  };
+
   const handleInstantiate = async () => {
     if (!address || !isConnected || !selectedHash) return;
+
+    const saltCheck = validateSaltHex(salt);
+    if (!saltCheck.valid) {
+      toast.error(saltCheck.error ?? "Invalid salt hex");
+      return;
+    }
+
     setBusy(true);
     try {
       const network = getActiveNetworkConfig();
       const server = new SorobanServer(network.rpcUrl);
       const sourceAccount = await server.getAccount(address);
 
-      const saltBytes = salt
-        ? Buffer.from(salt.padEnd(32, "\0").slice(0, 32))
-        : Buffer.alloc(32).fill(Math.floor(Math.random() * 255));
-
-      const tx = new TransactionBuilder(sourceAccount, {
-        fee: "10000",
-        networkPassphrase: network.networkPassphrase,
-      })
-        .addOperation(
-          Operation.createCustomContract({
-            wasmHash: Buffer.from(selectedHash, "hex"),
-            address: new Address(address),
-            salt: saltBytes,
-          }),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+      let tx;
+      if (enableInit && initFunctionName.trim()) {
+        const initArgs = constructorArgs.map((a) => convertToScVal(a.type, a.value));
+        tx = buildBundledDeployAndInitTx({
+          sourceAccount,
+          networkPassphrase: network.networkPassphrase,
+          wasmHash: selectedHash,
+          deployerAddress: address,
+          salt,
+          initFunction: initFunctionName.trim(),
+          initArgs,
+        });
+      } else {
+        const saltBytes = Buffer.from(salt, "hex");
+        tx = new TransactionBuilder(sourceAccount, {
+          fee: "10000",
+          networkPassphrase: network.networkPassphrase,
+        })
+          .addOperation(
+            Operation.createCustomContract({
+              wasmHash: Buffer.from(selectedHash, "hex"),
+              address: new Address(address),
+              salt: saltBytes,
+            }),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
+      }
 
       const preparedTx = await server.prepareTransaction(tx);
       const signedXdr = await signTransaction(preparedTx.toXDR(), {
@@ -114,7 +219,7 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
         if (status.status === "FAILED") throw new Error("Transaction failed");
       }
 
-      const finalId = contractId ?? res.hash;
+      const finalId = contractId ?? predictedAddress ?? res.hash;
       const relationship = contractId ? "confirmed" : "inferred";
 
       associateContract(selectedHash, finalId, relationship);
@@ -141,7 +246,7 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="h-5 w-5" />
@@ -174,7 +279,13 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
                 {wasms.map((w) => (
                   <button
                     key={w.hash}
-                    onClick={() => setSelectedHash(w.hash)}
+                    onClick={() => {
+                      setSelectedHash(w.hash);
+                      if (w.functions && w.functions.some((f) => f === "init" || f === "__constructor" || f === "initialize")) {
+                        setEnableInit(true);
+                        setInitFunctionName(w.functions.find((f) => f === "init" || f === "__constructor" || f === "initialize") || "");
+                      }
+                    }}
                     className={`w-full rounded-md border p-3 text-left transition-colors hover:bg-muted/50 ${
                       selectedHash === w.hash ? "border-primary bg-primary/5" : ""
                     }`}
@@ -229,25 +340,127 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
               </div>
             )}
 
-            <div className="space-y-1">
-              <Label htmlFor="salt">Salt (optional, 32-char max)</Label>
+            {/* Issue #1093: Salt Parameter */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="salt" className="text-xs font-medium">Deterministic Salt (64-char hex)</Label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[11px]"
+                  onClick={handleGenerateSalt}
+                >
+                  <Sparkles className="mr-1 h-3 w-3 text-amber-500" />
+                  Random Salt
+                </Button>
+              </div>
               <Input
                 id="salt"
-                placeholder="Leave blank for random salt"
+                className="font-mono text-xs"
+                placeholder="32-byte hex string (64 characters)"
                 value={salt}
-                maxLength={32}
-                onChange={(e) => setSalt(e.target.value)}
+                maxLength={64}
+                onChange={(e) => handleSaltChange(e.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">
-                Using the same salt + deployer address produces the same contract ID.
-              </p>
+              {saltError ? (
+                <p className="text-[11px] text-destructive">{saltError}</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Exact 64 hexadecimal characters ({salt.length}/64).
+                </p>
+              )}
+            </div>
+
+            {/* Predicted Contract Address */}
+            {predictedAddress && (
+              <div className="rounded border bg-muted/20 p-2 text-xs">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Predicted Address: </span>
+                <span className="font-mono">{predictedAddress}</span>
+              </div>
+            )}
+
+            {/* Issue #1092: Constructor / Init Configuration */}
+            <div className="rounded-md border bg-muted/20 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Code2 className="h-3.5 w-3.5 text-primary" />
+                  <Label className="text-xs font-medium">Constructor / Init Call</Label>
+                </div>
+                <Switch checked={enableInit} onCheckedChange={setEnableInit} />
+              </div>
+
+              {enableInit && (
+                <div className="space-y-2 border-t pt-2">
+                  <Input
+                    placeholder="Function name (e.g. init, __constructor)"
+                    value={initFunctionName}
+                    onChange={(e) => setInitFunctionName(e.target.value)}
+                    className="h-7 text-xs font-mono"
+                  />
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Parameters</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[11px]"
+                      onClick={addConstructorArg}
+                    >
+                      <Plus className="mr-1 h-3 w-3" /> Add
+                    </Button>
+                  </div>
+
+                  {constructorArgs.map((arg) => (
+                    <div key={arg.id} className="flex items-center gap-1.5">
+                      <Input
+                        placeholder="Name"
+                        value={arg.name ?? ""}
+                        onChange={(e) => updateConstructorArg(arg.id, "name", e.target.value)}
+                        className="h-7 w-1/3 text-xs font-mono"
+                      />
+                      <Select
+                        value={arg.type}
+                        onValueChange={(val) => updateConstructorArg(arg.id, "type", val)}
+                      >
+                        <SelectTrigger className="h-7 w-1/4 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="address">address</SelectItem>
+                          <SelectItem value="symbol">symbol</SelectItem>
+                          <SelectItem value="string">string</SelectItem>
+                          <SelectItem value="i32">i32</SelectItem>
+                          <SelectItem value="u32">u32</SelectItem>
+                          <SelectItem value="i128">i128</SelectItem>
+                          <SelectItem value="u128">u128</SelectItem>
+                          <SelectItem value="bool">bool</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        placeholder="Value"
+                        value={arg.value}
+                        onChange={(e) => updateConstructorArg(arg.id, "value", e.target.value)}
+                        className="h-7 flex-1 text-xs font-mono"
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => removeConstructorArg(arg.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between">
               <Button size="sm" variant="outline" onClick={() => setStep("select")}>
                 <ChevronLeft className="mr-1 h-4 w-4" /> Back
               </Button>
-              <Button size="sm" onClick={() => setStep("confirm")}>
+              <Button size="sm" disabled={!!saltError} onClick={() => setStep("confirm")}>
                 Next <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             </div>
@@ -269,8 +482,20 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Salt</span>
-                <span className="font-mono text-xs">{salt || "(random)"}</span>
+                <span className="font-mono text-xs">{salt.slice(0, 10)}…{salt.slice(-10)}</span>
               </div>
+              {predictedAddress && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Predicted ID</span>
+                  <span className="font-mono text-xs">{predictedAddress.slice(0, 10)}…</span>
+                </div>
+              )}
+              {enableInit && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Initialization</span>
+                  <span className="font-mono text-xs">{initFunctionName || "None"} ({constructorArgs.length} args)</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Deployer</span>
                 <span className="font-mono text-xs">{address?.slice(0, 10)}…</span>
@@ -294,9 +519,22 @@ export function InstantiateWizard({ preselectedHash }: InstantiateWizardProps) {
             <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
             <p className="font-semibold">Contract Instantiated!</p>
             {resultContractId && (
-              <p className="break-all rounded-md border bg-muted/30 p-2 font-mono text-xs">
-                {resultContractId}
-              </p>
+              <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2">
+                <p className="flex-1 break-all font-mono text-xs">
+                  {resultContractId}
+                </p>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => {
+                    copyContractId(resultContractId);
+                    toast.success("Contract ID copied!");
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             )}
             <p className="text-sm text-muted-foreground">
               The contract has been linked to your workspace.
