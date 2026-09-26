@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useEffect, type ChangeEvent } from "react";
+import { Fragment, useState, useEffect, useRef, type ChangeEvent, type DragEvent } from "react";
 import { usePathname } from "next/navigation";
 import NextLink from "next/link";
 import { useWallet } from "@/store/useWallet";
@@ -34,9 +34,14 @@ import {
   Circle,
   RotateCcw,
   AlertCircle,
+  AlertTriangle,
   FlaskConical,
   Eye,
   ExternalLink,
+  Sparkles,
+  Plus,
+  Settings2,
+  Code2,
 } from "lucide-react";
 import { Button } from "@devconsole/ui";
 import {
@@ -48,6 +53,14 @@ import {
 } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
 import { Label } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@devconsole/ui";
 import {
   Table,
   TableBody,
@@ -68,11 +81,22 @@ import {
 } from "@devconsole/ui";
 import {
   createNormalizedContractSpecFromFunctionNames,
-  parseWasmMetadata,
   extractContractIdFromDeployResult,
   fetchMaxWasmSize,
   validateWasmSize,
   DEFAULT_MAX_WASM_SIZE_BYTES,
+  validateWasmBinary,
+  formatWasmFileSize,
+  parseWasmClientSpec,
+  type WasmParsedSpec,
+  generateRandomSaltHex,
+  validateSaltHex,
+  computeContractAddress,
+  buildBundledDeployAndInitTx,
+  convertToScVal,
+  type ArgType,
+  type ContractArg,
+  SOROBAN_WASM_WARN_LIMIT_BYTES,
 } from "@devconsole/soroban-utils";
 import { parseWasmSectionSizes, type WasmSectionSizes } from "@/lib/artifact-introspection";
 import { buildContractExplorerHref, copyContractId } from "@/lib/contract-explorer-link";
@@ -254,6 +278,7 @@ function DeployPipelinePanel() {
 
 export default function WasmRegistryPage() {
   const pathname = usePathname();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { isConnected, address, isSandboxMode } = useWallet();
   const { getActiveNetworkConfig, currentNetwork } = useNetworkStore();
   const { wasms, addWasm, removeWasm, associateContract, addProvenanceNode, advancePipeline, resetPipeline } = useWasmStore();
@@ -265,49 +290,187 @@ export default function WasmRegistryPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [wasmName, setWasmName] = useState("");
   const [deployingHash, setDeployingHash] = useState<string | null>(null);
-  // Issue #1098: optional per-WASM-hash contract alias, applied to the
-  // workspace contract entry on successful deployment.
+  const [deploySuccess, setDeploySuccess] = useState<{ contractId: string; txHash: string | null } | null>(null);
+
+  // Issue #1098: optional per-WASM-hash contract alias
   const [contractAliases, setContractAliases] = useState<Record<string, string>>({});
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [previewFunctions, setPreviewFunctions] = useState<string[]>([]);
+  const [parsedSpec, setParsedSpec] = useState<WasmParsedSpec | null>(null);
   const [wasmStats, setWasmStats] = useState<{ size: number; hash: string; sections: WasmSectionSizes } | null>(null);
-  // Issue #1099: max WASM size for the active network, fetched from its
-  // CONTRACT_MAX_SIZE_BYTES config setting (falls back to a safe default).
   const [maxWasmSize, setMaxWasmSize] = useState<number>(DEFAULT_MAX_WASM_SIZE_BYTES);
 
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selected = e.target.files[0];
+  // Issue #1090: Drag-and-drop state & validation alert
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileValidationError, setFileValidationError] = useState<string | null>(null);
+
+  // Issue #1093: Deterministic salt generator & address predictor
+  const [saltHex, setSaltHex] = useState<string>(() => generateRandomSaltHex());
+  const [saltError, setSaltError] = useState<string | null>(null);
+
+  // Issue #1092: Constructor argument builder & atomic deployment
+  const [enableInit, setEnableInit] = useState(false);
+  const [initFunctionName, setInitFunctionName] = useState("");
+  const [constructorArgs, setConstructorArgs] = useState<ContractArg[]>([]);
+
+  // Calculate predicted contract address whenever deployer, salt, or network changes
+  const predictedAddress = (() => {
+    if (!address || !saltHex) return null;
+    const saltVal = validateSaltHex(saltHex);
+    if (!saltVal.valid) return null;
+    try {
+      const network = getActiveNetworkConfig();
+      return computeContractAddress(address, saltHex, network.networkPassphrase);
+    } catch {
+      return null;
+    }
+  })();
+
+  const processFile = async (selected: File) => {
+    setFileValidationError(null);
+
+    try {
+      const arrayBuffer = await selected.arrayBuffer();
+      const wasmBuffer = Buffer.from(arrayBuffer);
+
+      // Issue #1090: Instant WASM magic header byte validation (\0asm)
+      const binaryCheck = validateWasmBinary(wasmBuffer);
+      if (!binaryCheck.valid) {
+        const errorMsg = binaryCheck.error || "Selected file is not a valid compiled WASM binary.";
+        setFileValidationError(errorMsg);
+        toast.error(errorMsg);
+        setFile(null);
+        setWasmStats(null);
+        setPreviewFunctions([]);
+        setParsedSpec(null);
+        return;
+      }
+
       setFile(selected);
 
-      try {
-        const arrayBuffer = await selected.arrayBuffer();
-        const wasmBuffer = Buffer.from(arrayBuffer);
-        const functions = await parseWasmMetadata(wasmBuffer);
-        const spec = createNormalizedContractSpecFromFunctionNames(
-          functions,
-          "wasm",
-          selected.name,
+      // Issue #1091: Client-side parsing of spec, signatures, and size
+      const specResult = await parseWasmClientSpec(wasmBuffer);
+      setParsedSpec(specResult);
+      setPreviewFunctions(specResult.functions);
+
+      setWasmStats({
+        size: wasmBuffer.length,
+        hash: hash(wasmBuffer).toString("hex"),
+        sections: parseWasmSectionSizes(new Uint8Array(wasmBuffer)),
+      });
+
+      // Issue #1092: Detect constructor/init function
+      if (specResult.hasConstructor && specResult.constructorFunction) {
+        setEnableInit(true);
+        setInitFunctionName(specResult.constructorFunction.name);
+        if (specResult.constructorFunction.inputs.length > 0) {
+          setConstructorArgs(
+            specResult.constructorFunction.inputs.map((inp, idx) => ({
+              id: `arg-${idx}`,
+              name: inp.name,
+              type: (inp.type as ArgType) || "string",
+              value: "",
+            })),
+          );
+        }
+      } else {
+        const potentialInit = specResult.functions.find(
+          (fn) => fn.toLowerCase() === "init" || fn.toLowerCase() === "initialize",
         );
-        setPreviewFunctions(spec.functions.map((entry) => entry.name));
-        
-        setWasmStats({
-          size: wasmBuffer.length,
-          hash: hash(wasmBuffer).toString("hex"),
-          sections: parseWasmSectionSizes(new Uint8Array(wasmBuffer))
-        });
-      } catch {
-        setPreviewFunctions([]);
-        setWasmStats(null);
-        toast.error("Could not parse WASM metadata. You can still install the artifact.");
+        if (potentialInit) {
+          setEnableInit(true);
+          setInitFunctionName(potentialInit);
+        }
       }
 
       if (!wasmName) setWasmName(selected.name.replace(".wasm", ""));
+    } catch (err: any) {
+      console.error("WASM processing error:", err);
+      setFileValidationError("Could not parse WASM metadata. File may be corrupted.");
+      setFile(null);
+      setWasmStats(null);
+      setPreviewFunctions([]);
+      setParsedSpec(null);
+      toast.error("Could not parse WASM file.");
     }
   };
 
-  // Issue #1099: refresh the network's max WASM size whenever the active
-  // network changes, so the size check below is always current.
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      await processFile(e.target.files[0]);
+    }
+  };
+
+  // Issue #1090: Drag and drop handlers
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only reset if left the container target
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFile = e.dataTransfer.files[0];
+      await processFile(droppedFile);
+    }
+  };
+
+  // Issue #1093: Salt change handler
+  const handleSaltChange = (value: string) => {
+    setSaltHex(value);
+    const validation = validateSaltHex(value);
+    setSaltError(validation.valid ? null : (validation.error ?? "Invalid salt"));
+  };
+
+  const handleGenerateSalt = () => {
+    const newSalt = generateRandomSaltHex();
+    setSaltHex(newSalt);
+    setSaltError(null);
+    toast.success("Generated 32-byte cryptographically secure salt.");
+  };
+
+  // Issue #1092: Constructor argument management
+  const addConstructorArg = () => {
+    setConstructorArgs((prev) => [
+      ...prev,
+      {
+        id: `arg-${Date.now()}-${prev.length}`,
+        name: `param_${prev.length + 1}`,
+        type: "string",
+        value: "",
+      },
+    ]);
+  };
+
+  const removeConstructorArg = (id: string) => {
+    setConstructorArgs((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const updateConstructorArg = (id: string, field: keyof ContractArg, value: any) => {
+    setConstructorArgs((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, [field]: value } : a)),
+    );
+  };
+
+  // Refresh network max WASM size
   useEffect(() => {
     let cancelled = false;
     fetchMaxWasmSize(getActiveNetworkConfig().rpcUrl).then((size) => {
@@ -316,14 +479,11 @@ export default function WasmRegistryPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentNetwork]);
 
   const handleInstall = async () => {
     if (!file || !address || !isConnected) return;
 
-    // Issue #1099: block submission client-side when the file exceeds the
-    // network's actual max contract size, instead of only warning.
     if (wasmStats) {
       const sizeCheck = validateWasmSize(wasmStats.size, maxWasmSize);
       if (!sizeCheck.valid) {
@@ -332,7 +492,7 @@ export default function WasmRegistryPage() {
       }
     }
     setIsUploading(true);
-    advancePipeline("install"); // FE-048
+    advancePipeline("install");
 
     try {
       const network = getActiveNetworkConfig();
@@ -349,7 +509,6 @@ export default function WasmRegistryPage() {
         .setTimeout(TimeoutInfinite)
         .build();
 
-      // FE-040: use shared orchestration layer for sign + submit + poll
       const txResult = await orchestrateTx(tx.toXDR(), network);
 
       if (txResult.status !== "success") {
@@ -369,15 +528,17 @@ export default function WasmRegistryPage() {
       });
       attachArtifact(activeWorkspaceId, { kind: "wasm", id: wasmHash });
 
-      // FE-048: advance to instantiate phase
       advancePipeline("instantiate", { wasmHash, txHash: txResult.hash });
 
       toast.success("WASM Uploaded & Saved!");
       setFile(null);
       setWasmName("");
+      setWasmStats(null);
+      setPreviewFunctions([]);
+      setParsedSpec(null);
     } catch (e: any) {
       console.error(e);
-      advancePipeline("error", { error: e.message }); // FE-048
+      advancePipeline("error", { error: e.message });
       toast.error(`Install failed: ${e.message}`);
     } finally {
       setIsUploading(false);
@@ -386,30 +547,51 @@ export default function WasmRegistryPage() {
 
   const handleDeploy = async (wasmHash: string) => {
     if (!address || !isConnected) return;
+
+    // Issue #1093: Validate salt
+    const saltValidation = validateSaltHex(saltHex);
+    if (!saltValidation.valid) {
+      toast.error(saltValidation.error ?? "Invalid salt parameter");
+      return;
+    }
+
     setDeployingHash(wasmHash);
 
     try {
       const network = getActiveNetworkConfig();
       const server = new SorobanServer(network.rpcUrl);
       const sourceAccount = await server.getAccount(address);
-
-      const saltBuffer = Buffer.alloc(32).fill(Math.floor(Math.random() * 255));
-      const saltHex = saltBuffer.toString("hex");
       const wasmFileName = wasms.find((w) => w.hash === wasmHash)?.name ?? wasmHash;
 
-      const tx = new TransactionBuilder(sourceAccount, {
-        fee: "10000",
-        networkPassphrase: network.networkPassphrase,
-      })
-        .addOperation(
-          Operation.createCustomContract({
-            wasmHash: Buffer.from(wasmHash, "hex"),
-            address: new Address(address),
-            salt: saltBuffer,
-          }),
-        )
-        .setTimeout(TimeoutInfinite)
-        .build();
+      let tx;
+      // Issue #1092: Bundle atomic deployment and initialization invocation if configured
+      if (enableInit && initFunctionName.trim()) {
+        const initArgs = constructorArgs.map((arg) => convertToScVal(arg.type, arg.value));
+        tx = buildBundledDeployAndInitTx({
+          sourceAccount,
+          networkPassphrase: network.networkPassphrase,
+          wasmHash,
+          deployerAddress: address,
+          salt: saltHex,
+          initFunction: initFunctionName.trim(),
+          initArgs,
+        });
+      } else {
+        const saltBuffer = Buffer.from(saltHex, "hex");
+        tx = new TransactionBuilder(sourceAccount, {
+          fee: "10000",
+          networkPassphrase: network.networkPassphrase,
+        })
+          .addOperation(
+            Operation.createCustomContract({
+              wasmHash: Buffer.from(wasmHash, "hex"),
+              address: new Address(address),
+              salt: saltBuffer,
+            }),
+          )
+          .setTimeout(TimeoutInfinite)
+          .build();
+      }
 
       const txResult = await orchestrateTx(tx.toXDR(), network, {}, (status) => {
         if (status === "awaiting-signature") {
@@ -430,8 +612,8 @@ export default function WasmRegistryPage() {
       const realContractId = txResult.resultMetaXdr
         ? extractContractIdFromDeployResult(txResult.resultMetaXdr)
         : null;
-      const contractId = realContractId ?? txResult.hash ?? wasmHash;
-          const relationship = realContractId ? "confirmed" : "inferred";
+      const contractId = realContractId ?? predictedAddress ?? txResult.hash ?? wasmHash;
+      const relationship = realContractId ? "confirmed" : "inferred";
 
       associateContract(wasmHash, contractId, relationship);
       attachArtifact(activeWorkspaceId, {
@@ -445,9 +627,7 @@ export default function WasmRegistryPage() {
       advancePipeline("publish", { contractId, txHash: txResult.hash ?? null });
       setTimeout(() => advancePipeline("done", { contractId }), 800);
       toast.success("Contract instantiated successfully!");
-      // Issue #1094: show the success card with a copy widget + Explorer link.
       setDeploySuccess({ contractId, txHash: txResult.hash ?? null });
-      // Issue #1096: record this deployment in the persisted history log.
       logDeployment({
         wasmFileName,
         wasmHash,
@@ -459,12 +639,12 @@ export default function WasmRegistryPage() {
       });
     } catch (e: any) {
       console.error(e);
-      advancePipeline("error", { error: e.message }); // FE-048
+      advancePipeline("error", { error: e.message });
       toast.error(`Deploy failed: ${e.message}`);
       logDeployment({
         wasmFileName: wasms.find((w) => w.hash === wasmHash)?.name ?? wasmHash,
         wasmHash,
-        salt: null,
+        salt: saltHex,
         contractId: null,
         txHash: null,
         status: "failed",
@@ -476,7 +656,6 @@ export default function WasmRegistryPage() {
     }
   };
 
-  // SC-004: called after successful source-registry registration
   const handleSourceVerified = (wasmHash: string, contractId: string) => {
     const network = getActiveNetworkConfig();
     addProvenanceNode({
@@ -496,7 +675,7 @@ export default function WasmRegistryPage() {
 
   return (
     <div className="container mx-auto space-y-8 p-6">
-      {/* Issue #1094: deployment success card with copy + Explorer link */}
+      {/* Deployment Success Modal */}
       <Dialog open={!!deploySuccess} onOpenChange={(open) => !open && setDeploySuccess(null)}>
         <DialogContent>
           <DialogHeader>
@@ -558,13 +737,9 @@ export default function WasmRegistryPage() {
         <InstantiateWizard />
       </div>
 
-      {/* FE-063: Fallback state indicator for fixture manifest */}
       <FixtureFallbackIndicator />
-
-      {/* FE-048: Guided deploy pipeline status */}
       <DeployPipelinePanel />
 
-      {/* FE-064: Action context banners */}
       {pathname?.startsWith("/share/") && (
         <div className="flex items-center gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm text-blue-700">
           <Eye className="h-4 w-4" />
@@ -601,68 +776,174 @@ export default function WasmRegistryPage() {
       )}
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        {/* Upload & Configuration Card */}
         <Card className="h-fit lg:col-span-1">
           <CardHeader>
             <CardTitle>Install New Code</CardTitle>
-            <CardDescription>Upload a .wasm file to the ledger.</CardDescription>
+            <CardDescription>Upload and validate a .wasm smart contract binary.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid w-full items-center gap-1.5">
-              <Label>WASM File</Label>
-              <Input type="file" accept=".wasm" onChange={handleFileChange} />
+            {/* Issue #1090: Drag-and-Drop Zone with Visual Drag State & Header Validation */}
+            <div
+              data-testid="wasm-dropzone"
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
+                isDragging
+                  ? "border-primary bg-primary/10 ring-4 ring-primary/20 scale-[1.01]"
+                  : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/40"
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".wasm"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <UploadCloud
+                className={`h-10 w-10 mb-2 transition-transform duration-200 ${
+                  isDragging ? "scale-110 text-primary animate-bounce" : "text-muted-foreground"
+                }`}
+              />
+              <p className="text-sm font-medium">
+                {isDragging ? "Drop WASM binary here" : "Drag & drop WASM file here, or click to browse"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Accepts compiled WebAssembly (*.wasm) with \0asm header
+              </p>
             </div>
 
-            {wasmStats && (
-              <div className="mt-2 space-y-2 rounded-md border bg-muted/30 p-3 text-xs">
+            {/* Issue #1090: Validation Error Alert */}
+            {fileValidationError && (
+              <div
+                data-testid="wasm-validation-error"
+                className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="space-y-0.5">
+                  <p className="font-semibold">Invalid WebAssembly Binary</p>
+                  <p>{fileValidationError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Issue #1091: WASM File Size, Exported Functions, and Limits Preview */}
+            {wasmStats && file && (
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-xs">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="font-medium text-muted-foreground">File Name</span>
+                  <span className="truncate max-w-[160px] font-mono">{file.name}</span>
+                </div>
+
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Size</span>
-                  <span className={wasmStats.size > maxWasmSize ? "font-bold text-destructive" : "font-medium"}>
-                    {(wasmStats.size / 1024).toFixed(2)} KB
+                  <span className="text-muted-foreground">File Size</span>
+                  <span
+                    className={
+                      wasmStats.size > maxWasmSize
+                        ? "font-bold text-destructive"
+                        : wasmStats.size > SOROBAN_WASM_WARN_LIMIT_BYTES
+                          ? "font-semibold text-amber-500"
+                          : "font-medium"
+                    }
+                  >
+                    {formatWasmFileSize(wasmStats.size)}
                   </span>
                 </div>
-                {/* Issue #1099: real network max (fetched via RPC), not a hardcoded guess */}
-                {wasmStats.size > maxWasmSize && (
-                  <div className="text-destructive">
-                    <AlertCircle className="mr-1 inline h-3 w-3" />
-                    {validateWasmSize(wasmStats.size, maxWasmSize).message}
+
+                {/* Issue #1091: 64 KB warning threshold */}
+                {wasmStats.size > SOROBAN_WASM_WARN_LIMIT_BYTES && wasmStats.size <= maxWasmSize && (
+                  <div className="flex items-start gap-1.5 rounded bg-amber-500/10 p-2 text-[11px] text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      WASM size ({formatWasmFileSize(wasmStats.size)}) exceeds the recommended 64 KB limit.
+                    </span>
                   </div>
                 )}
+
+                {/* Hard network maximum error */}
+                {wasmStats.size > maxWasmSize && (
+                  <div className="flex items-start gap-1.5 rounded bg-destructive/10 p-2 text-[11px] text-destructive">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{validateWasmSize(wasmStats.size, maxWasmSize).message}</span>
+                  </div>
+                )}
+
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">SHA-256</span>
                   <span className="font-mono text-[10px] text-muted-foreground">
-                    {wasmStats.hash.slice(0, 16)}...{wasmStats.hash.slice(-16)}
+                    {wasmStats.hash.slice(0, 10)}...{wasmStats.hash.slice(-10)}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Functions</span>
-                  <span className="font-medium">{previewFunctions.length}</span>
+
+                {/* Exported Functions Preview */}
+                <div className="space-y-1 border-t pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-muted-foreground">Exported Functions</span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {previewFunctions.length}
+                    </Badge>
+                  </div>
+                  <div className="max-h-28 overflow-y-auto space-y-1 pt-1">
+                    {parsedSpec && parsedSpec.parsedFunctions.length > 0 ? (
+                      parsedSpec.parsedFunctions.map((fn) => (
+                        <div
+                          key={fn.name}
+                          className="flex items-center justify-between rounded bg-background/60 px-2 py-1 font-mono text-[11px]"
+                        >
+                          <span className={fn.isConstructor ? "text-primary font-semibold" : ""}>
+                            {fn.signature}
+                          </span>
+                          {fn.isConstructor && (
+                            <Badge variant="outline" className="text-[9px] text-primary">
+                              constructor
+                            </Badge>
+                          )}
+                        </div>
+                      ))
+                    ) : previewFunctions.length > 0 ? (
+                      previewFunctions.map((fn) => (
+                        <Badge key={fn} variant="secondary" className="text-[10px] mr-1 mb-1">
+                          {fn}()
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground italic">No functions found</span>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2 space-y-1 border-t pt-2">
-                  <span className="font-semibold text-muted-foreground">Sections</span>
+
+                {/* Section breakdown */}
+                <div className="space-y-1 border-t pt-2">
+                  <span className="font-semibold text-muted-foreground">WASM Sections</span>
                   <div className="flex justify-between">
-                    <span className="ml-2 text-muted-foreground">Code</span>
-                    <span>{(wasmStats.sections.code / 1024).toFixed(2)} KB</span>
+                    <span className="text-muted-foreground">Code</span>
+                    <span>{formatWasmFileSize(wasmStats.sections.code)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="ml-2 text-muted-foreground">Data</span>
-                    <span>{(wasmStats.sections.data / 1024).toFixed(2)} KB</span>
+                    <span className="text-muted-foreground">Data</span>
+                    <span>{formatWasmFileSize(wasmStats.sections.data)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="ml-2 text-muted-foreground">Custom</span>
-                    <span>{(wasmStats.sections.custom / 1024).toFixed(2)} KB</span>
+                    <span className="text-muted-foreground">Custom</span>
+                    <span>{formatWasmFileSize(wasmStats.sections.custom)}</span>
                   </div>
                 </div>
+
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mt-2 w-full text-muted-foreground"
+                  className="mt-1 w-full text-muted-foreground"
                   onClick={() => {
                     setFile(null);
                     setWasmStats(null);
                     setPreviewFunctions([]);
-                    // Reset file input by re-rendering or we can just leave it as is 
-                    // since changing it will trigger change event, but we can't easily clear the DOM input.
-                    // A better way is using a ref, but ignoring for now.
+                    setParsedSpec(null);
+                    setFileValidationError(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
                   }}
                 >
                   <RotateCcw className="mr-1 h-3 w-3" /> Clear Selection
@@ -671,7 +952,7 @@ export default function WasmRegistryPage() {
             )}
 
             <div className="grid w-full items-center gap-1.5">
-              <Label>Name (Optional)</Label>
+              <Label>WASM Artifact Name (Optional)</Label>
               <Input
                 placeholder="e.g. Token v2"
                 value={wasmName}
@@ -696,161 +977,332 @@ export default function WasmRegistryPage() {
           </CardContent>
         </Card>
 
+        {/* Library and Deployment Parameters Card */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>My WASM Library</CardTitle>
+            <CardTitle>Deployment &amp; Library</CardTitle>
+            <CardDescription>
+              Configure deterministic parameters, constructor arguments, and deploy contract instances.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Hash</TableHead>
-                  <TableHead>Network</TableHead>
-                  <TableHead>Deployed</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {wasms.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                      No WASM code uploaded yet.
-                    </TableCell>
-                  </TableRow>
+          <CardContent className="space-y-6">
+            {/* Issue #1093: Salt Parameter Generator & Address Predictor */}
+            <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Settings2 className="h-4 w-4 text-primary" />
+                  <Label className="text-xs font-semibold uppercase tracking-wider">
+                    Deterministic Deployment Salt
+                  </Label>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerateSalt}
+                  className="h-7 text-xs"
+                >
+                  <Sparkles className="mr-1.5 h-3 w-3 text-amber-500" />
+                  Generate Random Salt
+                </Button>
+              </div>
+
+              <div className="space-y-1">
+                <Input
+                  data-testid="salt-input"
+                  className="font-mono text-xs"
+                  placeholder="64-character hex string (32 bytes)"
+                  value={saltHex}
+                  maxLength={64}
+                  onChange={(e) => handleSaltChange(e.target.value)}
+                />
+                {saltError ? (
+                  <p className="text-[11px] text-destructive">{saltError}</p>
                 ) : (
-                  wasms.map((entry) => (
-                    <Fragment key={entry.hash}>
-                      <TableRow
-                        className="cursor-pointer"
-                        onClick={() =>
-                          setExpandedHash(expandedHash === entry.hash ? null : entry.hash)
-                        }
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <FileCode className="h-4 w-4 text-blue-500" />
-                            {entry.name}
-                            {entry.parseError && (
-                              <Badge variant="destructive" className="text-[10px]">
-                                parse error
-                              </Badge>
-                            )}
-                            <VerificationBadge entry={entry} />
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {entry.hash.slice(0, 12)}...{entry.hash.slice(-12)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px]">
-                            {entry.network}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {entry.deployedContractId ? (
-                            <span className="font-mono">
-                              {entry.deployedContractId.slice(0, 10)}…
-                            </span>
-                          ) : (
-                            <span className="italic">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <ActionGuard action="deploy">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeploy(entry.hash);
-                                }}
-                                disabled={!!deployingHash}
-                              >
-                                {deployingHash === entry.hash ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Play className="mr-1 h-3 w-3" />
-                                )}
-                                Deploy
-                              </Button>
-                            </ActionGuard>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(entry.hash);
-                              }}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="text-red-500 hover:text-red-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeWasm(entry.hash);
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {expandedHash === entry.hash && (
-                        <TableRow>
-                          <TableCell colSpan={5} className="bg-muted/20 pb-3 pt-0">
-                            {!entry.deployedContractId && (
-                              <div className="space-y-1 py-2" onClick={(e) => e.stopPropagation()}>
-                                <Label htmlFor={`alias-${entry.hash}`} className="text-[10px] font-bold uppercase">
-                                  Contract Alias Name (Optional)
-                                </Label>
-                                <Input
-                                  id={`alias-${entry.hash}`}
-                                  placeholder="e.g. My Custom Token"
-                                  className="max-w-xs"
-                                  value={contractAliases[entry.hash] ?? ""}
-                                  onChange={(e) =>
-                                    setContractAliases((prev) => ({ ...prev, [entry.hash]: e.target.value }))
-                                  }
-                                />
-                              </div>
-                            )}
-                            <ProvenancePanel nodes={entry.provenance ?? []} />
-                            <VerifySourcePanel
-                              entry={entry}
-                              onVerified={(contractId) =>
-                                handleSourceVerified(entry.hash, contractId)
-                              }
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </Fragment>
-                  ))
+                  <p className="text-[11px] text-muted-foreground">
+                    32-byte hexadecimal salt ({saltHex.length}/64 characters).
+                  </p>
                 )}
-              </TableBody>
-            </Table>
-            {file && !wasmStats && (
-              <div className="space-y-2 rounded-md border bg-muted/50 p-3">
-                <Label className="text-[10px] font-bold uppercase">WASM Preview</Label>
-                <div className="flex flex-wrap gap-1">
-                  {previewFunctions.map((fn) => (
-                    <Badge key={fn} variant="secondary" className="text-[10px]">
-                      {fn}()
-                    </Badge>
-                  ))}
+              </div>
+
+              {/* Predicted Contract Address */}
+              {predictedAddress && (
+                <div className="flex items-center justify-between rounded-md border bg-background p-2.5">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                      Predicted Contract ID
+                    </span>
+                    <p className="font-mono text-xs font-medium text-foreground">
+                      {predictedAddress}
+                    </p>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      copyContractId(predictedAddress);
+                      toast.success("Predicted contract ID copied!");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Issue #1092: Constructor / Initialization Argument Builder */}
+            <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4 text-primary" />
+                  <div>
+                    <Label className="text-xs font-semibold uppercase tracking-wider">
+                      Constructor / Initialization Call
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Atomic contract deployment &amp; initialization invocation
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="enable-init" className="text-xs">
+                    {enableInit ? "Enabled" : "Disabled"}
+                  </Label>
+                  <Switch
+                    id="enable-init"
+                    checked={enableInit}
+                    onCheckedChange={setEnableInit}
+                  />
                 </div>
               </div>
-            )}
+
+              {enableInit && (
+                <div className="space-y-3 border-t pt-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Init Function Name</Label>
+                      <Input
+                        placeholder="e.g. __constructor, init, initialize"
+                        value={initFunctionName}
+                        onChange={(e) => setInitFunctionName(e.target.value)}
+                        className="h-8 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">Constructor Arguments</Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={addConstructorArg}
+                      >
+                        <Plus className="mr-1 h-3 w-3" /> Add Argument
+                      </Button>
+                    </div>
+
+                    {constructorArgs.length === 0 ? (
+                      <p className="rounded border border-dashed p-3 text-center text-xs text-muted-foreground">
+                        No arguments configured for initialization. Click &quot;Add Argument&quot; if the function requires parameters.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {constructorArgs.map((arg) => (
+                          <div key={arg.id} className="flex items-center gap-2">
+                            <Input
+                              placeholder="Name"
+                              value={arg.name ?? ""}
+                              onChange={(e) => updateConstructorArg(arg.id, "name", e.target.value)}
+                              className="h-8 w-1/4 text-xs font-mono"
+                            />
+                            <Select
+                              value={arg.type}
+                              onValueChange={(val) => updateConstructorArg(arg.id, "type", val)}
+                            >
+                              <SelectTrigger className="h-8 w-1/4 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="address">address</SelectItem>
+                                <SelectItem value="symbol">symbol</SelectItem>
+                                <SelectItem value="string">string</SelectItem>
+                                <SelectItem value="i32">i32</SelectItem>
+                                <SelectItem value="u32">u32</SelectItem>
+                                <SelectItem value="i128">i128</SelectItem>
+                                <SelectItem value="u128">u128</SelectItem>
+                                <SelectItem value="bool">bool</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              placeholder="Value"
+                              value={arg.value}
+                              onChange={(e) => updateConstructorArg(arg.id, "value", e.target.value)}
+                              className="h-8 flex-1 text-xs font-mono"
+                            />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => removeConstructorArg(arg.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* WASM Library Table */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wider">
+                Installed WASM Binaries
+              </Label>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Hash</TableHead>
+                    <TableHead>Network</TableHead>
+                    <TableHead>Deployed</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {wasms.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                        No WASM code uploaded yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    wasms.map((entry) => (
+                      <Fragment key={entry.hash}>
+                        <TableRow
+                          className="cursor-pointer"
+                          onClick={() =>
+                            setExpandedHash(expandedHash === entry.hash ? null : entry.hash)
+                          }
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <FileCode className="h-4 w-4 text-blue-500" />
+                              {entry.name}
+                              {entry.parseError && (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  parse error
+                                </Badge>
+                              )}
+                              <VerificationBadge entry={entry} />
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground">
+                            {entry.hash.slice(0, 12)}...{entry.hash.slice(-12)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-[10px]">
+                              {entry.network}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {entry.deployedContractId ? (
+                              <span className="font-mono">
+                                {entry.deployedContractId.slice(0, 10)}…
+                              </span>
+                            ) : (
+                              <span className="italic">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <ActionGuard action="deploy">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeploy(entry.hash);
+                                  }}
+                                  disabled={!!deployingHash || !!saltError}
+                                >
+                                  {deployingHash === entry.hash ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Play className="mr-1 h-3 w-3" />
+                                  )}
+                                  Deploy
+                                </Button>
+                              </ActionGuard>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(entry.hash);
+                                  toast.success("WASM hash copied");
+                                }}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-red-500 hover:text-red-600"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeWasm(entry.hash);
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {expandedHash === entry.hash && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="bg-muted/20 pb-3 pt-0">
+                              {!entry.deployedContractId && (
+                                <div className="space-y-1 py-2" onClick={(e) => e.stopPropagation()}>
+                                  <Label htmlFor={`alias-${entry.hash}`} className="text-[10px] font-bold uppercase">
+                                    Contract Alias Name (Optional)
+                                  </Label>
+                                  <Input
+                                    id={`alias-${entry.hash}`}
+                                    placeholder="e.g. My Custom Token"
+                                    className="max-w-xs"
+                                    value={contractAliases[entry.hash] ?? ""}
+                                    onChange={(e) =>
+                                      setContractAliases((prev) => ({ ...prev, [entry.hash]: e.target.value }))
+                                    }
+                                  />
+                                </div>
+                              )}
+                              <ProvenancePanel nodes={entry.provenance ?? []} />
+                              <VerifySourcePanel
+                                entry={entry}
+                                onVerified={(contractId) =>
+                                  handleSourceVerified(entry.hash, contractId)
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Issue #1096: deployment history log for this browser session's workspace */}
+      {/* Deployment Log */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
