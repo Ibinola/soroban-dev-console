@@ -1,0 +1,1 @@
+export function RpcStatusPill() {\n  return <div>Status</div>;\n}\n

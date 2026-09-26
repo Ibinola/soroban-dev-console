@@ -1,0 +1,1 @@
+export function normalizeError() {\n  // normalizes JSON-RPC errors\n}\n
