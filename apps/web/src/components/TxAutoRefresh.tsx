@@ -1,0 +1,1 @@
+export function TxAutoRefresh() {\n  // pending tx hash lookup\n}\n
