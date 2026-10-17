@@ -24,6 +24,8 @@ import {
 import { getCorrelationId } from "../../lib/request-context.js";
 import { validateJsonDepth } from "../../lib/json-validation.js";
 import { createLogger } from "../../lib/logger.js";
+import { rpcCircuitBreakers } from "../../lib/circuit-breaker.js";
+import { RequestCoalescer, isCoalescible, rpcCoalescer } from "../../lib/request-coalescer.js";
 
 // Issue #753: Structured logger for RPC upstream call tracing
 const log = createLogger("RpcService");
@@ -178,6 +180,18 @@ export class RpcService {
       });
     }
 
+    // #1298: coalesce concurrent identical read-only calls into one upstream request.
+    if (isSingle && isCoalescible(method)) {
+      const key = RequestCoalescer.buildKey(
+        parsedNetwork.data,
+        method,
+        (parsedPayload.data as { params?: unknown }).params,
+      );
+      return rpcCoalescer.run(key, () =>
+        this.fetchWithFailover(endpoints, parsedNetwork.data, method, serializedPayload),
+      );
+    }
+
     return this.fetchWithFailover(endpoints, parsedNetwork.data, method, serializedPayload);
   }
 
@@ -190,13 +204,22 @@ export class RpcService {
   ): Promise<ProxiedRpcResponse> {
     let lastError: unknown;
 
+    let skippedOpen = 0;
+
     for (const url of endpoints) {
+      // #1300: an open circuit fast-fails without an upstream request.
+      if (!rpcCircuitBreakers.canRequest(url)) {
+        skippedOpen++;
+        continue;
+      }
       try {
         const result = await this.fetchUpstream(url, serializedPayload, network, method);
         this.failover.recordSuccess(network, url);
+        rpcCircuitBreakers.recordSuccess(url);
         return result;
       } catch (err) {
         this.failover.recordFailure(network, url);
+        rpcCircuitBreakers.recordFailure(url);
         lastError = err;
         // Continue to next endpoint unless it's a client error (4xx)
         if (
@@ -206,6 +229,12 @@ export class RpcService {
           throw err;
         }
       }
+    }
+
+    if (!lastError && skippedOpen > 0) {
+      throw new ServiceUnavailableException(
+        "RPC circuit open: upstream endpoint is failing, retry shortly"
+      );
     }
 
     throw lastError ?? new BadGatewayException("All upstream RPC endpoints failed");

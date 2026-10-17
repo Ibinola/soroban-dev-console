@@ -5,6 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import type { NextFunction, Request, Response } from "express";
 import { AppModule } from "./app.module.js";
 import { validateEnv } from "./lib/validate-env.js";
+import { setupSwagger } from "./lib/swagger.js";
 import { ApiErrorFilter } from "./lib/api-error.filter.js";
 import { ApiResponseInterceptor } from "./lib/api-response.interceptor.js";
 import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
@@ -110,6 +111,9 @@ async function bootstrap() {
       forbidUnknownValues: false
     })
   );
+
+  // #1299: OpenAPI docs at /api/docs (disabled in production unless SWAGGER_ENABLED=true).
+  setupSwagger(app);
 
   const port = Number(process.env.PORT ?? DEFAULT_API_PORT);
   await app.listen(port);
