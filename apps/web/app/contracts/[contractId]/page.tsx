@@ -19,6 +19,7 @@ import { ContractCallForm } from "@/components/contract-call-form";
 import { ContractCardSkeleton } from "@/components/contract-card-skeleton";
 import { ContractEvents } from "@/components/contract-events";
 import { ContractStorage } from "@/components/contract-storage";
+import { FavoriteContractButton } from "@/components/favorite-contract-button";
 import { ContractUpgradeModal } from "@/components/contract-upgrade-modal";
 import { TokenDashboard } from "@/components/token-dashboard";
 import { SourceVerificationFlow } from "@/components/source-verification-flow";
@@ -221,6 +222,7 @@ export default function ContractDetailPage() {
           >
             <LinkIcon className="mr-1 h-4 w-4" /> Share Link
           </Button>
+          <FavoriteContractButton contractId={contractId} />
           <ContractUpgradeModal contractId={contractId} />
           <Button variant="outline" asChild>
             <a
