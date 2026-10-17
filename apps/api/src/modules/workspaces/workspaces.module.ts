@@ -3,11 +3,12 @@ import { PrismaService } from "../../lib/prisma.service.js";
 import { DomainEventBus } from "../../lib/domain-event-bus.js";
 import { AuditService } from "../../lib/audit.service.js";
 import { WorkspacesController } from "./workspaces.controller.js";
+import { AnalyticsController } from "./analytics.controller.js";
 import { WorkspacesService } from "./workspaces.service.js";
 import { WorkspacesRepository } from "./workspaces.repository.js";
 
 @Module({
-  controllers: [WorkspacesController],
+  controllers: [WorkspacesController, AnalyticsController],
   providers: [WorkspacesService, WorkspacesRepository, PrismaService, DomainEventBus, AuditService],
   exports: [WorkspacesService, WorkspacesRepository, DomainEventBus, AuditService],
 })

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { safeMerge } from "./safe-merge";
 export interface Contract {
   id: string;
   name: string;
@@ -41,6 +42,7 @@ export const useContractStore = create<ContractState>()(
     }),
     {
       name: "soroban-contracts-storage", // unique name for localStorage key
+      merge: safeMerge,
     },
   ),
 );

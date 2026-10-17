@@ -16,13 +16,16 @@ import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 import { SharesService, CreateShareDto, ForkShareDto, ListSharesDto } from "./shares.service.js";
 import { ShareResolveRateLimitGuard } from "./share-resolve-rate-limit.guard.js";
 
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 type OwnerKeyRequest = Request & { ownerKey: string };
 
+@ApiTags("shares")
 @Controller("shares")
 export class SharesController {
   constructor(private readonly sharesService: SharesService) {}
 
   /** POST /shares — create a share link (requires ownership of the workspace) */
+  @ApiOperation({ summary: "Create" })
   @Post()
   @UseGuards(OwnerKeyGuard)
   create(@Body() dto: CreateShareDto, @Req() req: Request) {
@@ -30,6 +33,7 @@ export class SharesController {
   }
 
   /** GET /shares/:token — public read-only resolve, returns snapshot data only */
+  @ApiOperation({ summary: "Resolve" })
   @Get(":token")
   @UseGuards(ShareResolveRateLimitGuard)
   resolve(@Param("token") token: string, @Req() req: Request) {
@@ -39,6 +43,7 @@ export class SharesController {
   }
 
   /** DELETE /shares/:token — revoke (requires ownership of the workspace) */
+  @ApiOperation({ summary: "Revoke" })
   @Delete(":token")
   @HttpCode(200)
   @UseGuards(OwnerKeyGuard)
@@ -47,6 +52,7 @@ export class SharesController {
   }
 
   /** GET /shares/workspace/:workspaceId — list shares (requires ownership) */
+  @ApiOperation({ summary: "List for workspace" })
   @Get("workspace/:workspaceId")
   @UseGuards(OwnerKeyGuard)
   listForWorkspace(
@@ -62,6 +68,7 @@ export class SharesController {
   }
 
   /** GET /shares/:token/stats — view count and recent access logs (owner only) */
+  @ApiOperation({ summary: "Stats" })
   @Get(":token/stats")
   @UseGuards(OwnerKeyGuard)
   stats(@Param("token") token: string, @Req() req: Request) {
@@ -69,6 +76,7 @@ export class SharesController {
   }
 
   /** POST /shares/:token/fork — fork share snapshot into a new workspace (owner only) */
+  @ApiOperation({ summary: "Fork" })
   @Post(":token/fork")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(OwnerKeyGuard)
@@ -81,6 +89,7 @@ export class SharesController {
   }
 
   /** DELETE /shares/cleanup — purge expired and revoked share records */
+  @ApiOperation({ summary: "Cleanup" })
   @Delete("cleanup")
   @HttpCode(200)
   cleanup() {
