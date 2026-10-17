@@ -36,6 +36,9 @@ import { toast } from "sonner";
 import { computeSpecDiff, type DiffStatus } from "@/lib/spec-diff";
 import type { NormalizedContractSpec } from "@devconsole/soroban-utils";
 import { useAbiStore } from "@/store/useAbiStore";
+import { useDeploymentLogStore } from "@/store/useDeploymentLogStore";
+import { findRollbackTarget } from "@/lib/deployment-rollback";
+import { RollbackConfirmDialog } from "@/components/rollback-confirm-dialog";
 
 interface ContractUpgradeModalProps {
   contractId: string;
@@ -64,6 +67,8 @@ export function ContractUpgradeModal({
   const { isConnected, address } = useWallet();
   const { getActiveNetworkConfig } = useNetworkStore();
   const { specs } = useAbiStore();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const recordSnapshot = useContractVersionStore((s) => s.recordSnapshot);
 
   const [isOpen, setIsOpen] = useState(false);
   const [funcName, setFuncName] = useState("upgrade");
@@ -78,6 +83,12 @@ export function ContractUpgradeModal({
     cpu: string;
   } | null>(null);
   const [breakingConfirmed, setBreakingConfirmed] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const deploymentEntries = useDeploymentLogStore((s) => s.entries);
+  const rollbackTarget = useMemo(
+    () => findRollbackTarget(deploymentEntries, contractId),
+    [deploymentEntries, contractId],
+  );
 
   const currentSpec: NormalizedContractSpec | undefined = specs[contractId];
 
@@ -185,6 +196,16 @@ export function ContractUpgradeModal({
       if (res.status !== "PENDING")
         throw new Error(`Submission failed: ${res.status}`);
 
+      // #1292: keep the pre-upgrade ABI so versions can be browsed and compared later.
+      if (currentSpec) {
+        recordSnapshot({
+          workspaceId: activeWorkspaceId,
+          contractId,
+          spec: currentSpec,
+          upgradedToWasmHash: wasmHash,
+        });
+      }
+
       toast.success("Upgrade transaction sent!");
       setIsOpen(false);
       resetState();
@@ -242,6 +263,30 @@ export function ContractUpgradeModal({
               }}
               className="font-mono text-xs"
             />
+            {rollbackTarget && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setRollbackOpen(true)}
+              >
+                Roll back to previous version
+              </Button>
+            )}
+          </div>
+          <RollbackConfirmDialog
+            target={rollbackTarget}
+            open={rollbackOpen}
+            onOpenChange={setRollbackOpen}
+            onConfirm={(t) => {
+              setWasmHash(t.previous.wasmHash);
+              resetState();
+            }}
+          />
+
+          {/* #1292: recorded ABI versions */}
+          <div className="rounded-md border p-3">
+            <VersionHistoryPanel contractId={contractId} currentSpec={currentSpec} />
           </div>
 
           {/* Upgrade Function Name */}

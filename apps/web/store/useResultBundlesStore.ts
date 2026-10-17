@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { safeMerge } from "./safe-merge";
 export type ResultBundleKind = "single-call" | "batch" | "deploy";
 
 export interface ResultBundle {
@@ -45,6 +46,6 @@ export const useResultBundlesStore = create<ResultBundlesState>()(
 
       getRecentBundles: (limit = 20) => get().bundles.slice(0, limit),
     }),
-    { name: "soroban-result-bundles" },
+    { name: "soroban-result-bundles", merge: safeMerge },
   ),
 );

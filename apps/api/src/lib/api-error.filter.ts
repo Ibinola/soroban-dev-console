@@ -25,6 +25,7 @@ export class ApiErrorFilter implements ExceptionFilter {
       status = exception.getStatus();
       const res = exception.getResponse();
       
+      code = this.mapStatusToCode(status);
       if (typeof res === "string") {
         message = res;
       } else if (typeof res === "object" && res !== null) {
@@ -79,6 +80,18 @@ export class ApiErrorFilter implements ExceptionFilter {
         return "CONFLICT";
       case HttpStatus.UNPROCESSABLE_ENTITY:
         return "VALIDATION_ERROR";
+      case HttpStatus.METHOD_NOT_ALLOWED:
+        return "METHOD_NOT_ALLOWED";
+      case HttpStatus.PAYLOAD_TOO_LARGE:
+        return "PAYLOAD_TOO_LARGE";
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return "TOO_MANY_REQUESTS";
+      case HttpStatus.BAD_GATEWAY:
+        return "BAD_GATEWAY";
+      case HttpStatus.SERVICE_UNAVAILABLE:
+        return "SERVICE_UNAVAILABLE";
+      case HttpStatus.GATEWAY_TIMEOUT:
+        return "GATEWAY_TIMEOUT";
       default:
         return "INTERNAL_SERVER_ERROR";
     }

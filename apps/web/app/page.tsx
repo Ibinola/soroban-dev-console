@@ -13,7 +13,9 @@ import Link from "next/link";
 import { WORKSPACE_TEMPLATES } from "@/lib/fixture-manifest";
 import { WorkspaceTemplateCard } from "@/components/workspace-template-card";
 
-export default function Home() {
+import { getTranslations } from "@/i18n/server";
+export default async function Home() {
+  const t = await getTranslations();
   return (
     <main className="min-h-screen bg-background">
       {/* Top Hero / Welcome Section */}
@@ -21,11 +23,10 @@ export default function Home() {
         <div className="container mx-auto p-6 py-10">
           <div className="flex flex-col gap-4">
             <h1 className="text-4xl font-bold tracking-tight">
-              Soroban DevConsole
+              {t("common.appName")}
             </h1>
             <p className="max-w-2xl text-xl text-muted-foreground">
-              Your command center for building, testing, and monitoring Soroban
-              smart contracts.
+              {t("home.tagline")}
             </p>
             <div className="flex gap-3 pt-4">
               <div className="md:hidden">
@@ -39,7 +40,7 @@ export default function Home() {
                   rel="noopener noreferrer"
                 >
                   <BookOpen className="h-4 w-4" />
-                  Documentation
+                  {t("home.documentation")}
                 </a>
               </Button>
             </div>
@@ -54,16 +55,16 @@ export default function Home() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-primary" />
-                Account Overview
+                {t("home.account.title")}
               </CardTitle>
               <CardDescription>
-                Connect your wallet to view balances and asset trustlines.
+                {t("home.account.description")}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex min-h-[150px] items-center justify-center border-t bg-muted/10">
               <div className="space-y-2 text-center">
                 <p className="text-sm text-muted-foreground">
-                  No wallet connected
+                  {t("home.account.noWallet")}
                 </p>
                 <ConnectWalletButton />
               </div>
@@ -76,11 +77,11 @@ export default function Home() {
               <Card className="group cursor-pointer transition-colors hover:bg-muted/50">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-lg">
-                    Contract Explorer
+                    {t("home.links.contractExplorer.title")}
                     <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
                   </CardTitle>
                   <CardDescription>
-                    Interact with deployed contracts
+                    {t("home.links.contractExplorer.description")}
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -90,10 +91,10 @@ export default function Home() {
               <Card className="group cursor-pointer transition-colors hover:bg-muted/50">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-lg">
-                    XDR Decoder
+                    {t("home.links.xdrDecoder.title")}
                     <ArrowRight className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
                   </CardTitle>
-                  <CardDescription>Debug raw Stellar data</CardDescription>
+                  <CardDescription>{t("home.links.xdrDecoder.description")}</CardDescription>
                 </CardHeader>
               </Card>
             </Link>
@@ -104,10 +105,10 @@ export default function Home() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <LayoutTemplate className="h-5 w-5 text-primary" />
-                Start from a Template
+                {t("home.templates.title")}
               </CardTitle>
               <CardDescription>
-                Bootstrap a new workspace pre-configured for common developer flows.
+                {t("home.templates.description")}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-3 border-t pt-4 sm:grid-cols-2">

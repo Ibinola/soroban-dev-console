@@ -10,6 +10,7 @@ import {
   Calculator,
   UploadCloud,
   Keyboard,
+  Compass,
 } from "lucide-react";
 
 import {
@@ -26,7 +27,9 @@ import {
 } from "@devconsole/ui";
 
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { FavoriteContractsSection } from "./favorite-contracts-section";
 import { useKeyboardShortcutsStore } from "./keyboard-shortcuts-modal";
+import { useOnboardingStore } from "@/store/useOnboardingStore";
 
 const items = [
   {
@@ -73,6 +76,7 @@ const items = [
 
 export function AppSidebar() {
   const openShortcuts = useKeyboardShortcutsStore((s) => s.open);
+  const startTour = useOnboardingStore((s) => s.start);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -101,10 +105,19 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <FavoriteContractsSection />
       </SidebarContent>
 
       {/* Issue #750: Keyboard shortcut hint in sidebar footer */}
       <SidebarFooter className="border-t border-sidebar-border p-2">
+        <button
+          onClick={startTour}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          aria-label="Take the guided tour"
+        >
+          <Compass className="h-3.5 w-3.5" />
+          <span>Take a tour</span>
+        </button>
         <button
           onClick={openShortcuts}
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

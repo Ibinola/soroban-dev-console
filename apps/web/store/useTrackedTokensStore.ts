@@ -8,6 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 
+import { safeMerge } from "./safe-merge";
 export interface TrackedToken {
   contractId: string;
   name: string;
@@ -90,6 +91,7 @@ export const useTrackedTokensStore = create<TrackedTokensState>()(
     }),
     {
       name: "soroban-tracked-tokens",
+      merge: safeMerge,
     }
   )
 );

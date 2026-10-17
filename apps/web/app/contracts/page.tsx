@@ -37,7 +37,9 @@ import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
 
+import { useTranslations } from "@/i18n/locale-provider";
 export default function ContractsPage() {
+  const t = useTranslations();
   const { contracts, addContract, removeContract } = useContractStore();
   const { currentNetwork } = useNetworkStore();
   const {
@@ -62,12 +64,8 @@ export default function ContractsPage() {
     const id = inputVal.trim();
 
     if (!id.startsWith("C") || id.length !== 56) {
-      toast.error(
-        'Invalid Contract ID. Must start with "C" and be 56 characters.',
-      );
-      setError(
-        'Invalid Contract ID. Must start with "C" and be 56 characters.',
-      );
+      toast.error(t("contracts.errors.invalidId"));
+      setError(t("contracts.errors.invalidId"));
       return;
     }
 
@@ -75,7 +73,7 @@ export default function ContractsPage() {
     bookmarkContract(activeWorkspaceId, id, currentNetwork, "manual");
     setInputVal("");
     setError("");
-    toast.success("Contract added and bookmarked.");
+    toast.success(t("contracts.toasts.added"));
   };
 
   if (!isMounted) return null;
@@ -86,16 +84,16 @@ export default function ContractsPage() {
       <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Contract Explorer
+            {t("contracts.title")}
           </h1>
           <p className="mt-1 text-muted-foreground">
-            Manage and interact with your Soroban smart contracts.
+            {t("contracts.subtitle")}
           </p>
         </div>
         <Link href="/contracts/graph">
           <Button variant="outline" className="gap-2">
             <Network className="h-4 w-4" />
-            Dependency Graph
+            {t("contracts.dependencyGraph")}
           </Button>
         </Link>
       </div>
@@ -103,9 +101,9 @@ export default function ContractsPage() {
       {/* Add Contract Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Track New Contract</CardTitle>
+          <CardTitle>{t("contracts.track.title")}</CardTitle>
           <CardDescription>
-            Paste a Contract ID to add it to your watchlist.
+            {t("contracts.track.description")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -124,7 +122,7 @@ export default function ContractsPage() {
             </div>
             <Button onClick={handleAdd} className="gap-2">
               <Plus className="h-4 w-4" />
-              Add Contract
+              {t("contracts.track.add")}
             </Button>
           </div>
         </CardContent>
@@ -135,10 +133,10 @@ export default function ContractsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[400px]">Contract ID</TableHead>
-              <TableHead>Network</TableHead>
-              <TableHead>Date Added</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[400px]">{t("contracts.table.contractId")}</TableHead>
+              <TableHead>{t("contracts.table.network")}</TableHead>
+              <TableHead>{t("contracts.table.dateAdded")}</TableHead>
+              <TableHead className="text-right">{t("contracts.table.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -148,7 +146,7 @@ export default function ContractsPage() {
                   colSpan={4}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  No contracts added yet. Add one above to get started.
+                  {t("contracts.table.empty")}
                 </TableCell>
               </TableRow>
             ) : (
@@ -191,7 +189,7 @@ export default function ContractsPage() {
                             contract.network,
                             "contracts-page",
                           );
-                          toast.success("Contract bookmarked");
+                          toast.success(t("contracts.toasts.bookmarked"));
                         }}
                         className="text-muted-foreground hover:text-blue-500"
                       >
@@ -202,7 +200,7 @@ export default function ContractsPage() {
                         size="icon"
                         onClick={() => {
                           removeContract(contract.id);
-                          toast.success("Contract removed");
+                          toast.success(t("contracts.toasts.removed"));
                         }}
                         className="text-muted-foreground hover:text-red-500"
                       >
@@ -226,12 +224,11 @@ export default function ContractsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <FlaskConical className="h-4 w-4" />
-              Demo Fixture Contracts
+              {t("contracts.fixtures.title")}
               <FixtureFallbackIndicator compact />
             </CardTitle>
             <CardDescription>
-              Pre-deployed contracts for testing and demos. Add one to your
-              watchlist with a single click.
+              {t("contracts.fixtures.description")}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -262,12 +259,12 @@ export default function ContractsPage() {
                         f.network,
                         "fixture",
                       );
-                      toast.success(`${f.label} added`);
+                      toast.success(t("contracts.toasts.fixtureAdded", { label: f.label }));
                     }}
                     disabled={contracts.some((c) => c.id === f.contractId)}
                   >
                     <Plus className="mr-1 h-3 w-3" />
-                    Add
+                    {t("contracts.fixtures.add")}
                   </Button>
                 </div>
               ))}
@@ -278,15 +275,15 @@ export default function ContractsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Bookmarked Contracts</CardTitle>
+          <CardTitle>{t("contracts.bookmarks.title")}</CardTitle>
           <CardDescription>
-            Favorites stay pinned at the top. Stale bookmarks can be repaired.
+            {t("contracts.bookmarks.description")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {bookmarks.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No bookmarks yet. Bookmark a contract from this page.
+              {t("contracts.bookmarks.empty")}
             </p>
           ) : (
             <div className="space-y-2">
@@ -310,8 +307,8 @@ export default function ContractsPage() {
                         {bookmark.contractId}
                       </Link>
                       <div className="text-xs text-muted-foreground">
-                        {bookmark.networkId} · source: {bookmark.source}
-                        {isStale ? " · stale" : ""}
+                        {t("contracts.bookmarks.meta", { network: bookmark.networkId, source: bookmark.source })}
+                        {isStale ? ` · ${t("contracts.bookmarks.stale")}` : ""}
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
@@ -340,7 +337,7 @@ export default function ContractsPage() {
                               bookmark.id,
                               bookmark.networkId,
                             );
-                            toast.success("Bookmark repaired");
+                            toast.success(t("contracts.toasts.repaired"));
                           }}
                           className="text-blue-600"
                         >

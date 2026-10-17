@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { safeMerge } from "./safe-merge";
 /** Issue #1096: a single deployment attempt recorded in the workspace's history log. */
 export interface DeploymentLogEntry {
   id: string;
@@ -43,6 +44,7 @@ export const useDeploymentLogStore = create<DeploymentLogState>()(
     }),
     {
       name: "soroban-deployment-log-storage",
+      merge: safeMerge,
     },
   ),
 );
