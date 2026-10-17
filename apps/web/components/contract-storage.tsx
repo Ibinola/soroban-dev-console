@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { StorageChart } from "@/components/storage-chart";
+import { appendHistory, extractNumericPoints, type ValueHistory } from "@/lib/storage-chart";
 import { useSearchParams, useRouter } from "next/navigation";
 import { rpc as SorobanRpc, xdr } from "@stellar/stellar-sdk";
 import {
@@ -96,6 +98,7 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
   // The list of keys we are watching
   const [entries, setEntries] = useState<StorageEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [valueHistory, setValueHistory] = useState<ValueHistory>({});
   const [snapshots, setSnapshots] = useState<StorageSnapshot[]>([]);
   const [snapshotDiffs, setSnapshotDiffs] = useState<ReturnType<typeof diffSnapshots>>([]);
 
@@ -164,6 +167,7 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
       });
 
       setEntries(updatedEntries);
+      setValueHistory((h) => appendHistory(h, extractNumericPoints(updatedEntries), Date.now()));
       toast.success("Storage updated");
     } catch (e: any) {
       console.error(e);
@@ -457,6 +461,17 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
           </Button>
         )}
       </div>
+
+      {entries.length > 0 && (
+        <Card className="mt-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Numeric values</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StorageChart entries={entries} history={valueHistory} />
+          </CardContent>
+        </Card>
+      )}
 
       {snapshotDiffs.length > 0 && (
         <Card className="mt-2">

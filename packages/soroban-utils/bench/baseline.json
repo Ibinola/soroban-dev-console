@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "relative": {
+    "spec-parse/normalizeAbiJson(200 fns)": 2.544,
+    "xdr/encodeJsonToXdr(ScVal)": 0.1218,
+    "xdr/decodeXdr(ScVal)": 0.419,
+    "wasm/validateWasmBinary": 0.000234,
+    "wasm/extractWasmCustomSection": 0.09348
+  }
+}
