@@ -40,7 +40,7 @@ export interface BuildSorobanTxParams {
 }
 
 function toScVal(value: unknown): xdr.ScVal {
-  return value instanceof xdr.ScVal ? value : (nativeToScVal(value) as xdr.ScVal);
+  return (value instanceof xdr.ScVal ? value : nativeToScVal(value)) as unknown as xdr.ScVal;
 }
 
 function buildOperation(spec: SorobanOperationSpec): xdr.Operation {
