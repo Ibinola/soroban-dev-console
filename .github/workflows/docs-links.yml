@@ -1,0 +1,35 @@
+name: Docs Links
+
+# Fails when a Markdown link points at a file or heading that does not exist.
+# Offline and deterministic: external URLs are not fetched.
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "scripts/check-doc-links.ts"
+      - ".github/workflows/docs-links.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "**/*.md"
+      - "scripts/check-doc-links.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-links:
+    name: Documentation link validity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Check Markdown links
+        run: npx --yes tsx@4 scripts/check-doc-links.ts

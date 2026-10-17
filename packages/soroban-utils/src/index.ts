@@ -10,3 +10,6 @@ export * from "./wasm-parser";
 export * from "./salt-utils";
 export * from "./spec-validator";
 export * from "./abi-compatibility";
+export * from "./contract-address";
+export * from "./soroban-tx-builder";
+export * from "./scval-pretty";
