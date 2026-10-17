@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { CommandPalette } from "@/components/command-palette";
 import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
+import { OnboardingTour } from "@/components/onboarding-tour";
 import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
 import { LocaleProvider } from "@/i18n/locale-provider";
@@ -81,6 +82,8 @@ export default async function RootLayout({
                   <CommandPalette />
                   {/* Issue #750: Keyboard shortcuts modal — global, responds to ? key */}
                   <KeyboardShortcutsModal />
+                  {/* Issue #1294: first-run guided tour */}
+                  <OnboardingTour />
                 </div>
               </SidebarInset>
             </TooltipProvider>

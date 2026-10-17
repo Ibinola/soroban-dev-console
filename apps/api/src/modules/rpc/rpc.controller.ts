@@ -12,7 +12,9 @@ import {
   ApiResponse,
 } from "@devconsole/api-contracts";
 
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 @UseGuards(RpcRateLimitGuard)
+@ApiTags("rpc")
 @Controller("rpc")
 export class RpcController {
   constructor(
@@ -22,6 +24,7 @@ export class RpcController {
     private readonly failover: RpcFailoverService,
   ) {}
 
+  @ApiOperation({ summary: "Get endpoint status" })
   @Get("endpoints/status")
   getEndpointStatus(@Req() req: Request) {
     const ip = req.ip || req.socket?.remoteAddress;
@@ -34,6 +37,7 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Proxy rpc" })
   @Post(":network")
   async proxyRpc(
     @Param("network") network: string,
@@ -51,6 +55,7 @@ export class RpcController {
     return proxied.body;
   }
 
+  @ApiOperation({ summary: "Simulate transaction" })
   @Post(":network/simulate")
   async simulateTransaction(
     @Param("network") network: string,
@@ -72,6 +77,7 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Send transaction" })
   @Post(":network/send")
   async sendTransaction(
     @Param("network") network: string,
@@ -93,6 +99,7 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Get transaction" })
   @Post(":network/status")
   async getTransaction(
     @Param("network") network: string,
@@ -116,6 +123,7 @@ export class RpcController {
 
   // ── Issue #691: Cache TTL config & invalidation ─────────────────────────────
 
+  @ApiOperation({ summary: "Get cache config" })
   @Get("cache/config")
   getCacheConfig() {
     return {
@@ -124,6 +132,7 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Update cache config" })
   @Patch("cache/config")
   updateCacheConfig(
     @Body() body: { method: string; ttlMs: number },
@@ -135,12 +144,14 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Flush all cache" })
   @Delete("cache/all")
   flushAllCache() {
     this.rpcCache.flushAll();
     return { success: true, message: "Cache flushed" };
   }
 
+  @ApiOperation({ summary: "Invalidate cache" })
   @Delete("cache")
   invalidateCache(
     @Query("method") method?: string,
@@ -155,6 +166,7 @@ export class RpcController {
 
   // ── Issue #693: Dedup stats ─────────────────────────────────────────────────
 
+  @ApiOperation({ summary: "Get dedup stats" })
   @Get("dedup/stats")
   getDedupStats() {
     return {

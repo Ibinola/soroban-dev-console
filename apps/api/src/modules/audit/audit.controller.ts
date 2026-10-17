@@ -5,11 +5,14 @@ import { PruneAuditLogsDto } from "./prune-audit-logs.dto.js";
 import { ListAuditDto } from "./audit.dto.js";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
+@ApiTags("audit")
 @Controller("audit")
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   // Issue #951: export sanitized audit logs as a downloadable JSON file.
+  @ApiOperation({ summary: "Export audit logs" })
   @Get("export")
   async exportAuditLogs(
     @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
@@ -30,6 +33,7 @@ export class AuditController {
   }
 
   // Issue #1128: export audit logs as a CSV file with customizable columns.
+  @ApiOperation({ summary: "Export audit csv" })
   @Get("export/csv")
   async exportAuditCsv(
     @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
@@ -53,6 +57,7 @@ export class AuditController {
     return csv;
   }
 
+  @ApiOperation({ summary: "Get audit logs" })
   @Get()
   async getAuditLogs(@Query(new ValidationPipe({ transform: true })) query: ListAuditDto) {
     return this.auditService.query({
@@ -72,11 +77,13 @@ export class AuditController {
   }
 
   // Issue #1137: 24-hour summary metrics for security dashboards.
+  @ApiOperation({ summary: "Summary" })
   @Get("summary")
   async summary() {
     return this.auditService.summary();
   }
 
+  @ApiOperation({ summary: "Prune" })
   @Delete("prune")
   @HttpCode(HttpStatus.OK)
   prune(@Body() dto: PruneAuditLogsDto) {
@@ -84,6 +91,7 @@ export class AuditController {
   }
 
   // Backward-compatible legacy alias of POST /audit/prune, now also guarded.
+  @ApiOperation({ summary: "Prune legacy" })
   @Delete("prune")
   @UseGuards(OwnerKeyGuard)
   @HttpCode(HttpStatus.OK)

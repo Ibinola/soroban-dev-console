@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Contract,
   TransactionBuilder,
@@ -54,6 +54,7 @@ import { useAbiStore } from "@/store/useAbiStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
+import { applyTemplate, templatesForInputs } from "@/lib/param-templates";
 import { Input } from "@devconsole/ui";
 import {
   Card,
@@ -273,6 +274,10 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
   const methodParam = searchParams?.get("method");
 
+  // #1296: values and the sender's result carried by a call permalink.
+  const shared = searchParams ? parseCallPermalink(searchParams) : null;
+  const sharedArgsApplied = useRef(false);
+
   useEffect(() => {
     if (
       contractId ===
@@ -293,6 +298,28 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       }
     }
   }, [methodParam, spec, fnName]);
+
+  useEffect(() => {
+    if (sharedArgsApplied.current || !shared?.args) return;
+    if (!spec || fnName !== shared.fnName || args.length === 0) return;
+    sharedArgsApplied.current = true;
+    const values = shared.args;
+    setArgs((current) =>
+      current.map((a, i) => (values[i] === undefined ? a : { ...a, value: values[i] })),
+    );
+  }, [shared, spec, fnName, args.length]);
+
+  const copyPermalink = async () => {
+    const link = buildCallPermalink(window.location.origin, {
+      contractId,
+      network: getActiveNetworkConfig().id,
+      fnName,
+      args: args.map((a) => String(a.value ?? "")),
+      result: result ?? undefined,
+    });
+    await navigator.clipboard.writeText(link);
+    toast.success("Permalink copied");
+  };
 
   const handleFnChange = (name: string) => {
     setFnName(name);
@@ -906,9 +933,32 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         </Dialog>
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Label>Arguments ({args.length})</Label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {usesAbiInputs && selectedFunction && templatesForInputs(selectedFunction.inputs).length > 0 && (
+                <Select
+                  value=""
+                  onValueChange={(id) => {
+                    const t = templatesForInputs(selectedFunction.inputs).find((x) => x.id === id);
+                    if (t) {
+                      setSimulation(null);
+                      setArgs((current) => applyTemplate(current, t));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Apply parameter template">
+                    <SelectValue placeholder="Apply template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templatesForInputs(selectedFunction.inputs).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {contractPresets.length > 0 && (
                 <Select
                   value={presetLoadValue}
@@ -1006,6 +1056,21 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           {result && (
             <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
               {result}
+            </div>
+          )}
+
+          {result && (
+            <Button variant="outline" size="sm" onClick={copyPermalink}>
+              Copy permalink
+            </Button>
+          )}
+
+          {!result && shared?.result && (
+            <div className="break-all rounded-md border-l-4 border-amber-500 bg-muted p-4 font-mono text-xs">
+              <p className="mb-1 font-sans text-[10px] uppercase text-muted-foreground">
+                Result shared with this link (not verified)
+              </p>
+              {shared.result}
             </div>
           )}
 

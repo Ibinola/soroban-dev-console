@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { toast } from "sonner";
 import { ContractArg } from "@devconsole/soroban-utils";
 
+import { safeMerge } from "./safe-merge";
 export interface SavedCall {
   id: string;
   name: string;
@@ -286,6 +287,6 @@ export const useSavedCallsStore = create<SavedCallsState>()(
         return { imported, skipped };
       },
     }),
-    { name: "soroban-saved-calls" },
+    { name: "soroban-saved-calls", merge: safeMerge },
   ),
 );

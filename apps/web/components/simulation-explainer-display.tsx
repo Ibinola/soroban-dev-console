@@ -6,6 +6,8 @@ import {
 } from "@devconsole/soroban-utils";
 import { Badge } from "@devconsole/ui";
 import { AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { TerminalOutputViewer } from "@/components/terminal-output-viewer";
+import { buildTerminalSections } from "@/lib/simulation-terminal";
 
 interface SimulationExplainerDisplayProps {
   rawSimulation: unknown;
@@ -138,6 +140,11 @@ export function SimulationExplainerDisplay({
           ))}
         </div>
       )}
+
+      {/* #1310: terminal-style output with log levels, collapsible sections and copy */}
+      <div className="mt-3">
+        <TerminalOutputViewer sections={buildTerminalSections(explanation)} />
+      </div>
 
       {/* Success indicator */}
       {explanation.success && explanation.warnings.length === 0 && (

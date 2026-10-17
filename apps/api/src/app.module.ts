@@ -10,6 +10,7 @@ import { WorkspacesModule } from "./modules/workspaces/workspaces.module.js";
 import { DeadLetterModule } from "./modules/dead-letter/dead-letter.module.js";
 import { BackgroundJobModule } from "./modules/jobs/background-job.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
+import { BackupModule } from "./modules/backup/backup.module.js";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AuditModule } from "./modules/audit/audit.module.js";
     DeadLetterModule,
     BackgroundJobModule,
     AuditModule,
+    BackupModule,
   ]
 })
 export class AppModule { }

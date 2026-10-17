@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { WorkspaceNote } from "./workspace-schema";
 
+import { safeMerge } from "./safe-merge";
 interface WorkspaceNotesState {
   notes: WorkspaceNote[];
   addNote: (workspaceId: string, body: string, resource?: Pick<WorkspaceNote, "resourceType" | "resourceId">) => WorkspaceNote;
@@ -57,6 +58,6 @@ export const useWorkspaceNotesStore = create<WorkspaceNotesState>()(
             n.resourceId === resourceId,
         ),
     }),
-    { name: "soroban-workspace-notes" },
+    { name: "soroban-workspace-notes", merge: safeMerge },
   ),
 );
