@@ -54,6 +54,7 @@ import { useAbiStore } from "@/store/useAbiStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
+import { applyTemplate, templatesForInputs } from "@/lib/param-templates";
 import { Input } from "@devconsole/ui";
 import {
   Card,
@@ -906,9 +907,32 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         </Dialog>
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Label>Arguments ({args.length})</Label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {usesAbiInputs && selectedFunction && templatesForInputs(selectedFunction.inputs).length > 0 && (
+                <Select
+                  value=""
+                  onValueChange={(id) => {
+                    const t = templatesForInputs(selectedFunction.inputs).find((x) => x.id === id);
+                    if (t) {
+                      setSimulation(null);
+                      setArgs((current) => applyTemplate(current, t));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Apply parameter template">
+                    <SelectValue placeholder="Apply template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templatesForInputs(selectedFunction.inputs).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {contractPresets.length > 0 && (
                 <Select
                   value={presetLoadValue}

@@ -169,7 +169,7 @@ export default function ContractDetailPage() {
       : "Not found";
 
   return (
-    <div className="container mx-auto space-y-8 p-6">
+    <div className="container mx-auto space-y-6 p-4 sm:space-y-8 sm:p-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div className="flex min-w-0 items-center gap-4">
           <Link href="/contracts" className="shrink-0">
@@ -202,7 +202,7 @@ export default function ContractDetailPage() {
           </div>
         </div>
 
-        <div className="flex shrink-0 gap-2">
+        <div className="flex flex-wrap gap-2 md:shrink-0 [&_button]:min-h-10 [&_a]:min-h-10">
           <Badge variant="outline" className="gap-1">
             <ShieldCheck className="h-3 w-3" />
             Source Verified
@@ -247,7 +247,7 @@ export default function ContractDetailPage() {
         <Alert>
           <FlaskConical className="h-4 w-4" />
           <AlertTitle>No wallet connected</AlertTitle>
-          <AlertDescription className="flex items-center justify-between gap-4">
+          <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <span>
               You can still explore and simulate contract functions without a wallet.
             </span>
@@ -260,7 +260,7 @@ export default function ContractDetailPage() {
       )}
 
       <Tabs defaultValue="overview" className="space-y-4" aria-label="Contract details tabs">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="overview">Overview & Interaction</TabsTrigger>
           <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
