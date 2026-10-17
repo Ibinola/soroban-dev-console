@@ -6,6 +6,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { parseOwnerRateLimitConfig, resolveOwnerRateLimit } from "../../lib/owner-rate-limit-config.js";
 
 type RateLimitEntry = {
   count: number;
@@ -20,8 +21,9 @@ const WINDOW_MS = 60_000;
 const MAX_REQUESTS = 100;
 
 const OWNER_WINDOW_MS = 60_000;
-const OWNER_MAX_REQUESTS = parseInt(process.env.RPC_RATE_LIMIT_OWNER_MAX ?? "200", 10);
-const OWNER_BURST = parseInt(process.env.RPC_RATE_LIMIT_OWNER_BURST ?? "20", 10);
+// #1302: defaults come from RPC_RATE_LIMIT_OWNER_MAX/BURST; individual owner
+// keys can be tuned with RPC_RATE_LIMIT_OWNER_OVERRIDES (see owner-rate-limit-config.ts).
+const OWNER_RATE_LIMIT_CONFIG = parseOwnerRateLimitConfig();
 
 function getClientIp(req: Request) {
   const fallbackIp = req.ip ?? "unknown";
@@ -86,11 +88,15 @@ export class RpcRateLimitGuard implements CanActivate {
 
   private checkOwnerRateLimit(ownerKey: string, response: Response): boolean {
     const now = Date.now();
+    const { max: OWNER_MAX_REQUESTS, burst: OWNER_BURST } = resolveOwnerRateLimit(
+      ownerKey,
+      OWNER_RATE_LIMIT_CONFIG,
+    );
     const bucket = this.ownerBuckets.get(ownerKey);
 
     if (!bucket || bucket.timestamps.length === 0) {
       this.ownerBuckets.set(ownerKey, { timestamps: [now] });
-      this.setOwnerHeaders(response, OWNER_MAX_REQUESTS - 1, now + OWNER_WINDOW_MS);
+      this.setOwnerHeaders(response, OWNER_MAX_REQUESTS, OWNER_MAX_REQUESTS - 1, now + OWNER_WINDOW_MS);
       return true;
     }
 
@@ -101,7 +107,7 @@ export class RpcRateLimitGuard implements CanActivate {
     // Burst allowance: if under burst limit, allow instantly
     if (bucket.timestamps.length < OWNER_BURST) {
       bucket.timestamps.push(now);
-      this.setOwnerHeaders(response, OWNER_MAX_REQUESTS - bucket.timestamps.length, now + OWNER_WINDOW_MS);
+      this.setOwnerHeaders(response, OWNER_MAX_REQUESTS, OWNER_MAX_REQUESTS - bucket.timestamps.length, now + OWNER_WINDOW_MS);
       return true;
     }
 
@@ -115,7 +121,7 @@ export class RpcRateLimitGuard implements CanActivate {
     }
 
     bucket.timestamps.push(now);
-    this.setOwnerHeaders(response, OWNER_MAX_REQUESTS - bucket.timestamps.length, oldestInWindow + OWNER_WINDOW_MS);
+    this.setOwnerHeaders(response, OWNER_MAX_REQUESTS, OWNER_MAX_REQUESTS - bucket.timestamps.length, oldestInWindow + OWNER_WINDOW_MS);
     return true;
   }
 
@@ -125,8 +131,8 @@ export class RpcRateLimitGuard implements CanActivate {
     response.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
   }
 
-  private setOwnerHeaders(response: Response, remaining: number, resetAt: number): void {
-    response.setHeader("X-RateLimit-Limit", String(OWNER_MAX_REQUESTS));
+  private setOwnerHeaders(response: Response, limit: number, remaining: number, resetAt: number): void {
+    response.setHeader("X-RateLimit-Limit", String(limit));
     response.setHeader("X-RateLimit-Remaining", String(Math.max(0, remaining)));
     response.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
   }
