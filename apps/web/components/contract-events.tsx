@@ -24,6 +24,7 @@ import { Card, CardContent } from "@devconsole/ui";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
 import { Skeleton } from "@devconsole/ui";
+import { AnnotationControl } from "@/components/annotation-control";
 import {
   Select,
   SelectContent,
@@ -349,13 +350,14 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
               <TableHead>Type</TableHead>
               <TableHead>Topics (Raw)</TableHead>
               <TableHead className="text-right">Data</TableHead>
+              <TableHead>Note</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No events found for this contract.
@@ -388,6 +390,9 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
                   <TableCell className="max-w-[200px] truncate text-right font-mono text-xs">
                     {evt.data.slice(0, 20)}...
                   </TableCell>
+                  <TableCell>
+                    <AnnotationControl resourceType="event" resourceId={evt.id} />
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -395,7 +400,7 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
               <>
                 {Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={`skel-${i}`} aria-hidden="true">
-                    <TableCell colSpan={4}>
+                    <TableCell colSpan={5}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
                   </TableRow>

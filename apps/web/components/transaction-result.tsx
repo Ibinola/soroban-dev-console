@@ -9,6 +9,8 @@ import { XdrTooltip } from "@devconsole/ui";
 import { toast } from "sonner";
 import { decodeXdr } from "@devconsole/soroban-utils";
 import type { TxResult } from "@/lib/tx-orchestrator";
+import { AnnotationControl } from "@/components/annotation-control";
+import { transactionAnnotationId } from "@/lib/annotations";
 import type { NormalizedSimulationResult } from "@devconsole/soroban-utils";
 
 export interface TransactionResultProps {
@@ -165,6 +167,12 @@ export function TransactionResult({
               {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
             </div>
             {getStatusBadge()}
+            {result.hash && (
+              <AnnotationControl
+                resourceType="transaction"
+                resourceId={transactionAnnotationId(result.hash, "")}
+              />
+            )}
           </div>
           {actions}
         </div>

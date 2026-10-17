@@ -9,6 +9,9 @@ import { CommandPalette } from "@/components/command-palette";
 import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
 import { WalletNetworkMismatchBanner } from "@/components/wallet-network-mismatch-banner";
 import { fetchRuntimeConfig } from "@/lib/api/runtime-config";
+import { LocaleProvider } from "@/i18n/locale-provider";
+import { loadMessages } from "@/i18n";
+import { getRequestLocale } from "@/i18n/server";
 // Issue #952: SRI helpers — renders external assets with integrity + crossorigin attributes
 import { SriScript, SriStylesheet } from "@/lib/sri-manifest";
 
@@ -23,9 +26,11 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const runtimeConfigResult = await fetchRuntimeConfig();
+  // #1293: locale from the NEXT_LOCALE cookie, English when unset or unsupported
+  const { locale, messages } = await loadMessages(await getRequestLocale());
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
         {/*
           Issue #952: External assets are loaded via the SRI manifest helper
@@ -57,6 +62,7 @@ export default async function RootLayout({
         />
       </head>
       <body>
+        <LocaleProvider locale={locale} messages={messages}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -80,6 +86,7 @@ export default async function RootLayout({
             </TooltipProvider>
           </SidebarProvider>
         </ThemeProvider>
+        </LocaleProvider>
 
         <Toaster
           richColors

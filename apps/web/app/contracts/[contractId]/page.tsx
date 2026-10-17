@@ -19,6 +19,7 @@ import { ContractCallForm } from "@/components/contract-call-form";
 import { ContractCardSkeleton } from "@/components/contract-card-skeleton";
 import { ContractEvents } from "@/components/contract-events";
 import { ContractStorage } from "@/components/contract-storage";
+import { ContractPlayground } from "@/components/contract-playground";
 import { ContractUpgradeModal } from "@/components/contract-upgrade-modal";
 import { TokenDashboard } from "@/components/token-dashboard";
 import { SourceVerificationFlow } from "@/components/source-verification-flow";
@@ -51,6 +52,7 @@ export default function ContractDetailPage() {
   const { activeWorkspaceId, addContractToWorkspace } = useWorkspaceStore();
   const { isConnected, isSandboxMode, enterSandbox } = useWallet();
   const spec = getSpec(contractId);
+  const [playgroundOpen, setPlaygroundOpen] = useState(false);
 
   useEffect(() => {
     if (networkParam) {
@@ -221,6 +223,13 @@ export default function ContractDetailPage() {
           >
             <LinkIcon className="mr-1 h-4 w-4" /> Share Link
           </Button>
+          <Button
+            variant={playgroundOpen ? "default" : "outline"}
+            aria-pressed={playgroundOpen}
+            onClick={() => setPlaygroundOpen((open) => !open)}
+          >
+            <FlaskConical className="mr-1 h-4 w-4" /> Playground
+          </Button>
           <ContractUpgradeModal contractId={contractId} />
           <Button variant="outline" asChild>
             <a
@@ -233,6 +242,8 @@ export default function ContractDetailPage() {
           </Button>
         </div>
       </div>
+
+      {playgroundOpen && <ContractPlayground contractId={contractId} />}
 
       {overview?.error && (
         <Alert variant="destructive">
