@@ -7,8 +7,12 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service.js";
-import { redactJsonValue, redactText } from "../modules/security/services/redaction.service.js";
+import {
+  redactJsonValue,
+  redactText,
+} from "../modules/security/services/redaction.service.js";
 import { buildAuditCsv } from "../modules/audit/audit-csv.js";
+import { resolveAuditExportRowLimit } from "../modules/audit/audit-export.js";
 
 export interface AuditEntry {
   actor: string;
@@ -24,14 +28,17 @@ const CURSOR_MAX_LIMIT = 100;
 
 /** Encode a composite (createdAt + id) cursor as a base64 string. */
 function encodeCursor(createdAt: Date, id: string): string {
-  return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id })).toString("base64");
+  return Buffer.from(
+    JSON.stringify({ createdAt: createdAt.toISOString(), id }),
+  ).toString("base64");
 }
 
 /** Decode a base64 composite cursor, returning null when malformed. */
 function decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
   try {
     const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
-    if (typeof parsed?.createdAt !== "string" || typeof parsed?.id !== "string") return null;
+    if (typeof parsed?.createdAt !== "string" || typeof parsed?.id !== "string")
+      return null;
     const createdAt = new Date(parsed.createdAt);
     if (Number.isNaN(createdAt.getTime())) return null;
     return { createdAt, id: parsed.id };
@@ -87,7 +94,9 @@ export class AuditService {
   private readonly retentionDays: number;
 
   constructor(private readonly prisma: PrismaService) {
-    this.retentionDays = Number(process.env.AUDIT_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS);
+    this.retentionDays = Number(
+      process.env.AUDIT_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS,
+    );
   }
 
   async log(entry: AuditEntry): Promise<void> {
@@ -98,7 +107,9 @@ export class AuditService {
         resourceType: entry.resourceType,
         resourceId: entry.resourceId,
         summary: entry.summary ? redactText(entry.summary) : null,
-        metadata: entry.metadata ? (redactJsonValue(entry.metadata) as Prisma.InputJsonValue) : Prisma.JsonNull,
+        metadata: entry.metadata
+          ? (redactJsonValue(entry.metadata) as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
       },
     });
   }
@@ -130,7 +141,9 @@ export class AuditService {
       where: { createdAt: { lt: cutoff } },
     });
 
-    this.logger.log(`Pruned ${result.count} audit logs older than ${days} days`);
+    this.logger.log(
+      `Pruned ${result.count} audit logs older than ${days} days`,
+    );
 
     return { pruned: result.count, olderThanDays: days };
   }
@@ -145,7 +158,9 @@ export class AuditService {
    * Events are classified as "failed auth" via the documented action set and
    * as "mutations" whenever the action does not start with a known read prefix.
    */
-  async summary(windowHours: number = DEFAULT_METRICS_WINDOW_HOURS): Promise<AuditSummary> {
+  async summary(
+    windowHours: number = DEFAULT_METRICS_WINDOW_HOURS,
+  ): Promise<AuditSummary> {
     const from = new Date(Date.now() - windowHours * 60 * 60 * 1000);
     const windowWhere = { createdAt: { gte: from } };
     const failedAuthActions = [...FAILED_AUTH_ACTIONS];
@@ -211,7 +226,11 @@ export class AuditService {
     const date = new Date().toISOString().slice(0, 10);
     const filename = `audit-log-${date}.json`;
     const payload = JSON.stringify(
-      { exportedAt: new Date().toISOString(), count: sanitized.length, records: sanitized },
+      {
+        exportedAt: new Date().toISOString(),
+        count: sanitized.length,
+        records: sanitized,
+      },
       null,
       2,
     );
@@ -240,6 +259,8 @@ export class AuditService {
     const rows = await this.prisma.auditLog.findMany({
       where,
       orderBy: { createdAt: "desc" },
+      // Issue #1273: bound the number of exported rows (default 10,000).
+      take: resolveAuditExportRowLimit(),
     });
 
     const csv = buildAuditCsv(rows, columns);
@@ -260,8 +281,12 @@ export class AuditService {
     const createdAtFilter =
       filters?.createdAfter || filters?.createdBefore
         ? {
-            ...(filters.createdAfter && { gte: new Date(filters.createdAfter) }),
-            ...(filters.createdBefore && { lte: new Date(filters.createdBefore) }),
+            ...(filters.createdAfter && {
+              gte: new Date(filters.createdAfter),
+            }),
+            ...(filters.createdBefore && {
+              lte: new Date(filters.createdBefore),
+            }),
           }
         : undefined;
 
@@ -286,7 +311,14 @@ export class AuditService {
     createdAfter?: string;
     createdBefore?: string;
   }) {
-    const { actor, action, resourceType, resourceId, createdAfter, createdBefore } = query;
+    const {
+      actor,
+      action,
+      resourceType,
+      resourceId,
+      createdAfter,
+      createdBefore,
+    } = query;
 
     const createdAtFilter =
       createdAfter || createdBefore
@@ -307,7 +339,10 @@ export class AuditService {
     // Cursor-based pagination: stable across concurrent inserts. Ordering is
     // (createdAt desc, id desc) so the cursor uniquely identifies a position.
     if (query.cursor !== undefined || query.limit !== undefined) {
-      const limit = Math.min(Math.max(query.limit ?? CURSOR_DEFAULT_LIMIT, 1), CURSOR_MAX_LIMIT);
+      const limit = Math.min(
+        Math.max(query.limit ?? CURSOR_DEFAULT_LIMIT, 1),
+        CURSOR_MAX_LIMIT,
+      );
       const decoded = query.cursor ? decodeCursor(query.cursor) : null;
       const cursorFilter = decoded
         ? {
@@ -328,7 +363,8 @@ export class AuditService {
       const hasMore = rows.length > limit;
       const data = hasMore ? rows.slice(0, limit) : rows;
       const last = data[data.length - 1];
-      const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
+      const nextCursor =
+        hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
 
       return { data, pagination: { limit, nextCursor } };
     }

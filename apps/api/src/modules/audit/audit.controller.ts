@@ -1,9 +1,22 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query, Res, UseGuards, ValidationPipe } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+  ValidationPipe,
+} from "@nestjs/common";
 import type { Response } from "express";
 import { AuditService } from "../../lib/audit.service.js";
 import { PruneAuditLogsDto } from "./prune-audit-logs.dto.js";
 import { ListAuditDto } from "./audit.dto.js";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
+import { resolveAuditExportFilters } from "./audit-export.js";
 
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 @ApiTags("audit")
@@ -12,54 +25,66 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   // Issue #951: export sanitized audit logs as a downloadable JSON file.
+  // Issue #1273: `?format=csv` returns the CSV document instead, same filters.
   @ApiOperation({ summary: "Export audit logs" })
   @Get("export")
   async exportAuditLogs(
     @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const { filename, payload } = await this.auditService.exportToJson({
-      actor: query.actor,
-      action: query.action,
-      resourceType: query.resourceType,
-      resourceId: query.resourceId,
-      createdAfter: query.createdAfter,
-      createdBefore: query.createdBefore,
-    });
+    if (query.format?.toLowerCase() === "csv") {
+      return this.writeCsvResponse(response, query);
+    }
+
+    const { filename, payload } = await this.auditService.exportToJson(
+      resolveAuditExportFilters(query),
+    );
 
     response.setHeader("Content-Type", "application/json");
-    response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    response.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
     return payload;
   }
 
   // Issue #1128: export audit logs as a CSV file with customizable columns.
+  // Issue #1273: also accepts the `from` / `to` / `type` filter aliases.
   @ApiOperation({ summary: "Export audit csv" })
   @Get("export/csv")
   async exportAuditCsv(
     @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const columns = query.columns?.split(",").map((c) => c.trim()).filter(Boolean);
+    return this.writeCsvResponse(response, query);
+  }
+
+  /** Issue #1273: shared CSV response writer for both export routes. */
+  private async writeCsvResponse(
+    response: Response,
+    query: ListAuditDto,
+  ): Promise<string> {
     const { filename, csv } = await this.auditService.exportToCsv(
-      {
-        actor: query.actor,
-        action: query.action,
-        resourceType: query.resourceType,
-        resourceId: query.resourceId,
-        createdAfter: query.createdAfter,
-        createdBefore: query.createdBefore,
-      },
-      columns,
+      resolveAuditExportFilters(query),
+      query.columns
+        ?.split(",")
+        .map((column) => column.trim())
+        .filter(Boolean),
     );
 
     response.setHeader("Content-Type", "text/csv; charset=utf-8");
-    response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    response.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
     return csv;
   }
 
   @ApiOperation({ summary: "Get audit logs" })
   @Get()
-  async getAuditLogs(@Query(new ValidationPipe({ transform: true })) query: ListAuditDto) {
+  async getAuditLogs(
+    @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
+  ) {
     return this.auditService.query({
       actor: query.actor,
       action: query.action,
@@ -71,8 +96,12 @@ export class AuditController {
       // legacy offset pagination / no time filter keep existing behavior.
       ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
-      ...(query.createdAfter !== undefined ? { createdAfter: query.createdAfter } : {}),
-      ...(query.createdBefore !== undefined ? { createdBefore: query.createdBefore } : {}),
+      ...(query.createdAfter !== undefined
+        ? { createdAfter: query.createdAfter }
+        : {}),
+      ...(query.createdBefore !== undefined
+        ? { createdBefore: query.createdBefore }
+        : {}),
     });
   }
 

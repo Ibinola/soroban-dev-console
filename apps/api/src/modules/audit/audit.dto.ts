@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsInt, IsISO8601, Min, Max } from "class-validator";
+import {
+  IsOptional,
+  IsString,
+  IsInt,
+  IsISO8601,
+  Min,
+  Max,
+} from "class-validator";
 import { Type } from "class-transformer";
 
 import { ApiPropertyOptional } from "@nestjs/swagger";
@@ -74,4 +81,28 @@ export class ListAuditDto {
   @IsOptional()
   @IsString()
   columns?: string;
+
+  /** Issue #1273: alias of `action` for the export endpoints (`?type=`). */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  /** Issue #1273: alias of `createdAfter` (`?from=`). */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  /** Issue #1273: alias of `createdBefore` (`?to=`). */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
+
+  /** Issue #1273: `csv` makes `GET /audit/export` return a CSV document. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  format?: string;
 }
