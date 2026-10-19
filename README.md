@@ -138,6 +138,16 @@ soroban-dev-console/
 6. **Open the application**:
    Navigate to [http://localhost:3000](http://localhost:3000)
 
+### Quickstart Guides
+
+- [Quickstart](./docs/quickstart.md): get running in minutes.
+- [Deploy your first contract](./docs/deploy-contract-tutorial.md): a
+  step-by-step walkthrough of the deploy wizard on testnet or a local sandbox.
+- [Share and fork workspaces](./docs/workspace-sharing-guide.md): create,
+  manage and revoke read-only share links.
+- [Troubleshooting](./docs/troubleshooting.md): fixes for common setup, build,
+  database and network problems.
+
 ## Development Workflow
 
 ### Running Tests
@@ -178,6 +188,9 @@ npx prisma migrate deploy
 # Reset database (development only)
 npx prisma migrate reset
 ```
+
+See the [Prisma migration authoring guide](./docs/prisma-migration-authoring-guide.md)
+before adding a migration.
 
 ## Environment Configuration
 
@@ -244,6 +257,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for gu
 
 ## Resources
 
+- [Troubleshooting guide](./docs/troubleshooting.md)
 - [Stellar Developers Documentation](https://developers.stellar.org/)
 - [Soroban Documentation](https://soroban.stellar.org/)
 - [Stellar SDK](https://github.com/stellar/js-stellar-sdk)
