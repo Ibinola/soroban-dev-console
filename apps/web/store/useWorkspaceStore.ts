@@ -48,10 +48,26 @@ export type ContractBookmarkSource =
   | "fixture"
   | "manual";
 
+/**
+ * Issue #1265: hard cap on bookmarks per workspace. Enforced when a bookmark is
+ * created and when persisted state is rehydrated, so a list written by an older
+ * version cannot grow past the limit.
+ */
+export const MAX_CONTRACT_BOOKMARKS = 50;
+
+/** Issue #1265: fallback label derived from a contract address. */
+export function shortenContractId(contractId: string): string {
+  const trimmed = contractId.trim();
+  if (trimmed.length <= 14) return trimmed;
+  return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
+}
+
 export interface ContractBookmark {
   id: string;
   workspaceId: string;
   contractId: string;
+  /** Issue #1265: user-supplied label used to find the bookmark later. */
+  label: string;
   networkId: string;
   source: ContractBookmarkSource;
   favorite: boolean;
@@ -116,9 +132,19 @@ interface WorkspaceState {
     contractId: string,
     networkId: string,
     source: ContractBookmarkSource,
+    /** Issue #1265: optional custom label (defaults to a shortened address). */
+    label?: string,
   ) => ContractBookmark;
   /** FE-054: Remove a contract bookmark */
   removeContractBookmark: (workspaceId: string, bookmarkId: string) => void;
+  /** Issue #1265: Rename / re-point an existing bookmark */
+  updateContractBookmark: (
+    workspaceId: string,
+    bookmarkId: string,
+    updates: { label?: string; contractId?: string; networkId?: string },
+  ) => void;
+  /** Issue #1265: Label/address search (favorites first) */
+  searchContractBookmarks: (workspaceId: string, query: string) => ContractBookmark[];
   /** FE-054: Toggle bookmark as favorite */
   toggleBookmarkFavorite: (workspaceId: string, bookmarkId: string) => void;
   /** FE-054: Repair bookmark network context */
@@ -540,11 +566,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       dismissConflict: () => set({ pendingConflict: null, syncState: "idle" }),
 
-      bookmarkContract: (workspaceId, contractId, networkId, source) => {
+      bookmarkContract: (workspaceId, contractId, networkId, source, label) => {
         const bookmark: ContractBookmark = {
           id: crypto.randomUUID(),
           workspaceId,
           contractId,
+          label: label?.trim() || shortenContractId(contractId),
           networkId,
           source,
           favorite: false,
@@ -563,17 +590,20 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                 ...state.contractBookmarks,
                 [workspaceId]: existing.map((entry) =>
                   entry.id === duplicate.id
-                    ? { ...entry, source, createdAt: Date.now() }
+                    ? { ...entry, source, label: bookmark.label, createdAt: Date.now() }
                     : entry,
                 ),
               },
             };
           }
 
+          // Issue #1265: cap the bookmark list per workspace.
+          const capped = [bookmark, ...existing].slice(0, MAX_CONTRACT_BOOKMARKS);
+
           return {
             contractBookmarks: {
               ...state.contractBookmarks,
-              [workspaceId]: [bookmark, ...existing],
+              [workspaceId]: capped,
             },
           };
         });
@@ -590,6 +620,47 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             ),
           },
         })),
+
+      updateContractBookmark: (workspaceId, bookmarkId, updates) =>
+        set((state) => ({
+          contractBookmarks: {
+            ...state.contractBookmarks,
+            [workspaceId]: (state.contractBookmarks[workspaceId] ?? []).map(
+              (entry) =>
+                entry.id === bookmarkId
+                  ? {
+                      ...entry,
+                      ...(updates.contractId ? { contractId: updates.contractId } : {}),
+                      ...(updates.networkId ? { networkId: updates.networkId } : {}),
+                      ...(updates.label !== undefined
+                        ? {
+                            label:
+                              updates.label.trim() || shortenContractId(entry.contractId),
+                          }
+                        : {}),
+                    }
+                  : entry,
+            ),
+          },
+        })),
+
+      searchContractBookmarks: (workspaceId, query) => {
+        const normalized = query.trim().toLowerCase();
+        const entries = get().contractBookmarks[workspaceId] ?? [];
+
+        const matches = normalized
+          ? entries.filter(
+              (entry) =>
+                entry.label.toLowerCase().includes(normalized) ||
+                entry.contractId.toLowerCase().includes(normalized),
+            )
+          : entries;
+
+        return [...matches].sort((a, b) => {
+          if (a.favorite === b.favorite) return b.createdAt - a.createdAt;
+          return a.favorite ? -1 : 1;
+        });
+      },
 
       toggleBookmarkFavorite: (workspaceId, bookmarkId) =>
         set((state) => ({
@@ -729,6 +800,27 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     {
       name: "soroban-workspaces",
       version: STORE_SCHEMA_VERSION,
+      /**
+       * Issue #1265: rehydrated bookmarks predate the `label` field and are not
+       * capped, so normalise both on load.
+       */
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<WorkspaceState>) };
+        const contractBookmarks: Record<string, ContractBookmark[]> = {};
+
+        for (const [workspaceId, entries] of Object.entries(
+          merged.contractBookmarks ?? {},
+        )) {
+          contractBookmarks[workspaceId] = (entries ?? [])
+            .slice(0, MAX_CONTRACT_BOOKMARKS)
+            .map((entry) => ({
+              ...entry,
+              label: entry.label?.trim() || shortenContractId(entry.contractId),
+            }));
+        }
+
+        return { ...merged, contractBookmarks };
+      },
       // FE-036: use the shared migration framework
       migrate: createMigrateFn(
         buildMigrations<WorkspaceState>([

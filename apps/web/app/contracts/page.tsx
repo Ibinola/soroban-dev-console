@@ -36,11 +36,13 @@ import { getDeployedFixtures } from "@/lib/fixture-manifest";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicator";
+import { UndoRedoShortcuts } from "@/components/undo-redo-shortcuts";
 
 import { useTranslations } from "@/i18n/locale-provider";
 export default function ContractsPage() {
   const t = useTranslations();
-  const { contracts, addContract, removeContract } = useContractStore();
+  const { contracts, addContract, removeContract, clearHistory } =
+    useContractStore();
   const { currentNetwork } = useNetworkStore();
   const {
     activeWorkspaceId,
@@ -102,9 +104,7 @@ export default function ContractsPage() {
       <Card>
         <CardHeader>
           <CardTitle>{t("contracts.track.title")}</CardTitle>
-          <CardDescription>
-            {t("contracts.track.description")}
-          </CardDescription>
+          <CardDescription>{t("contracts.track.description")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4 sm:flex-row">
@@ -133,10 +133,14 @@ export default function ContractsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[400px]">{t("contracts.table.contractId")}</TableHead>
+              <TableHead className="w-[400px]">
+                {t("contracts.table.contractId")}
+              </TableHead>
               <TableHead>{t("contracts.table.network")}</TableHead>
               <TableHead>{t("contracts.table.dateAdded")}</TableHead>
-              <TableHead className="text-right">{t("contracts.table.actions")}</TableHead>
+              <TableHead className="text-right">
+                {t("contracts.table.actions")}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -160,11 +164,12 @@ export default function ContractsPage() {
                       <FileCode className="h-4 w-4 shrink-0 text-blue-500" />
                       <span className="flex flex-col">
                         {/* Issue #1098: show the deploy-time alias, when set, above the raw ID */}
-                        {contract.name && !contract.name.startsWith("Contract ") && (
-                          <span className="font-sans text-xs font-semibold text-foreground">
-                            {contract.name}
-                          </span>
-                        )}
+                        {contract.name &&
+                          !contract.name.startsWith("Contract ") && (
+                            <span className="font-sans text-xs font-semibold text-foreground">
+                              {contract.name}
+                            </span>
+                          )}
                         <span>{contract.id}</span>
                       </span>
                     </Link>
@@ -203,6 +208,7 @@ export default function ContractsPage() {
                           toast.success(t("contracts.toasts.removed"));
                         }}
                         className="text-muted-foreground hover:text-red-500"
+                        aria-label={`Remove ${contract.id}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -259,7 +265,9 @@ export default function ContractsPage() {
                         f.network,
                         "fixture",
                       );
-                      toast.success(t("contracts.toasts.fixtureAdded", { label: f.label }));
+                      toast.success(
+                        t("contracts.toasts.fixtureAdded", { label: f.label }),
+                      );
                     }}
                     disabled={contracts.some((c) => c.id === f.contractId)}
                   >
@@ -307,7 +315,10 @@ export default function ContractsPage() {
                         {bookmark.contractId}
                       </Link>
                       <div className="text-xs text-muted-foreground">
-                        {t("contracts.bookmarks.meta", { network: bookmark.networkId, source: bookmark.source })}
+                        {t("contracts.bookmarks.meta", {
+                          network: bookmark.networkId,
+                          source: bookmark.source,
+                        })}
                         {isStale ? ` · ${t("contracts.bookmarks.stale")}` : ""}
                       </div>
                     </div>
@@ -331,7 +342,10 @@ export default function ContractsPage() {
                           size="icon"
                           variant="ghost"
                           onClick={() => {
-                            addContract(bookmark.contractId, bookmark.networkId);
+                            addContract(
+                              bookmark.contractId,
+                              bookmark.networkId,
+                            );
                             repairBookmarkNetwork(
                               activeWorkspaceId,
                               bookmark.id,
@@ -362,6 +376,8 @@ export default function ContractsPage() {
           )}
         </CardContent>
       </Card>
+      {/* Issue #1269: Ctrl+Z / Ctrl+Y for workspace contract modifications. */}
+      <UndoRedoShortcuts />
     </div>
   );
 }
