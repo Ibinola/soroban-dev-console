@@ -7,6 +7,7 @@ export * from "./simulation-explainer";
 export * from "./wasm-size-limit";
 export * from "./wasm-validation";
 export * from "./wasm-parser";
+export * from "./wasm-resource-estimator";
 export * from "./salt-utils";
 export * from "./spec-validator";
 export * from "./abi-compatibility";
