@@ -544,3 +544,16 @@ jobs:
 
       - name: Build and typecheck api-contracts
         run: npx turbo run build typecheck --filter=@devconsole/api-contracts
+contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @soroban-dev-console/api-contracts test:contracts
