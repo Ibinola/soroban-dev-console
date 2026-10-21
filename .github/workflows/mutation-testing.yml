@@ -1,0 +1,38 @@
+name: Mutation Testing
+
+on:
+  pull_request:
+    paths:
+      - 'packages/soroban-utils/**'
+  workflow_dispatch:
+
+jobs:
+  stryker:
+    name: Stryker Mutation Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run Mutation Tests
+        run: pnpm --filter @soroban-dev-console/soroban-utils test:mutation
+
+      - name: Upload Stryker Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-html-report
+          path: packages/soroban-utils/reports/mutation/html/
