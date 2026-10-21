@@ -79,14 +79,22 @@ function readVarUint(bytes: Uint8Array, offset: number): { value: number; next: 
   let result = 0;
   let shift = 0;
   let pos = offset;
+  // LEB128 for u32 is at most 5 bytes; stop early on truncated / adversarial input.
+  const maxBytes = 5;
+  let read = 0;
   for (;;) {
-    if (pos >= bytes.length) break;
+    if (pos >= bytes.length || read >= maxBytes) {
+      // Truncated or overlong encoding — treat as zero-length so callers
+      // fail the subsequent bounds checks rather than looping forever.
+      return { value: 0, next: Math.min(pos, bytes.length) };
+    }
     const byte = bytes[pos++];
+    read += 1;
     result |= (byte & 0x7f) << shift;
     if ((byte & 0x80) === 0) break;
     shift += 7;
   }
-  return { value: result, next: pos };
+  return { value: result >>> 0, next: pos };
 }
 
 /**
@@ -100,17 +108,44 @@ export function extractWasmCustomSection(
     return null;
   }
 
+  const maxOffset = wasmBytes.length;
   let offset = 8;
-  while (offset < wasmBytes.length) {
+  // Bound the number of sections we walk to avoid pathological loops on
+  // adversarial inputs (Issue #1219 fuzz harness).
+  let sectionsVisited = 0;
+  const MAX_SECTIONS = 10_000;
+
+  while (offset < maxOffset && sectionsVisited < MAX_SECTIONS) {
+    sectionsVisited += 1;
     const sectionId = wasmBytes[offset++];
     const { value: sectionLength, next } = readVarUint(wasmBytes, offset);
     offset = next;
+
+    // Reject unbounded / truncated section lengths before advancing.
+    if (
+      !Number.isFinite(sectionLength) ||
+      sectionLength < 0 ||
+      sectionLength > maxOffset ||
+      offset + sectionLength > maxOffset
+    ) {
+      return null;
+    }
+
     const sectionEnd = offset + sectionLength;
 
     if (sectionId === 0) {
       // Custom section
       const { value: nameLength, next: nameStart } = readVarUint(wasmBytes, offset);
-      if (nameStart + nameLength <= sectionEnd) {
+      // Cap name length: WASM custom section names are short; unbounded
+      // lengths can hang or OOM the parser on mutated inputs.
+      const MAX_NAME_LENGTH = 1024;
+      if (
+        Number.isFinite(nameLength) &&
+        nameLength >= 0 &&
+        nameLength <= MAX_NAME_LENGTH &&
+        nameStart + nameLength <= sectionEnd &&
+        nameStart + nameLength <= maxOffset
+      ) {
         let name = "";
         for (let i = 0; i < nameLength; i++) {
           name += String.fromCharCode(wasmBytes[nameStart + i]);
@@ -257,18 +292,24 @@ export async function parseWasmClientSpec(
       hasConstructor: !!constructorFunction,
       constructorFunction,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === "string"
+          ? err
+          : "Unknown parser error";
     return {
-      valid: true,
+      valid: false,
       sizeBytes,
       formattedSize,
       isOverWarnLimit,
       warnLimitBytes: SOROBAN_WASM_WARN_LIMIT_BYTES,
-      functions: fnNames.length > 0 ? fnNames : ["(No functions found)"],
-      parsedFunctions,
-      specFunctions,
+      functions: [],
+      parsedFunctions: [],
+      specFunctions: [],
       hasConstructor: false,
-      error: `Metadata parsing warning: ${err?.message || "Unknown"}`,
+      error: `WASM spec parse failed: ${message}`,
     };
   }
 }
