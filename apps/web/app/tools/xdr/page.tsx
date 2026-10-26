@@ -38,6 +38,9 @@ import { isAcceptedXdrFile, readXdrFileAsText, ACCEPTED_XDR_FILE_EXTENSIONS } fr
 import { findBase64ErrorPosition, type XdrErrorLocation } from "@/lib/xdr-error-locator";
 // Issue #938: Secret key detector
 import { containsSecret, useSecretPasteGuard } from "@/lib/secret-redaction";
+// Issue #1109: type-badged inspection tree for decoded ScVals
+import { scvalWrapperKey } from "@/lib/scval-type-badges";
+import { ScvalInspectionTree } from "@/components/scval-inspection-tree";
 
 const jsonReplacer = (_key: string, value: any) => {
   if (typeof value === "bigint") return value.toString();
@@ -509,6 +512,15 @@ export default function XdrToolsPage() {
 
   const needsValueInput = !["void", "ledger_key_contract_instance"].includes(encodeType);
 
+  // Issue #1109: the decoded payload, parsed once, and whether we can draw a badged tree for it
+  let decodedJson: unknown;
+  try {
+    decodedJson = decoded ? JSON.parse(decoded) : undefined;
+  } catch {
+    decodedJson = undefined;
+  }
+  const hasScvalTree = decodedJson !== undefined && scvalWrapperKey(decodedJson) !== undefined;
+
   return (
     <div className="container mx-auto max-w-4xl space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -683,7 +695,8 @@ export default function XdrToolsPage() {
               <CardContent className="relative min-h-[300px] flex-1">
                 {decoded ? (
                   <div aria-live="polite" className="absolute inset-4 overflow-auto rounded-md bg-zinc-950 p-4 font-mono text-xs text-zinc-50">
-                    <pre>{decoded}</pre>
+                    {/* Issue #1109: type badges on every node when the payload is an ScVal */}
+                    {hasScvalTree ? <ScvalInspectionTree value={decodedJson} /> : <pre>{decoded}</pre>}
                   </div>
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm italic text-muted-foreground">
