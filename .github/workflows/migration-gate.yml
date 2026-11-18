@@ -1,0 +1,21 @@
+name: Deployment Migration Gate
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['**/migrations/**', '**/prisma/**', '**/drizzle/**']
+
+jobs:
+  migration-gate:
+    # #1416: block deploys when migrations are pending or unreviewed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: List changed migrations
+        run: |
+          changed=$(git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD | grep -E 'migrations?/' || true)
+          echo "$changed"
+          if [ -n "$changed" ] && ! echo "${{ github.event.pull_request.labels.*.name }}" | grep -q 'migration-reviewed'; then
+            echo "Migrations changed; add the 'migration-reviewed' label after review."; exit 1
+          fi
