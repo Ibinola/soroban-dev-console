@@ -14,3 +14,6 @@ export * from "./abi-compatibility";
 export * from "./contract-address";
 export * from "./soroban-tx-builder";
 export * from "./scval-pretty";
+export * from "./resource-limits";
+export * from "./event-format";
+export * from "./simulation-schema";
