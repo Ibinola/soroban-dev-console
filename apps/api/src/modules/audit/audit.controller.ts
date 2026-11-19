@@ -17,8 +17,8 @@ import { PruneAuditLogsDto } from "./prune-audit-logs.dto.js";
 import { ListAuditDto } from "./audit.dto.js";
 import { OwnerKeyGuard } from "../../auth/owner-key.guard.js";
 import { resolveAuditExportFilters } from "./audit-export.js";
-import { AuditCursorError } from "../../lib/audit.service.js";
-import { BadRequestException } from "@nestjs/common";
+import { AdminKeyGuard } from "../../common/guards/admin-key.guard.js";
+import { BadRequestException, Put } from "@nestjs/common";
 
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 @ApiTags("audit")
@@ -80,6 +80,100 @@ export class AuditController {
       `attachment; filename="${filename}"`,
     );
     return csv;
+  }
+
+  /**
+   * #1378: manifest for an export (normalized filters, generation time, row
+   * count and SHA-256 of the export body). The body is not returned here; pass
+   * `snapshotAt` (and the same filters) to the export route to get content that
+   * matches the digest exactly.
+   */
+  @ApiOperation({ summary: "Export manifest" })
+  @Get("export/manifest")
+  async exportManifest(
+    @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
+    @Query("snapshotAt") snapshotAt?: string,
+  ) {
+    const format = query.format?.toLowerCase() === "json" ? "json" : "csv";
+    const { manifest } = await this.auditService.exportWithManifest(
+      format,
+      resolveAuditExportFilters(query),
+      query.columns?.split(",").map((c) => c.trim()).filter(Boolean),
+      this.parseSnapshot(snapshotAt),
+    );
+    return { manifest, snapshotAt: manifest.generatedAt };
+  }
+
+  /** #1378: the same export, returned with its checksum headers. */
+  @ApiOperation({ summary: "Export with checksum" })
+  @Get("export/verified")
+  async exportVerified(
+    @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
+    @Query("snapshotAt") snapshotAt: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const format = query.format?.toLowerCase() === "json" ? "json" : "csv";
+    const { filename, body, manifest } = await this.auditService.exportWithManifest(
+      format,
+      resolveAuditExportFilters(query),
+      query.columns?.split(",").map((c) => c.trim()).filter(Boolean),
+      this.parseSnapshot(snapshotAt),
+    );
+    response.setHeader("Content-Type", format === "csv" ? "text/csv; charset=utf-8" : "application/json");
+    response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    response.setHeader("X-Audit-Export-SHA256", manifest.sha256);
+    response.setHeader("X-Audit-Export-Rows", String(manifest.rowCount));
+    return body;
+  }
+
+  private parseSnapshot(value?: string): Date | undefined {
+    if (value === undefined || value === "") return undefined;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException({ code: "VALIDATION_ERROR", message: "snapshotAt must be an ISO 8601 date" });
+    }
+    return date;
+  }
+
+  /** #1376: read the effective audit retention (admin only). */
+  @ApiOperation({ summary: "Get audit retention" })
+  @UseGuards(AdminKeyGuard)
+  @Get("retention")
+  getRetention() {
+    return this.auditService.getRetentionSettings();
+  }
+
+  /** #1376: change audit retention at runtime (admin only, bounded, audited). */
+  @ApiOperation({ summary: "Set audit retention" })
+  @UseGuards(AdminKeyGuard)
+  @Put("retention")
+  async setRetention(@Body() body: { retentionDays?: unknown }) {
+    const updated = await this.auditService.setRetentionDays(body?.retentionDays, "admin");
+    if (!updated) {
+      const { min, max } = this.auditService.getRetentionSettings();
+      throw new BadRequestException({
+        code: "VALIDATION_ERROR",
+        message: `retentionDays must be a whole number between ${min} and ${max}`,
+      });
+    }
+    return updated;
+  }
+
+  /** #1377: verify a stream's audit hash chain (admin only). */
+  @ApiOperation({ summary: "Verify audit hash chain" })
+  @UseGuards(AdminKeyGuard)
+  @Get("verify")
+  async verifyChain(
+    @Query("resourceType") resourceType?: string,
+    @Query("resourceId") resourceId?: string,
+  ) {
+    if (!resourceType || !resourceId) {
+      throw new BadRequestException({
+        code: "VALIDATION_ERROR",
+        message: "resourceType and resourceId are required",
+      });
+    }
+    return this.auditService.verifyChain(resourceType, resourceId);
   }
 
   @ApiOperation({ summary: "Get audit logs" })

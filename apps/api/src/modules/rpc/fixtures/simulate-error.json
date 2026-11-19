@@ -1,0 +1,8 @@
+{
+  "variant": "simulate",
+  "description": "simulate error",
+  "response": {
+    "error": "HostError: Error(Contract, #1)",
+    "latestLedger": 1000
+  }
+}

@@ -14,6 +14,7 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AuditService } from "../../lib/audit.service.js";
+import type { MaintenanceState } from "../../lib/maintenance-mode.js";
 
 export const RUNTIME_CONFIG_VERSION = 2 as const;
 
@@ -60,6 +61,8 @@ export class RuntimeConfigService {
   private readonly logger = new Logger(RuntimeConfigService.name);
   private cachedConfig: RuntimeConfig | null = null;
   private lastDistribution: Date | null = null;
+  /** Runtime maintenance state; switched live, no restart needed. */
+  private maintenance: MaintenanceState | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -99,6 +102,36 @@ export class RuntimeConfigService {
     });
 
     return config;
+  }
+
+  /**
+   * Current maintenance state. The first read seeds it from MAINTENANCE_MODE
+   * ("true" enables); after that it only changes through setMaintenanceMode.
+   */
+  getMaintenanceMode(): MaintenanceState {
+    if (!this.maintenance) {
+      this.maintenance = { enabled: this.config.get<string>("MAINTENANCE_MODE") === "true" };
+    }
+    return { ...this.maintenance };
+  }
+
+  /** Switch maintenance mode live and audit the change. */
+  setMaintenanceMode(enabled: boolean, actor = "admin", reason?: string): MaintenanceState {
+    const previous = this.getMaintenanceMode();
+    const trimmed = reason?.trim().slice(0, 200) || undefined;
+    this.maintenance = enabled
+      ? { enabled: true, reason: trimmed, since: previous.enabled ? previous.since : new Date().toISOString() }
+      : { enabled: false };
+    void this.audit?.log({
+      actor,
+      action: "maintenance.changed",
+      resourceType: "runtime_config",
+      resourceId: "maintenance",
+      summary: `Maintenance mode ${enabled ? "enabled" : "disabled"}`,
+      metadata: { from: previous.enabled, to: enabled, reason: trimmed ?? null },
+    });
+    this.logger.warn(`Maintenance mode ${enabled ? "ENABLED" : "disabled"} by ${actor}`);
+    return this.getMaintenanceMode();
   }
 
   /** INFRA-832: Get the last distribution timestamp for health monitoring. */

@@ -1,0 +1,10 @@
+{
+  "variant": "simulate",
+  "description": "simulate partial",
+  "response": {
+    "result": {
+      "retvalXdr": "AAAAAQ==",
+      "auth": []
+    }
+  }
+}
