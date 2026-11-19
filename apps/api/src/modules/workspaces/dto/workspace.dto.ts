@@ -162,6 +162,41 @@ export class UpdateWorkspaceDto {
   revision?: number;
 }
 
+export class WorkspaceExportDto {
+  @ApiProperty()
+  version!: number;
+
+  @ApiProperty()
+  schemaVersion!: number;
+
+  @ApiProperty({ example: "ws_123" })
+  id!: string;
+
+  @ApiProperty({ example: "My workspace" })
+  name!: string;
+
+  @ApiProperty({ example: "testnet" })
+  selectedNetwork!: string;
+
+  @ApiProperty()
+  owner!: { keyFingerprint: string };
+
+  @ApiProperty()
+  contractIds!: string[];
+
+  @ApiProperty()
+  savedCallIds!: string[];
+
+  @ApiProperty()
+  artifactRefs!: Array<{ kind: string; id: string }>;
+
+  @ApiProperty()
+  createdAt!: number;
+
+  @ApiProperty()
+  updatedAt!: number;
+}
+
 export class ImportWorkspaceDto {
   /** Must be 2 — older versions are rejected to avoid silent data corruption */
   @ApiProperty()

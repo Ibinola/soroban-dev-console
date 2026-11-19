@@ -22,6 +22,7 @@ import {
   SearchWorkspacesDto,
   UpdateWorkspaceDto,
   UpdateWorkspaceTagsDto,
+  WorkspaceExportDto,
 } from "./workspace.dto.js";
 import { WorkspacesService } from "./workspaces.service.js";
 
@@ -109,7 +110,7 @@ export class WorkspacesController {
 
   @ApiOperation({ summary: "Export" })
   @Get(":id/export")
-  export(@Param("id") id: string, @Req() req: Request) {
+  export(@Param("id") id: string, @Req() req: Request): Promise<WorkspaceExportDto> {
     return this.workspacesService.export(id, (req as OwnerKeyRequest).ownerKey);
   }
 

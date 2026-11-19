@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   BadRequestException,
@@ -24,9 +25,48 @@ import type {
   PaginatedResponse,
   SearchWorkspacesDto,
   UpdateWorkspaceDto,
+  WorkspaceExportDto,
 } from "./workspace.dto.js";
 import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
+
+export interface WorkspaceExportSource {
+  id: string;
+  name: string;
+  selectedNetwork: string;
+  ownerKey: string;
+  createdAt: Date;
+  updatedAt: Date;
+  savedContracts: Array<{ contractId: string }>;
+  savedInteractions: Array<{ id: string }>;
+  artifacts: Array<{ kind: string; hash: string | null; name: string }>;
+}
+
+export function buildWorkspaceExportSnapshot(
+  workspace: WorkspaceExportSource,
+): WorkspaceExportDto {
+  const ownerKeyFingerprint = createHash("sha256")
+    .update(workspace.ownerKey)
+    .digest("hex")
+    .slice(0, 16);
+
+  return {
+    version: API_SNAPSHOT_VERSION,
+    schemaVersion: API_SNAPSHOT_VERSION,
+    id: workspace.id,
+    name: workspace.name,
+    selectedNetwork: workspace.selectedNetwork,
+    owner: { keyFingerprint: ownerKeyFingerprint },
+    contractIds: workspace.savedContracts.map((contract) => contract.contractId),
+    savedCallIds: workspace.savedInteractions.map((interaction) => interaction.id),
+    artifactRefs: workspace.artifacts.map((artifact) => ({
+      kind: artifact.kind,
+      id: artifact.hash || artifact.name,
+    })),
+    createdAt: workspace.createdAt.getTime(),
+    updatedAt: workspace.updatedAt.getTime(),
+  };
+}
 
 @Injectable()
 export class WorkspacesService {
@@ -420,20 +460,7 @@ export class WorkspacesService {
       throw new NotFoundException("Workspace not found");
     }
 
-    const snapshot = {
-      version: API_SNAPSHOT_VERSION,
-      id: workspace.id,
-      name: workspace.name,
-      selectedNetwork: workspace.selectedNetwork,
-      contractIds: workspace.savedContracts.map((contract) => contract.contractId),
-      savedCallIds: workspace.savedInteractions.map((interaction) => interaction.id),
-      artifactRefs: workspace.artifacts.map((artifact) => ({
-        kind: artifact.kind,
-        id: artifact.hash || artifact.name,
-      })),
-      createdAt: workspace.createdAt.getTime(),
-      updatedAt: workspace.updatedAt.getTime(),
-    };
+    const snapshot = buildWorkspaceExportSnapshot(workspace);
 
     // Export is a read-only operation; still route through the same side-effects boundary.
     await this.runMutationWithSideEffects(
