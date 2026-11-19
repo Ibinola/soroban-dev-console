@@ -43,6 +43,7 @@ import { FixtureFallbackIndicator } from "@/components/fixture-fallback-indicato
 
 import { useTranslations } from "@/i18n/locale-provider";
 import { LanguageSelector } from "@/components/language-selector";
+import { StorageUsageCard } from "@/components/storage-usage-card";
 // Issue #747: SSR-safe theme button group
 function ThemeSelector() {
   const t = useTranslations();
@@ -423,6 +424,11 @@ export default function SettingsPage() {
             <RuntimeConfigStatus showDetails={true} />
           </CardContent>
         </Card>
+      </div>
+
+      <div className="max-w-2xl">
+        <h2 className="mb-4 text-xl font-semibold">{t("settings.storage.sectionTitle")}</h2>
+        <StorageUsageCard />
       </div>
 
       <div className="max-w-2xl">
