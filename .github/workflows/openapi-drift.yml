@@ -1,0 +1,30 @@
+name: OpenAPI Drift Check
+
+# Fails (advisory for now) when apps/api/openapi.json no longer matches the
+# routes in the code. Regenerate with: npm run openapi:generate -w api
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "apps/api/**"
+      - "packages/api-contracts/**"
+      - ".github/workflows/openapi-drift.yml"
+
+jobs:
+  openapi-drift:
+    name: OpenAPI artifact is current
+    runs-on: ubuntu-latest
+    # Flip to false once apps/api/openapi.json has been generated and committed.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+      - run: npm ci
+      - run: npx prisma generate
+        working-directory: apps/api
+      - name: Compare generated OpenAPI with the committed artifact
+        run: npm run openapi:check -w api

@@ -12,12 +12,12 @@ export function isSwaggerEnabled(env: NodeJS.ProcessEnv = process.env): boolean 
   return env.NODE_ENV !== "production";
 }
 
-export function setupSwagger(app: INestApplication): boolean {
-  if (!isSwaggerEnabled()) return false;
+/** Build the OpenAPI document. `version` is explicit so generated artifacts do not depend on the environment. */
+export function buildOpenApiDocument(app: INestApplication, version?: string) {
   const config = new DocumentBuilder()
     .setTitle("Soroban Dev Console API")
     .setDescription("REST API for workspaces, shares, RPC proxying and audit logs")
-    .setVersion(process.env.npm_package_version ?? "0.1.0")
+    .setVersion(version ?? process.env.npm_package_version ?? "0.1.0")
     .build();
   const document = SwaggerModule.createDocument(app, config);
   // #1379: mark configured routes as deprecated, with migration guidance.

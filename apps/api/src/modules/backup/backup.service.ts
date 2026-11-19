@@ -9,6 +9,7 @@ import {
   planRetention,
   type BackupConfig,
 } from "../../lib/backup-policy.js";
+import { ScheduleGate } from "../../lib/schedule-gate.js";
 
 /**
  * Takes periodic SQLite backups (`VACUUM INTO`, consistent while the app is
@@ -20,12 +21,17 @@ export class BackupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BackupService.name);
   private readonly config: BackupConfig = parseBackupConfig();
   private timer: NodeJS.Timeout | null = null;
+  /** #1382: stable key for the backup schedule; at most one active run per key. */
+  private readonly scheduleKey = `backup:sqlite:${this.config.dir}:every-${this.config.intervalMinutes}m`;
+  private readonly gate = new ScheduleGate((event) =>
+    this.logger.log(`backup.schedule ${JSON.stringify(event)}`),
+  );
 
   constructor(private readonly prisma: PrismaService) {}
 
   onModuleInit() {
     if (!this.config.enabled) return;
-    this.timer = setInterval(() => void this.run(), this.config.intervalMinutes * 60_000);
+    this.timer = setInterval(() => void this.runScheduled().catch(() => undefined), this.config.intervalMinutes * 60_000);
     this.timer.unref();
     this.logger.log(
       `Backups every ${this.config.intervalMinutes} min to ${this.config.dir} ` +
@@ -35,6 +41,14 @@ export class BackupService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * Scheduled entry point: runs a backup unless one is already active for this
+   * schedule key. Duplicate triggers are skipped and logged with the key.
+   */
+  async runScheduled(now: Date = new Date()) {
+    return this.gate.runOnce(this.scheduleKey, () => this.run(now));
   }
 
   /** Creates one backup, then applies retention. Returns the file written. */

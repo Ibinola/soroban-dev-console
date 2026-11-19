@@ -181,24 +181,29 @@ export class AuditController {
   async getAuditLogs(
     @Query(new ValidationPipe({ transform: true })) query: ListAuditDto,
   ) {
-    return this.auditService.query({
-      actor: query.actor,
-      action: query.action,
-      resourceType: query.resourceType,
-      resourceId: query.resourceId,
-      skip: query.skip,
-      take: query.take,
-      // Optional params are only forwarded when provided so callers using
-      // legacy offset pagination / no time filter keep existing behavior.
-      ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
-      ...(query.limit !== undefined ? { limit: query.limit } : {}),
-      ...(query.createdAfter !== undefined
-        ? { createdAfter: query.createdAfter }
-        : {}),
-      ...(query.createdBefore !== undefined
-        ? { createdBefore: query.createdBefore }
-        : {}),
-    });
+    // The export filter names and aliases (from/to/type) apply to the list too.
+    const filters = resolveAuditExportFilters(query);
+    try {
+      return await this.auditService.query({
+        ...filters,
+        skip: query.skip,
+        take: query.take,
+        // Optional params are only forwarded when provided so callers using
+        // legacy offset pagination / no time filter keep existing behavior.
+        ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
+        ...(query.limit !== undefined ? { limit: query.limit } : {}),
+      });
+    } catch (error) {
+      if (error instanceof AuditCursorError) {
+        // Field-level validation error for the cursor parameter.
+        throw new BadRequestException({
+          code: "VALIDATION_ERROR",
+          message: error.message,
+          details: { field: error.field, code: error.code },
+        });
+      }
+      throw error;
+    }
   }
 
   // Issue #1137: 24-hour summary metrics for security dashboards.
