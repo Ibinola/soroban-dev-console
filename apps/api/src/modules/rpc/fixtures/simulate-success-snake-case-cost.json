@@ -1,0 +1,15 @@
+{
+  "variant": "simulate",
+  "description": "simulate success snake case cost",
+  "response": {
+    "minResourceFee": "100",
+    "result": {
+      "retvalXdr": "AAAAAQ==",
+      "auth": []
+    },
+    "cost": {
+      "cpu_insns": "99",
+      "mem_bytes": "7"
+    }
+  }
+}

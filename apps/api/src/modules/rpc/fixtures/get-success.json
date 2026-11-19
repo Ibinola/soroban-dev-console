@@ -1,0 +1,10 @@
+{
+  "variant": "get",
+  "description": "get success",
+  "response": {
+    "status": "SUCCESS",
+    "latestLedger": 200,
+    "ledger": 123,
+    "resultXdr": "AAAAAQ=="
+  }
+}
