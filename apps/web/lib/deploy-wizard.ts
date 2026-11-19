@@ -81,3 +81,59 @@ const ZERO_SALT = "0".repeat(64);
 export function resolveSaltHex(draft: Pick<DeployDraft, "saltMode" | "saltHex">): string {
   return draft.saltMode === "custom" ? draft.saltHex.trim().toLowerCase() : ZERO_SALT;
 }
+
+export interface DeploymentCheckItem {
+  id: string;
+  label: string;
+  severity: "blocking" | "warning";
+  field: DeployStep;
+}
+
+/** Final review checks shown before a deployment is signed and submitted. */
+export function buildDeploymentChecklist(
+  draft: DeployDraft,
+  network: { id: string; rpcUrl?: string; networkPassphrase?: string },
+): DeploymentCheckItem[] {
+  const items: DeploymentCheckItem[] = [];
+
+  if (!draft.hasFile) {
+    items.push({
+      id: "artifact",
+      label: "Choose a WASM artifact to deploy.",
+      severity: "blocking",
+      field: "upload",
+    });
+  }
+
+  if (draft.saltMode === "custom") {
+    const salt = validateSaltHex(draft.saltHex);
+    if (!salt.valid) {
+      items.push({
+        id: "salt",
+        label: salt.error ?? "Provide a valid 32-byte salt.",
+        severity: "blocking",
+        field: "configure",
+      });
+    }
+  }
+
+  if (!network.rpcUrl || !network.networkPassphrase) {
+    items.push({
+      id: "network",
+      label: `Network ${network.id} is missing its RPC URL or passphrase.`,
+      severity: "blocking",
+      field: "configure",
+    });
+  }
+
+  if (!draft.simulationOk) {
+    items.push({
+      id: "simulation",
+      label: "Run a successful simulation before deploying.",
+      severity: "warning",
+      field: "simulate",
+    });
+  }
+
+  return items;
+}

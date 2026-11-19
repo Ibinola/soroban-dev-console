@@ -3,6 +3,7 @@ import { NetworkHealthService } from "./network-health.service.js";
 import { RpcMetricsService } from "../rpc/rpc-metrics.service.js";
 import { rpcCircuitBreakers, sanitizeCircuitSnapshots } from "../../lib/circuit-breaker.js";
 import { rpcCoalescer } from "../../lib/request-coalescer.js";
+import { DbPoolMetricsService } from "./db-pool-metrics.service.js";
 
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 @ApiTags("health")
@@ -11,6 +12,7 @@ export class HealthController {
   constructor(
     private readonly networkHealth: NetworkHealthService,
     private readonly rpcMetrics: RpcMetricsService,
+    private readonly dbPoolMetrics: DbPoolMetricsService,
   ) {}
 
   @ApiOperation({ summary: "Get health" })
@@ -49,12 +51,19 @@ export class HealthController {
 
   @ApiOperation({ summary: "Get rpc metrics" })
   @Get("health/rpc")
-  getRpcMetrics() {
+  async getRpcMetrics() {
     return {
       ...this.rpcMetrics.getMetrics(),
       // #1298: coalescing hit rate. #1300: per-endpoint circuit state.
       coalescing: rpcCoalescer.stats(),
-      circuits: sanitizeCircuitSnapshots(rpcCircuitBreakers.snapshot()),
+      circuits: rpcCircuitBreakers.snapshot(),
+      dbPool: await this.dbPoolMetrics.getMetrics(),
     };
+  }
+
+  @ApiOperation({ summary: "Get database pool metrics" })
+  @Get("health/db-pool")
+  getDbPoolMetrics() {
+    return this.dbPoolMetrics.getMetrics();
   }
 }

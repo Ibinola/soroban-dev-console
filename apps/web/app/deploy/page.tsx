@@ -43,6 +43,7 @@ import { computeContractAddress, normalizeSimulationResult } from "@devconsole/s
 import {
   DEPLOY_STEPS,
   DEPLOY_STEP_LABELS,
+  buildDeploymentChecklist,
   clampRestoredStep,
   nextStep,
   previousStep,
@@ -90,6 +91,15 @@ export default function DeployPage() {
   const { step: storedStep, saltMode, saltHex, setStep, setSaltMode, setSaltHex } =
     useDeployWizardStore();
   const step: DeployStep = DEPLOY_STEPS.includes(storedStep) ? storedStep : "upload";
+  const deploymentChecklist = buildDeploymentChecklist(
+    {
+      hasFile: file !== null,
+      saltMode,
+      saltHex,
+      simulationOk: simulationPreview?.ok === true,
+    },
+    getActiveNetworkConfig(),
+  );
 
   // Step 1: upload
   const [file, setFile] = useState<File | null>(null);
@@ -446,6 +456,36 @@ export default function DeployPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="rounded-md border p-4 space-y-2">
+              <p className="text-sm font-semibold">Deployment review checklist</p>
+              {deploymentChecklist.length === 0 ? (
+                <p className="flex items-center gap-2 text-sm text-emerald-600">
+                  <CheckCircle className="h-4 w-4" />
+                  All pre-deployment checks passed.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {deploymentChecklist.map((item) => (
+                    <li key={item.id} className="flex items-start gap-2 text-sm">
+                      <AlertCircle
+                        className={`mt-0.5 h-4 w-4 shrink-0 ${
+                          item.severity === "blocking" ? "text-destructive" : "text-amber-500"
+                        }`}
+                      />
+                      <span>{item.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => setStep(item.field)}
+                        className="ml-auto shrink-0 text-xs text-primary underline underline-offset-2"
+                      >
+                        Review
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {file && (
               <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
                 <FileCode className="h-4 w-4 text-blue-500" />
