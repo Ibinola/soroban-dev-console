@@ -90,6 +90,21 @@ export function generateCorrelationId(): string {
   return randomUUID();
 }
 
+const MAX_CORRELATION_ID_LENGTH = 128;
+const SAFE_CORRELATION_ID = /^[A-Za-z0-9._:-]+$/;
+
+export function sanitizeCorrelationId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_CORRELATION_ID_LENGTH) return undefined;
+  if (!SAFE_CORRELATION_ID.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+export function resolveCorrelationId(value?: unknown): string {
+  return sanitizeCorrelationId(value) ?? generateCorrelationId();
+}
+
 export function buildStructuredLogEntry(
   entry: Omit<StructuredLogEntry, "correlationId"> & { correlationId?: string },
 ): StructuredLogEntry {

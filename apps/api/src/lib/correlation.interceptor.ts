@@ -23,7 +23,7 @@ import { Observable } from "rxjs";
 import { tap } from "rxjs/operators";
 import {
   buildStructuredLogEntry,
-  generateCorrelationId,
+  resolveCorrelationId,
   runWithCorrelation,
 } from "./request-context.js";
 import { createLogger } from "./logger.js";
@@ -37,8 +37,7 @@ export class CorrelationInterceptor implements NestInterceptor {
     const res = context.switchToHttp().getResponse<Response>();
 
     // Extract correlation ID from header or generate new one
-    const correlationId =
-      (req.headers["x-request-id"] as string) || generateCorrelationId();
+    const correlationId = resolveCorrelationId(req.headers["x-request-id"]);
 
     // Set in response headers so client can reference it
     res.setHeader("x-request-id", correlationId);

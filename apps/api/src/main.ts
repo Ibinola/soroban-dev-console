@@ -69,7 +69,7 @@ async function bootstrap() {
     // DEVOPS-002: Removed x-owner-key from allowedHeaders to avoid advertising
     // sensitive authentication headers in CORS preflight responses.
     // The header is still accepted and processed by the backend.
-    allowedHeaders: ["Content-Type", "Authorization", "x-request-id"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-request-id", "x-correlation-id"],
     credentials: true
   });
   app.setGlobalPrefix("api");

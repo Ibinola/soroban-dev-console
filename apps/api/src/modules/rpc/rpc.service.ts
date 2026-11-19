@@ -21,7 +21,7 @@ import {
   getMethodPolicy,
   buildMethodNotAllowedError,
 } from "./rpc-method-policy.js";
-import { getCorrelationId } from "../../lib/request-context.js";
+import { getCorrelationId, resolveCorrelationId } from "../../lib/request-context.js";
 import { validateJsonDepth } from "../../lib/json-validation.js";
 import { createLogger } from "../../lib/logger.js";
 import { rpcCircuitBreakers } from "../../lib/circuit-breaker.js";
@@ -251,7 +251,7 @@ export class RpcService {
     const timeout = setTimeout(() => controller.abort(), policy.timeoutMs);
     const start = Date.now();
     // Issue #753: Get correlation ID for end-to-end trace propagation
-    const correlationId = getCorrelationId();
+    const correlationId = resolveCorrelationId(getCorrelationId());
 
     // Issue #753: Log the upstream RPC call before it starts
     log.debug("rpc.upstream.start", {
@@ -267,10 +267,8 @@ export class RpcService {
         headers: {
           "content-type": "application/json",
           // Issue #753: Propagate both X-Request-ID and X-Correlation-ID to upstream
-          ...(correlationId ? {
-            "x-request-id": correlationId,
-            "x-correlation-id": correlationId,
-          } : {}),
+          "x-request-id": correlationId,
+          "x-correlation-id": correlationId,
         },
         body: serializedPayload,
         signal: controller.signal,
