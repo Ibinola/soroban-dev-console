@@ -12,6 +12,19 @@
  * Exits non-zero on any inconsistency so the devops CI gate blocks the merge.
  */
 
+// #!/usr/bin/env tsx
+/**
+ * check-dependency-integrity.ts
+ *
+ * Verifies that all workspace package.json files declare consistent
+ * versions of shared dependencies and that the root lockfile (package-lock.json)
+ * is present and up to date.
+ *
+ * Issue #759: Also runs npm audit for high/critical vulnerabilities and
+ * checks for incompatible licenses (GPL, AGPL).
+ *
+ * Exits non-zero on any inconsistency so the devops CI gate blocks the merge.
+ */
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { execSync } from "child_process";
