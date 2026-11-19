@@ -1,6 +1,7 @@
 import * as freighter from "@stellar/freighter-api";
 import albedo from "@albedo-link/intent";
 import { xBullWalletConnect } from "@creit.tech/xbull-wallet-connect";
+import { withSignatureTimeout } from "@/lib/wallet/signature-timeout";
 
 export type WalletProviderId = "freighter" | "albedo" | "xbull";
 
@@ -144,17 +145,27 @@ async function connectAlbedo(): Promise<WalletSession> {
 
 // FE-041: Signing abstraction implementations
 async function freighterSign(xdr: string, networkPassphrase: string): Promise<string> {
-  const { signTransaction } = await import("@stellar/freighter-api");
-  const res = await signTransaction(xdr, { networkPassphrase });
-  if (typeof res === "object" && "signedTxXdr" in res) {
-    return (res as { signedTxXdr: string }).signedTxXdr;
-  }
-  return res as unknown as string;
+  return withSignatureTimeout(
+    async () => {
+      const { signTransaction } = await import("@stellar/freighter-api");
+      const res = await signTransaction(xdr, { networkPassphrase });
+      if (typeof res === "object" && "signedTxXdr" in res) {
+        return (res as { signedTxXdr: string }).signedTxXdr;
+      }
+      return res as unknown as string;
+    },
+    { provider: "freighter" },
+  );
 }
 
 async function albedoSign(xdr: string, networkPassphrase: string): Promise<string> {
-  const result = await albedo.tx({ xdr, network: networkPassphrase });
-  return result.signed_envelope_xdr;
+  return withSignatureTimeout(
+    async () => {
+      const result = await albedo.tx({ xdr, network: networkPassphrase });
+      return result.signed_envelope_xdr;
+    },
+    { provider: "albedo" },
+  );
 }
 
 // FE-042: Revalidation helpers
@@ -253,13 +264,18 @@ async function connectXbull(): Promise<WalletSession> {
 }
 
 async function xbullSign(xdr: string, networkPassphrase: string): Promise<string> {
-  const bridge = new xBullWalletConnect();
-  try {
-    const result = await bridge.sign({ xdr, network: networkPassphrase });
-    return result;
-  } finally {
-    bridge.closeConnections();
-  }
+  return withSignatureTimeout(
+    async () => {
+      const bridge = new xBullWalletConnect();
+      try {
+        const result = await bridge.sign({ xdr, network: networkPassphrase });
+        return result;
+      } finally {
+        bridge.closeConnections();
+      }
+    },
+    { provider: "xbull" },
+  );
 }
 
 async function xbullRevalidate(): Promise<RevalidationResult> {
