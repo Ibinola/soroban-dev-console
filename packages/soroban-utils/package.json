@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "lint": "npm run typecheck",
     "bench": "tsx bench/run.ts",
     "bench:update": "tsx bench/run.ts --update-baseline"
