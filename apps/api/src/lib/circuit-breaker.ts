@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export type CircuitState = "closed" | "open" | "half-open";
 
 export interface CircuitBreakerOptions {
@@ -96,6 +98,27 @@ export class CircuitBreakerRegistry {
       };
     });
   }
+}
+
+export interface SanitizedCircuitSnapshot {
+  provider: string;
+  state: CircuitState;
+  consecutiveFailures: number;
+  retryInMs: number;
+}
+
+export function sanitizeCircuitSnapshots(
+  snapshots: CircuitSnapshot[],
+): SanitizedCircuitSnapshot[] {
+  return snapshots.map((snapshot) => ({
+    provider: `provider-${createHash("sha256")
+      .update(snapshot.endpoint)
+      .digest("hex")
+      .slice(0, 8)}`,
+    state: snapshot.state,
+    consecutiveFailures: snapshot.consecutiveFailures,
+    retryInMs: snapshot.retryInMs,
+  }));
 }
 
 /** Process-wide registry shared by the RPC proxy and the health endpoint. */

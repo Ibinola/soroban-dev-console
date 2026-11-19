@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, Req, Sse
 import { Observable, interval, Subject, takeUntil } from "rxjs";
 import type { Request, Response } from "express";
 import { RpcRateLimitGuard } from "./rpc-rate-limit.guard.js";
+import { rpcCircuitBreakers, sanitizeCircuitSnapshots } from "../../lib/circuit-breaker.js";
 import { RpcService } from "./rpc.service.js";
 import { RpcCacheService } from "./rpc-cache.service.js";
 import { RpcFailoverService } from "./rpc-failover.service.js";
@@ -24,16 +25,30 @@ export class RpcController {
     private readonly failover: RpcFailoverService,
   ) {}
 
-  @ApiOperation({ summary: "Get endpoint status" })
-  @Get("endpoints/status")
-  getEndpointStatus(@Req() req: Request) {
+  private assertInternalRequest(req: Request): void {
     const ip = req.ip || req.socket?.remoteAddress;
     if (ip !== "::1" && ip !== "127.0.0.1" && ip !== "::ffff:127.0.0.1") {
       throw new ForbiddenException("Only internal localhost requests allowed");
     }
+  }
+
+  @ApiOperation({ summary: "Get endpoint status" })
+  @Get("endpoints/status")
+  getEndpointStatus(@Req() req: Request) {
+    this.assertInternalRequest(req);
     return {
       success: true,
       data: this.failover.getStatus(),
+    };
+  }
+
+  @ApiOperation({ summary: "Get sanitized circuit breaker state" })
+  @Get("circuits/status")
+  getCircuitStatus(@Req() req: Request) {
+    this.assertInternalRequest(req);
+    return {
+      success: true,
+      data: sanitizeCircuitSnapshots(rpcCircuitBreakers.snapshot()),
     };
   }
 
