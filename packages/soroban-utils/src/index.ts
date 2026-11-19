@@ -14,3 +14,5 @@ export * from "./abi-compatibility";
 export * from "./contract-address";
 export * from "./soroban-tx-builder";
 export * from "./scval-pretty";
+export * from "./scval";
+export * from "./spec-diff";

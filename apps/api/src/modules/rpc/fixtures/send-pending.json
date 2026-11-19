@@ -1,0 +1,10 @@
+{
+  "variant": "send",
+  "description": "send pending",
+  "response": {
+    "status": "PENDING",
+    "hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "latestLedger": 1000,
+    "latestLedgerCloseTime": "1700000000"
+  }
+}

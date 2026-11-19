@@ -10,7 +10,8 @@ import { ApiErrorFilter } from "./lib/api-error.filter.js";
 import { ApiResponseInterceptor } from "./lib/api-response.interceptor.js";
 import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
 import { DEFAULT_API_PORT } from "@devconsole/api-contracts";
-import { createDeprecationMiddleware, parseDeprecations } from "./lib/api-deprecation.js";
+import { RuntimeConfigService } from "./modules/runtime-config/runtime-config.service.js";
+import { createMaintenanceMiddleware } from "./lib/maintenance-mode.js";
 // Issue #941: CSRF protection
 import { CsrfGuard } from "./common/guards/csrf.guard.js";
 // Issue #1138: audit rejected CORS origin attempts
@@ -100,8 +101,9 @@ async function bootstrap() {
     }
     next();
   });
-  // #1379: deprecation/sunset headers for configured routes only.
-  app.use(createDeprecationMiddleware(parseDeprecations(process.env.API_DEPRECATIONS)));
+  // Maintenance mode: read on every request so the toggle applies immediately.
+  const runtimeConfig = app.get(RuntimeConfigService, { strict: false });
+  app.use(createMaintenanceMiddleware(() => runtimeConfig.getMaintenanceMode()));
   app.useGlobalFilters(new ApiErrorFilter());
   // DEVOPS-001: Register correlation interceptor first to ensure all requests are traced
   app.useGlobalInterceptors(new CorrelationInterceptor(), new ApiResponseInterceptor());

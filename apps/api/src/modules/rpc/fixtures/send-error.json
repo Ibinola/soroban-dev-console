@@ -1,0 +1,10 @@
+{
+  "variant": "send",
+  "description": "send error",
+  "response": {
+    "status": "ERROR",
+    "hash": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+    "latestLedger": 1000,
+    "latestLedgerCloseTime": "1700000000"
+  }
+}
