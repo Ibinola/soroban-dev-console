@@ -63,6 +63,11 @@ export class ApiErrorFilter implements ExceptionFilter {
       ),
     );
 
+    // A 503 from maintenance mode tells clients when to retry.
+    if (status === HttpStatus.SERVICE_UNAVAILABLE && code === "MAINTENANCE_MODE") {
+      response.setHeader("Retry-After", "60");
+    }
+
     response.status(status).json(errorResponse);
   }
 
