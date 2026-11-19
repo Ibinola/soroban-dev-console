@@ -13,6 +13,7 @@ import {
 } from "../modules/security/services/redaction.service.js";
 import { buildAuditCsv } from "../modules/audit/audit-csv.js";
 import { resolveAuditExportRowLimit } from "../modules/audit/audit-export.js";
+import { decodeAuditCursor, encodeAuditCursor } from "../modules/audit/audit-cursor.js";
 
 export interface AuditEntry {
   actor: string;
@@ -26,24 +27,18 @@ export interface AuditEntry {
 const CURSOR_DEFAULT_LIMIT = 50;
 const CURSOR_MAX_LIMIT = 100;
 
-/** Encode a composite (createdAt + id) cursor as a base64 string. */
-function encodeCursor(createdAt: Date, id: string): string {
-  return Buffer.from(
-    JSON.stringify({ createdAt: createdAt.toISOString(), id }),
-  ).toString("base64");
-}
-
-/** Decode a base64 composite cursor, returning null when malformed. */
-function decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
-  try {
-    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
-    if (typeof parsed?.createdAt !== "string" || typeof parsed?.id !== "string")
-      return null;
-    const createdAt = new Date(parsed.createdAt);
-    if (Number.isNaN(createdAt.getTime())) return null;
-    return { createdAt, id: parsed.id };
-  } catch {
-    return null;
+/**
+ * #1381: thrown for an invalid cursor; the HTTP layer turns it into a 400 with a
+ * field-level error for `cursor`.
+ */
+export class AuditCursorError extends Error {
+  readonly field = "cursor" as const;
+  constructor(
+    readonly code: "MALFORMED" | "TAMPERED" | "FILTER_MISMATCH",
+    message: string,
+  ) {
+    super(message);
+    this.name = "AuditCursorError";
   }
 }
 
@@ -343,7 +338,14 @@ export class AuditService {
         Math.max(query.limit ?? CURSOR_DEFAULT_LIMIT, 1),
         CURSOR_MAX_LIMIT,
       );
-      const decoded = query.cursor ? decodeCursor(query.cursor) : null;
+      // The cursor is bound to the active filters, so it cannot be reused with others.
+      const filterKey = { actor, action, resourceType, resourceId, createdAfter, createdBefore };
+      let decoded: { createdAt: Date; id: string } | null = null;
+      if (query.cursor) {
+        const result = decodeAuditCursor(query.cursor, filterKey);
+        if (!result.ok) throw new AuditCursorError(result.reason, result.message);
+        decoded = result.position;
+      }
       const cursorFilter = decoded
         ? {
             OR: [
@@ -364,7 +366,9 @@ export class AuditService {
       const data = hasMore ? rows.slice(0, limit) : rows;
       const last = data[data.length - 1];
       const nextCursor =
-        hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
+        hasMore && last
+          ? encodeAuditCursor({ createdAt: last.createdAt, id: last.id }, filterKey)
+          : null;
 
       return { data, pagination: { limit, nextCursor } };
     }

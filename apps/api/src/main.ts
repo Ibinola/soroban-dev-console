@@ -10,6 +10,12 @@ import { ApiErrorFilter } from "./lib/api-error.filter.js";
 import { ApiResponseInterceptor } from "./lib/api-response.interceptor.js";
 import { CorrelationInterceptor } from "./lib/correlation.interceptor.js";
 import { DEFAULT_API_PORT } from "@devconsole/api-contracts";
+import { PrismaService } from "./lib/prisma.service.js";
+import {
+  MigrationStartupError,
+  assertSchemaStateCertain,
+  resolveMigrationLockTimeoutMs,
+} from "./lib/migration-lock.js";
 // Issue #941: CSRF protection
 import { CsrfGuard } from "./common/guards/csrf.guard.js";
 // Issue #1138: audit rejected CORS origin attempts
@@ -58,6 +64,36 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     cors: false
   });
+
+  // #1383: do not start serving while the schema state is uncertain or locked.
+  try {
+    const prisma = app.get(PrismaService, { strict: false });
+    await assertSchemaStateCertain(
+      {
+        async readMigrationRows() {
+          try {
+            return await prisma.$queryRawUnsafe(
+              'SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations"',
+            );
+          } catch (error) {
+            // A database created with `db push` has no migrations table.
+            if (/no such table|does not exist/i.test(String(error))) return null;
+            throw error;
+          }
+        },
+      },
+      { timeoutMs: resolveMigrationLockTimeoutMs(), phase: "schema-check" },
+    );
+  } catch (error) {
+    if (error instanceof MigrationStartupError) {
+      console.error(
+        JSON.stringify({ level: "error", message: "migration.startup.blocked", kind: error.kind, phase: error.phase, timeoutMs: error.timeoutMs, detail: error.message }),
+      );
+      await app.close();
+      process.exit(1);
+    }
+    throw error;
+  }
 
   // Issue #1138: one allowlist source of truth for CORS AND rejection logging.
   const corsAllowlist = resolveCorsAllowlist();
