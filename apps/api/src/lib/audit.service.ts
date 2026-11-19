@@ -12,7 +12,18 @@ import {
   redactText,
 } from "../modules/security/services/redaction.service.js";
 import { buildAuditCsv } from "../modules/audit/audit-csv.js";
-import { resolveAuditExportRowLimit } from "../modules/audit/audit-export.js";
+import {
+  buildAuditExportManifest,
+  normalizeAuditExportFilters,
+  resolveAuditExportRowLimit,
+  type AuditExportManifest,
+} from "../modules/audit/audit-export.js";
+import {
+  auditStreamKey,
+  computeAuditHash,
+  verifyAuditChain,
+  type ChainVerification,
+} from "../modules/audit/audit-hash.js";
 
 export interface AuditEntry {
   actor: string;
@@ -59,6 +70,18 @@ export interface AuditSummary {
 /** Issue #1130: default retention is 30 days (configurable via env). */
 const DEFAULT_RETENTION_DAYS = 30;
 
+/** #1376: bounds for the runtime-adjustable retention, in days. */
+export const MIN_RETENTION_DAYS = 1;
+export const MAX_RETENTION_DAYS = 3650;
+
+/** Parse a retention value; returns null unless it is an integer inside the bounds. */
+export function parseRetentionDays(value: unknown): number | null {
+  const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof n === "number" && Number.isInteger(n) && n >= MIN_RETENTION_DAYS && n <= MAX_RETENTION_DAYS
+    ? n
+    : null;
+}
+
 /** Issue #1137: default rolling window for summary metrics. */
 const DEFAULT_METRICS_WINDOW_HOURS = 24;
 
@@ -91,15 +114,81 @@ const READ_ACTION_PREFIXES: ReadonlyArray<string> = [
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
-  private readonly retentionDays: number;
+  /** Retention from the environment (or the default); the starting value. */
+  private readonly configuredRetentionDays: number;
+  /** #1376: runtime override set through the admin endpoint; null means "use the configured value". */
+  private runtimeRetentionDays: number | null = null;
 
   constructor(private readonly prisma: PrismaService) {
-    this.retentionDays = Number(
-      process.env.AUDIT_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS,
-    );
+    this.configuredRetentionDays =
+      parseRetentionDays(process.env.AUDIT_RETENTION_DAYS ?? DEFAULT_RETENTION_DAYS) ?? DEFAULT_RETENTION_DAYS;
+  }
+
+  /** The retention in effect now: the runtime value if one was set, else the configured one. */
+  getRetentionDays(): number {
+    return this.runtimeRetentionDays ?? this.configuredRetentionDays;
+  }
+
+  /** Read-only view for the admin endpoint. */
+  getRetentionSettings() {
+    return {
+      retentionDays: this.getRetentionDays(),
+      source: this.runtimeRetentionDays === null ? "configuration" : "runtime",
+      configuredDays: this.configuredRetentionDays,
+      min: MIN_RETENTION_DAYS,
+      max: MAX_RETENTION_DAYS,
+    };
+  }
+
+  /**
+   * #1376: change the retention at runtime. The value is validated against the
+   * bounds and the old and new values are written to audit history.
+   * Returns null when the value is out of bounds (nothing is changed).
+   */
+  async setRetentionDays(value: unknown, actor = "admin") {
+    const days = parseRetentionDays(value);
+    if (days === null) return null;
+    const previous = this.getRetentionDays();
+    this.runtimeRetentionDays = days;
+    await this.log({
+      actor,
+      action: "audit.retention.changed",
+      resourceType: "audit_retention",
+      resourceId: "retention",
+      summary: `Audit retention changed from ${previous} to ${days} days`,
+      metadata: { oldDays: previous, newDays: days },
+    });
+    return this.getRetentionSettings();
   }
 
   async log(entry: AuditEntry): Promise<void> {
+    const createdAt = new Date();
+    const metadata = entry.metadata
+      ? (redactJsonValue(entry.metadata) as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+    const stream = auditStreamKey(entry.resourceType, entry.resourceId);
+
+    // #1377: link to the previous event in this stream. The hash covers the
+    // stored (redacted) metadata, so verification recomputes from stored data.
+    const last = await this.prisma.auditLog.findFirst({
+      where: { stream, hash: { not: null } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { hash: true },
+    });
+    const prevHash = last?.hash ?? null;
+    const hash = computeAuditHash(
+      {
+        id: "",
+        actor: entry.actor,
+        action: entry.action,
+        resourceType: entry.resourceType,
+        resourceId: entry.resourceId,
+        metadata: metadata === Prisma.JsonNull ? null : metadata,
+        createdAt,
+      },
+      prevHash,
+    );
+
     await this.prisma.auditLog.create({
       data: {
         actor: entry.actor,
@@ -107,11 +196,37 @@ export class AuditService {
         resourceType: entry.resourceType,
         resourceId: entry.resourceId,
         summary: entry.summary ? redactText(entry.summary) : null,
-        metadata: entry.metadata
-          ? (redactJsonValue(entry.metadata) as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
+        metadata,
+        createdAt,
+        stream,
+        hash,
+        prevHash,
       },
     });
+  }
+
+  /**
+   * #1377: verify one stream's hash chain (oldest first). Reports the first
+   * broken link and the range affected from there.
+   */
+  async verifyChain(resourceType: string, resourceId: string): Promise<ChainVerification> {
+    const rows = await this.prisma.auditLog.findMany({
+      where: { stream: auditStreamKey(resourceType, resourceId) },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return verifyAuditChain(
+      rows.map((row) => ({
+        id: row.id,
+        actor: row.actor,
+        action: row.action,
+        resourceType: row.resourceType,
+        resourceId: row.resourceId,
+        metadata: row.metadata ?? null,
+        createdAt: row.createdAt,
+        hash: row.hash ?? null,
+        prevHash: row.prevHash ?? null,
+      })),
+    );
   }
 
   async findByResource(resourceType: string, resourceId: string) {
@@ -122,7 +237,7 @@ export class AuditService {
   }
 
   async findAll(retentionDays?: number) {
-    const days = retentionDays ?? this.retentionDays;
+    const days = retentionDays ?? this.getRetentionDays();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
@@ -133,7 +248,9 @@ export class AuditService {
   }
 
   async prune(olderThanDays?: number) {
-    const days = olderThanDays ?? this.retentionDays;
+    // Reads the effective runtime value at call time, so the scheduled prune
+    // always honours the latest retention setting.
+    const days = olderThanDays ?? this.getRetentionDays();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
@@ -268,6 +385,63 @@ export class AuditService {
     const filename = `audit-log-${date}.csv`;
 
     return { filename, csv };
+  }
+
+  /**
+   * #1378: build an export and its manifest from one query, so the digest and
+   * row count describe exactly the content returned. `snapshotAt` pins both the
+   * upper time bound and the JSON `exportedAt`, so repeating the request with
+   * the manifest's `snapshotAt` reproduces the same bytes.
+   */
+  async exportWithManifest(
+    format: "csv" | "json",
+    filters?: {
+      actor?: string;
+      action?: string;
+      resourceType?: string;
+      resourceId?: string;
+      createdAfter?: string;
+      createdBefore?: string;
+    },
+    columns?: string[],
+    snapshotAt: Date = new Date(),
+  ): Promise<{ filename: string; body: string; manifest: AuditExportManifest }> {
+    const effective = normalizeAuditExportFilters({
+      ...filters,
+      createdBefore: filters?.createdBefore ?? snapshotAt.toISOString(),
+    });
+    const rows = await this.prisma.auditLog.findMany({
+      where: this.buildFilterWhere(effective),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: resolveAuditExportRowLimit(),
+    });
+
+    const date = snapshotAt.toISOString().slice(0, 10);
+    let body: string;
+    if (format === "csv") {
+      body = buildAuditCsv(rows, columns);
+    } else {
+      const records = rows.map((row) => ({
+        ...row,
+        summary: row.summary ? redactText(row.summary) : row.summary,
+        metadata: row.metadata ? redactJsonValue(row.metadata) : row.metadata,
+      }));
+      body = JSON.stringify(
+        { exportedAt: snapshotAt.toISOString(), count: records.length, records },
+        null,
+        2,
+      );
+    }
+    const filename = `audit-log-${date}.${format}`;
+    const manifest = buildAuditExportManifest({
+      format,
+      filename,
+      filters: effective,
+      rowCount: rows.length,
+      content: body,
+      generatedAt: snapshotAt,
+    });
+    return { filename, body, manifest };
   }
 
   private buildFilterWhere(filters?: {

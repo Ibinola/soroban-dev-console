@@ -1,5 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { applyDeprecationsToOpenApi, parseDeprecations } from "./api-deprecation.js";
 
 /**
  * Swagger UI is served at `/api/docs` (JSON spec at `/api/docs-json`) in
@@ -19,6 +20,8 @@ export function setupSwagger(app: INestApplication): boolean {
     .setVersion(process.env.npm_package_version ?? "0.1.0")
     .build();
   const document = SwaggerModule.createDocument(app, config);
+  // #1379: mark configured routes as deprecated, with migration guidance.
+  applyDeprecationsToOpenApi(document as never, parseDeprecations(process.env.API_DEPRECATIONS));
   // The global prefix is "api", so these resolve to /api/docs and /api/docs-json.
   SwaggerModule.setup("docs", app, document, {
     useGlobalPrefix: true,

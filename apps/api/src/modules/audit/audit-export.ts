@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /**
  * Issue #1273: audit log CSV export — shared filter and row-limit resolution.
  *
@@ -85,5 +87,69 @@ export function resolveAuditExportFilters(
     ...(query.resourceId ? { resourceId: query.resourceId } : {}),
     ...(createdAfter ? { createdAfter } : {}),
     ...(createdBefore ? { createdBefore } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Export manifest (#1378)
+// ---------------------------------------------------------------------------
+
+export interface AuditExportManifest {
+  /** Manifest format version. */
+  version: 1;
+  format: "csv" | "json";
+  filename: string;
+  /** Normalized filters (sorted keys, empty values dropped). */
+  filters: AuditExportFilters;
+  generatedAt: string;
+  rowCount: number;
+  sha256: string;
+}
+
+const FILTER_KEYS: ReadonlyArray<keyof AuditExportFilters> = [
+  "action",
+  "actor",
+  "createdAfter",
+  "createdBefore",
+  "resourceId",
+  "resourceType",
+];
+
+/** Keep only known filter keys, drop empty values, and fix the key order. */
+export function normalizeAuditExportFilters(filters: AuditExportFilters = {}): AuditExportFilters {
+  const out: AuditExportFilters = {};
+  for (const key of FILTER_KEYS) {
+    const value = filters[key];
+    if (typeof value === "string" && value.trim() !== "") out[key] = value.trim();
+  }
+  return out;
+}
+
+export function sha256Hex(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * Describe an export. `content` is the exact text the client receives, so the
+ * digest can be checked against the downloaded file. Only normalized filters,
+ * counts, a timestamp and the digest are recorded: no row data, request
+ * headers or credentials ever enter a manifest.
+ */
+export function buildAuditExportManifest(params: {
+  format: "csv" | "json";
+  filename: string;
+  filters?: AuditExportFilters;
+  rowCount: number;
+  content: string;
+  generatedAt?: Date;
+}): AuditExportManifest {
+  return {
+    version: 1,
+    format: params.format,
+    filename: params.filename,
+    filters: normalizeAuditExportFilters(params.filters),
+    generatedAt: (params.generatedAt ?? new Date()).toISOString(),
+    rowCount: params.rowCount,
+    sha256: sha256Hex(params.content),
   };
 }
