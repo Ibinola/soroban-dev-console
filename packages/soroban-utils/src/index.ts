@@ -14,3 +14,8 @@ export * from "./abi-compatibility";
 export * from "./contract-address";
 export * from "./soroban-tx-builder";
 export * from "./scval-pretty";
+export * from "./fees";
+export * from "./decode-error";
+export * from "./wasm";
+export * from "./wasm-metadata";
+export * from "./wasm-imports";
