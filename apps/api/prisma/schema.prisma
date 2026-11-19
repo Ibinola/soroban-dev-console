@@ -242,10 +242,17 @@ model AuditLog {
   summary     String?
   metadata    Json?
   createdAt   DateTime @default(now()) @map("created_at")
+  /// #1377: per-stream hash chain. `stream` is "<resourceType>:<resourceId>".
+  stream      String?
+  /// SHA-256 of this event's canonical form (including `prevHash`).
+  hash        String?
+  /// Digest of the previous event in the same stream; null for the first.
+  prevHash    String?  @map("prev_hash")
 
   @@index([actor])
   @@index([resourceType, resourceId])
   @@index([createdAt])
+  @@index([stream, createdAt])
   @@map("audit_logs")
 }
 

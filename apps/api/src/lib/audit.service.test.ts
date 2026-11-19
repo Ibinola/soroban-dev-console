@@ -8,7 +8,7 @@ describe("audit service", () => {
     const create = async (args: unknown) => {
       calls.push(args);
     };
-    const prisma = { auditLog: { create } } as never;
+    const prisma = { auditLog: { create, findFirst: async () => null } } as never;
     const service = new AuditService(prisma);
 
     await service.log({
@@ -36,7 +36,7 @@ describe("audit service", () => {
       whereCalls.push(args.where);
       return whereCalls.length <= 1 ? 50 : whereCalls.length === 2 ? 3 : 12;
     };
-    const prisma = { auditLog: { create: async () => {}, count } } as never;
+    const prisma = { auditLog: { create: async () => {}, findFirst: async () => null, count } } as never;
     const service = new AuditService(prisma);
 
     const result = await service.summary();
@@ -74,7 +74,7 @@ describe("audit service", () => {
 
   it("supports a custom summary window", async () => {
     const count = async () => 0;
-    const prisma = { auditLog: { create: async () => {}, count } } as never;
+    const prisma = { auditLog: { create: async () => {}, findFirst: async () => null, count } } as never;
     const service = new AuditService(prisma);
 
     const result = await service.summary(12);
