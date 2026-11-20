@@ -352,6 +352,7 @@ export default function TxDetailPage() {
           </Row>
           <Row label="Fee">{tx.feePaid} stroops</Row>
           <Row label="Network">{currentNetwork}</Row>
+          <Row label="Active profile">{activeProfileName}</Row>
           <Row label="Explorer">
             <a
               href={`https://stellar.expert/explorer/${currentNetwork}/tx/${tx.hash}`}

@@ -47,7 +47,8 @@ export default function ContractDetailPage() {
   const searchParams = useSearchParams();
   const networkParam = searchParams?.get("network");
   const contractId = params.contractId as string;
-  const { getActiveNetworkConfig, getAllNetworks, setNetwork } = useNetworkStore();
+  const { getActiveNetworkConfig, getAllNetworks, setNetwork, profiles, activeProfileId } = useNetworkStore();
+  const activeProfileName = profiles.find((p) => p.id === activeProfileId)?.name ?? getActiveNetworkConfig().name;
   const { getSpec, setSpec } = useAbiStore();
   const { activeWorkspaceId, addContractToWorkspace } = useWorkspaceStore();
   const { isConnected, isSandboxMode, enterSandbox } = useWallet();
@@ -197,6 +198,9 @@ export default function ContractDetailPage() {
                   Not Found
                 </Badge>
               )}
+              <Badge variant="outline" className="shrink-0">
+                Profile: {activeProfileName}
+              </Badge>
             </h1>
             <p className="mt-1 truncate font-mono text-sm text-muted-foreground">
               {contractId}
@@ -312,6 +316,10 @@ export default function ContractDetailPage() {
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-muted-foreground">Network:</span>
                       <span className="font-medium">{overview.network}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">Active profile:</span>
+                      <span className="font-medium">{activeProfileName}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-muted-foreground">Interface:</span>

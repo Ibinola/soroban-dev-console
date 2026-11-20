@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNetworkStore, DEFAULT_NETWORKS } from "@/store/useNetworkStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useTheme } from "next-themes";
@@ -34,6 +34,10 @@ import {
   Sun,
   Moon,
   Monitor,
+  Pencil,
+  Copy,
+  Check,
+  X,
 } from "lucide-react";
 import { DataManagement } from "@/components/data-management";
 import { RuntimeConfigStatus } from "@/components/runtime-config-status";
@@ -84,20 +88,55 @@ function ThemeSelector() {
 
 export default function SettingsPage() {
   const t = useTranslations();
-  const { customNetworks, addCustomNetwork, removeCustomNetwork, autoFailover, setAutoFailover, degradationThresholdMs, setDegradationThreshold, failoverNetworkId, setFailoverNetworkId } =
-    useNetworkStore();
+  const {
+    profiles,
+    activeProfileId,
+    setActiveProfile,
+    addProfile,
+    updateProfile,
+    duplicateProfile,
+    removeProfile,
+    autoFailover,
+    setAutoFailover,
+    degradationThresholdMs,
+    setDegradationThreshold,
+    failoverNetworkId,
+    setFailoverNetworkId,
+  } = useNetworkStore();
   const { defaultNetwork, setDefaultNetwork, autoRunSimulation, setAutoRunSimulation } =
     useSettingsStore();
 
-  const [formData, setFormData] = useState({
-    name: "",
-    rpcUrl: "",
-    passphrase: "Test SDF Network ; September 2015",
-  });
+  const [formMode, setFormMode] = useState<"create" | "edit">("create");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<ProfileFormState>(emptyForm);
   const [isTesting, setIsTesting] = useState(false);
-  const [testStatus, setTestStatus] = useState<"idle" | "success" | "error">(
-    "idle",
+  const [testStatus, setTestStatus] = useState<"idle" | "success" | "error">("idle");
+
+  const activeProfile = useMemo(
+    () => profiles.find((p) => p.id === activeProfileId) ?? profiles[0],
+    [profiles, activeProfileId],
   );
+
+  const resetForm = () => {
+    setFormMode("create");
+    setEditingId(null);
+    setFormData(emptyForm);
+    setTestStatus("idle");
+  };
+
+  const startEdit = (id: string) => {
+    const profile = profiles.find((p) => p.id === id);
+    if (!profile) return;
+    setFormMode("edit");
+    setEditingId(id);
+    setFormData({
+      name: profile.name,
+      rpcUrl: profile.rpcUrl,
+      passphrase: profile.networkPassphrase,
+      horizonUrl: profile.horizonUrl ?? "",
+    });
+    setTestStatus("idle");
+  };
 
   const handleTestConnection = async () => {
     if (!formData.rpcUrl) return;
@@ -107,8 +146,7 @@ export default function SettingsPage() {
     try {
       const server = new SorobanRpc.Server(formData.rpcUrl);
       const health = await server.getHealth();
-      if (health.status !== "healthy")
-        throw new Error("Network reported unhealthy");
+      if (health.status !== "healthy") throw new Error("Network reported unhealthy");
       setTestStatus("success");
       toast.success(t("settings.toasts.connected"));
     } catch (e) {
@@ -120,50 +158,77 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAdd = () => {
+  const handleSave = () => {
     if (!formData.name || !formData.rpcUrl || !formData.passphrase) {
       toast.error(t("settings.toasts.fillAll"));
       return;
     }
 
-    if (testStatus !== "success") {
-      toast.warning(t("settings.toasts.testFirst"));
+    if (formMode === "edit" && editingId) {
+      updateProfile(editingId, {
+        name: formData.name,
+        rpcUrl: formData.rpcUrl,
+        networkPassphrase: formData.passphrase,
+        horizonUrl: formData.horizonUrl || undefined,
+      });
+      toast.success("Profile updated");
+      resetForm();
+      return;
     }
 
-    const newId = `custom-${Date.now()}`;
-    addCustomNetwork({
-      id: newId,
+    const newId = addProfile({
       name: formData.name,
       rpcUrl: formData.rpcUrl,
       networkPassphrase: formData.passphrase,
+      horizonUrl: formData.horizonUrl || undefined,
     });
-
-    setFormData({ name: "", rpcUrl: "", passphrase: "" });
-    setTestStatus("idle");
+    if (testStatus !== "success") {
+      toast.warning(t("settings.toasts.testFirst"));
+    }
+    setActiveProfile(newId);
     toast.success(t("settings.toasts.networkAdded"));
+    resetForm();
+  };
+
+  const handleDuplicate = (id: string) => {
+    const newId = duplicateProfile(id);
+    if (newId) {
+      toast.success("Profile duplicated");
+      startEdit(newId);
+    }
+  };
+
+  const handleRemove = (id: string) => {
+    if (profiles.length <= 1) {
+      toast.error("At least one profile is required");
+      return;
+    }
+    removeProfile(id);
+    if (editingId === id) resetForm();
+    toast.success("Profile removed");
+  };
+
+  const handleSetActive = (id: string) => {
+    setActiveProfile(id);
+    const p = profiles.find((x) => x.id === id);
+    toast.success(`Active profile: ${p?.name ?? id}`);
   };
 
   return (
-    <div className="container max-w-4xl space-y-8 p-6">
+    <div className="container max-w-5xl space-y-8 p-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">{t("settings.title")}</h1>
-        <p className="mt-1 text-muted-foreground">
-          {t("settings.subtitle")}
-        </p>
+        <p className="mt-1 text-muted-foreground">{t("settings.subtitle")}</p>
       </div>
 
-      {/* FE-063: Fallback state indicator for fixture manifest */}
       <FixtureFallbackIndicator />
 
-      {/* Issue #747: Appearance section */}
       <div className="max-w-2xl">
         <h2 className="mb-4 text-xl font-semibold">{t("settings.appearance.title")}</h2>
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.appearance.theme")}</CardTitle>
-            <CardDescription>
-              {t("settings.appearance.themeDescription")}
-            </CardDescription>
+            <CardDescription>{t("settings.appearance.themeDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ThemeSelector />
@@ -171,7 +236,6 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      {/* #1293: language selector */}
       <div className="max-w-2xl">
         <h2 className="mb-4 text-xl font-semibold">{t("settings.language.title")}</h2>
         <Card>
@@ -181,7 +245,6 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      {/* Issue #747: Editor section */}
       <div className="max-w-2xl">
         <h2 className="mb-4 text-xl font-semibold">{t("settings.editor.title")}</h2>
         <Card>
@@ -197,19 +260,18 @@ export default function SettingsPage() {
                 onChange={(e) => setDefaultNetwork(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                <option value="testnet">{t("settings.networks.testnet")}</option>
-                <option value="mainnet">{t("settings.networks.mainnet")}</option>
-                <option value="futurenet">{t("settings.networks.futurenet")}</option>
-                <option value="local">{t("settings.networks.local")}</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-md border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor="auto-run-simulation">{t("settings.editor.autoRun")}</Label>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.editor.autoRunHint")}
-                </p>
+                <p className="text-xs text-muted-foreground">{t("settings.editor.autoRunHint")}</p>
               </div>
               <Switch
                 id="auto-run-simulation"
@@ -221,7 +283,6 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      {/* Auto-failover configuration */}
       <div className="max-w-2xl">
         <h2 className="mb-4 text-xl font-semibold">{t("settings.failover.title")}</h2>
         <Card>
@@ -229,9 +290,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between gap-4 rounded-md border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor="auto-failover-toggle">{t("settings.failover.enable")}</Label>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.failover.enableHint")}
-                </p>
+                <p className="text-xs text-muted-foreground">{t("settings.failover.enableHint")}</p>
               </div>
               <Switch
                 id="auto-failover-toggle"
@@ -266,17 +325,17 @@ export default function SettingsPage() {
 
             <div className="rounded-md border p-4 space-y-2">
               <Label htmlFor="failover-network">{t("settings.failover.network")}</Label>
-              <p className="text-xs text-muted-foreground">
-                {t("settings.failover.networkHint")}
-              </p>
+              <p className="text-xs text-muted-foreground">{t("settings.failover.networkHint")}</p>
               <select
                 id="failover-network"
                 value={failoverNetworkId}
                 onChange={(e) => setFailoverNetworkId(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                {Object.values(DEFAULT_NETWORKS).map((net) => (
-                  <option key={net.id} value={net.id}>{net.name}</option>
+                {(profiles.length ? profiles : Object.values(DEFAULT_NETWORKS)).map((net) => (
+                  <option key={net.id} value={net.id}>
+                    {net.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -284,131 +343,186 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      {/* Advanced: Custom RPC networks */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        {/* Form Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.custom.addTitle")}</CardTitle>
-            <CardDescription>
-              {t("settings.custom.addDescription")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>{t("settings.custom.name")}</Label>
-              <Input
-                placeholder={t("settings.custom.namePlaceholder")}
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-              />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">Network Profiles</h2>
+            <p className="text-sm text-muted-foreground">
+              Create, edit, duplicate, and remove named profiles. Switching profiles updates RPC URL
+              and passphrase together.
+            </p>
+          </div>
+          {activeProfile && (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Active profile: </span>
+              <span className="font-medium">{activeProfile.name}</span>
             </div>
+          )}
+        </div>
 
-            <div className="space-y-2">
-              <Label>{t("settings.custom.rpcUrl")}</Label>
-              <div className="flex gap-2">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{formMode === "edit" ? "Edit Profile" : t("settings.custom.addTitle")}</CardTitle>
+              <CardDescription>
+                {formMode === "edit"
+                  ? "Update profile name, RPC URL, and network passphrase."
+                  : t("settings.custom.addDescription")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t("settings.custom.name")}</Label>
+                <Input
+                  placeholder={t("settings.custom.namePlaceholder")}
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>{t("settings.custom.rpcUrl")}</Label>
                 <Input
                   placeholder="https://..."
                   value={formData.rpcUrl}
-                  onChange={(e) =>
-                    setFormData({ ...formData, rpcUrl: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, rpcUrl: e.target.value })}
                 />
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label>{t("settings.custom.passphrase")}</Label>
-              <Input
-                value={formData.passphrase}
-                onChange={(e) =>
-                  setFormData({ ...formData, passphrase: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={handleTestConnection}
-                disabled={isTesting || !formData.rpcUrl}
-                className="flex-1"
-              >
-                {isTesting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Wifi className="mr-2 h-4 w-4" />
-                )}
-                {t("settings.custom.test")}
-              </Button>
-              <Button onClick={handleAdd} className="flex-1">
-                <Plus className="mr-2 h-4 w-4" />
-                {t("settings.custom.add")}
-              </Button>
-            </div>
-
-            {testStatus === "success" && (
-              <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
-                <CheckCircle2 className="h-4 w-4" /> {t("settings.custom.testOk")}
+              <div className="space-y-2">
+                <Label>{t("settings.custom.passphrase")}</Label>
+                <Input
+                  value={formData.passphrase}
+                  onChange={(e) => setFormData({ ...formData, passphrase: e.target.value })}
+                />
               </div>
-            )}
-            {testStatus === "error" && (
-              <div className="mt-2 flex items-center gap-2 text-sm text-red-500">
-                <AlertCircle className="h-4 w-4" /> {t("settings.custom.testFailed")}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* List Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("settings.custom.listTitle")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {customNetworks.length === 0 ? (
-              <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-                {t("settings.custom.empty")}
+              <div className="space-y-2">
+                <Label>Horizon URL (optional)</Label>
+                <Input
+                  placeholder="https://horizon..."
+                  value={formData.horizonUrl}
+                  onChange={(e) => setFormData({ ...formData, horizonUrl: e.target.value })}
+                />
               </div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("settings.custom.tableName")}</TableHead>
-                      <TableHead>{t("settings.custom.rpcUrl")}</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {customNetworks.map((net) => (
-                      <TableRow key={net.id}>
-                        <TableCell className="font-medium">
-                          {net.name}
-                        </TableCell>
-                        <TableCell className="max-w-[150px] truncate text-xs text-muted-foreground">
-                          {net.rpcUrl}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-red-500"
-                            onClick={() => removeCustomNetwork(net.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={handleTestConnection}
+                  disabled={isTesting || !formData.rpcUrl}
+                  className="flex-1"
+                >
+                  {isTesting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wifi className="mr-2 h-4 w-4" />
+                  )}
+                  {t("settings.custom.test")}
+                </Button>
+                <Button onClick={handleSave} className="flex-1">
+                  {formMode === "edit" ? <Check className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+                  {formMode === "edit" ? "Save Changes" : t("settings.custom.add")}
+                </Button>
+              </div>
+
+              {formMode === "edit" && (
+                <Button variant="ghost" onClick={resetForm} className="w-full">
+                  <X className="mr-2 h-4 w-4" /> Cancel Edit
+                </Button>
+              )}
+
+              {testStatus === "success" && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
+                  <CheckCircle2 className="h-4 w-4" /> {t("settings.custom.testOk")}
+                </div>
+              )}
+              {testStatus === "error" && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-red-500">
+                  <AlertCircle className="h-4 w-4" /> {t("settings.custom.testFailed")}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Saved Profiles</CardTitle>
+              <CardDescription>
+                Named profiles for local, test, and custom networks. The active profile is used for RPC and passphrase.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {profiles.length === 0 ? (
+                <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
+                  {t("settings.custom.empty")}
+                </div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("settings.custom.tableName")}</TableHead>
+                        <TableHead>{t("settings.custom.rpcUrl")}</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {profiles.map((net) => {
+                        const isActive = net.id === activeProfileId;
+                        return (
+                          <TableRow key={net.id} className={isActive ? "bg-muted/30" : undefined}>
+                            <TableCell className="font-medium">
+                              <div>{net.name}</div>
+                              <div className="max-w-[220px] truncate text-xs text-muted-foreground">
+                                {net.networkPassphrase}
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground">
+                              {net.rpcUrl}
+                            </TableCell>
+                            <TableCell>
+                              {isActive ? (
+                                <span className="inline-flex items-center rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-700">
+                                  Active
+                                </span>
+                              ) : (
+                                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleSetActive(net.id)}>
+                                  Set Active
+                                </Button>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" title="Edit profile" onClick={() => startEdit(net.id)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" title="Duplicate profile" onClick={() => handleDuplicate(net.id)}>
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Remove profile"
+                                  className="text-muted-foreground hover:text-red-500"
+                                  onClick={() => handleRemove(net.id)}
+                                  disabled={profiles.length <= 1}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div className="max-w-2xl">
@@ -416,9 +530,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.runtime.status")}</CardTitle>
-            <CardDescription>
-              {t("settings.runtime.description")}
-            </CardDescription>
+            <CardDescription>{t("settings.runtime.description")}</CardDescription>
           </CardHeader>
           <CardContent>
             <RuntimeConfigStatus showDetails={true} />
