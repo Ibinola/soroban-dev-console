@@ -365,7 +365,7 @@ export default function ContractDetailPage() {
             )}
 
             <div className="min-w-0 md:col-span-2">
-              <ContractCallForm contractId={contractId} />
+              <ContractCallForm contractId={contractId} methodsLoading={loading} />
             </div>
           </div>
         </TabsContent>

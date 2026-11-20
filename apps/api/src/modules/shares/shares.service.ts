@@ -35,10 +35,11 @@ function sortJsonKeys(obj: any): any {
   return result;
 }
 
-import { IsString, IsOptional, IsInt, Min, IsIn } from "class-validator";
+import { IsString, IsOptional, IsInt, Min, Max, IsIn } from "class-validator";
 import { Type } from "class-transformer";
 import { PrismaService } from "../../lib/prisma.service.js";
 import { sanitizeSnapshotPayload } from "./share-payload-sanitizer.js";
+import { normalizePagination, toPaginatedEnvelope } from "../../lib/pagination.js";
 
 export class CreateShareDto {
   @IsString()
@@ -75,18 +76,34 @@ export class CreateShareDto {
   expiresInSeconds?: number;
 }
 
-/** BE-005: Pagination and filtering for share list */
+/** Pagination and filtering for share list */
 export class ListSharesDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
+  /** Legacy offset (backward compatibility). */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   skip?: number;
 
+  /** Legacy page size (backward compatibility). */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   take?: number;
 
   @IsOptional()
@@ -109,13 +126,14 @@ const MAX_EXPIRY_YEARS = 1;
 const MAX_SNAPSHOT_SIZE_BYTES = 500_000; // 500KB limit
 const MAX_JSON_DEPTH = 10;
 
-/** BE-005: Pagination response envelope */
+/** Paginated list response envelope */
 export interface PaginatedResponse<T> {
   data: T[];
-  pagination: {
+  meta: {
     total: number;
-    skip: number;
-    take: number;
+    page: number;
+    pageSize: number;
+    hasNext: boolean;
   };
 }
 
@@ -325,8 +343,7 @@ export class SharesService {
       throw new ForbiddenException("You do not own this workspace");
     }
 
-    const skip = query.skip ?? 0;
-    const take = query.take ?? 20;
+    const { page, pageSize, skip, take } = normalizePagination(query);
     const sortBy = query.sortBy ?? "createdAt";
     const sortOrder = query.sortOrder ?? "desc";
 
@@ -369,7 +386,7 @@ export class SharesService {
       lastAccessedAt: lastAccessedByShareId.get(s.id) ?? null,
     }));
 
-    return { data: dataWithLastAccessed, pagination: { total, skip, take } };
+    return toPaginatedEnvelope(dataWithLastAccessed, total, page, pageSize);
   }
 
   @MapDbErrors()

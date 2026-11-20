@@ -133,6 +133,22 @@
     "data": {
       "title": "Application Data"
     },
+    "storage": {
+      "sectionTitle": "Storage",
+      "title": "Local Storage Usage",
+      "description": "Review browser local storage used by this app and clear selected data.",
+      "usage": "Local storage usage",
+      "limitNote": "The 5 MiB limit is an estimate; browser quotas vary.",
+      "warning": "Local storage usage is above 80%.",
+      "workspaces": "Workspaces",
+      "contracts": "Contracts",
+      "deploymentLogs": "Deployment logs",
+      "clearLabel": "Select data to clear",
+      "clearCache": "Clear cache",
+      "confirm": "Clear the selected local data? This cannot be undone.",
+      "clearSuccess": "Selected local data cleared.",
+      "clearFailed": "Could not clear the selected local data."
+    },
     "diagnostics": {
       "title": "Diagnostics"
     }

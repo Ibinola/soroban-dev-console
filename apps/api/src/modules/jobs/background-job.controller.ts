@@ -22,14 +22,35 @@ export class BackgroundJobController {
 
   @ApiOperation({ summary: "Find by status" })
   @Get()
-  findByStatus(@Query("status") status: JobStatus = "pending") {
-    return this.service.findByStatus(status);
+  findByStatus(
+    @Query("status") status: JobStatus = "pending",
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    return this.service.findByStatus(status, {
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      skip: skip ? Number(skip) : undefined,
+      take: take ? Number(take) : undefined,
+    });
   }
 
   @ApiOperation({ summary: "Find dead jobs" })
   @Get("dead")
-  findDeadJobs() {
-    return this.service.findByStatus("dead");
+  findDeadJobs(
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    return this.service.findByStatus("dead", {
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      skip: skip ? Number(skip) : undefined,
+      take: take ? Number(take) : undefined,
+    });
   }
 
   @ApiOperation({ summary: "Replay" })
