@@ -30,6 +30,23 @@ export class ListAuditDto {
   @IsString()
   resourceId?: string;
 
+  /** Page number (1-based). Defaults to 1. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  /** Page size (max 100). Defaults to 20. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
   /** Base64-encoded composite cursor (createdAt + id) for cursor-based pagination. */
   @ApiPropertyOptional()
   @IsOptional()

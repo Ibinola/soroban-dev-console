@@ -27,6 +27,7 @@ import type {
   UpdateWorkspaceDto,
   WorkspaceExportDto,
 } from "./workspace.dto.js";
+import { normalizePagination, toPaginatedEnvelope } from "../../lib/pagination.js";
 import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
 
@@ -78,8 +79,7 @@ export class WorkspacesService {
 
   @MapDbErrors()
   async list(ownerKey: string, query: ListWorkspacesDto = {}): Promise<PaginatedResponse<any>> {
-    const skip = query.skip ?? 0;
-    const take = query.take ?? 20;
+    const { page, pageSize, skip, take } = normalizePagination(query);
     const sortBy = query.sortBy ?? "updatedAt";
     const sortOrder = query.sortOrder ?? "desc";
 
@@ -117,7 +117,7 @@ export class WorkspacesService {
       this.repository.count({ where }),
     ]);
 
-    return { data, pagination: { total, skip, take } };
+    return toPaginatedEnvelope(data, total, page, pageSize);
   }
 
   @MapDbErrors()
@@ -297,8 +297,7 @@ export class WorkspacesService {
 
   @MapDbErrors()
   async search(ownerKey: string, query: SearchWorkspacesDto): Promise<PaginatedResponse<any>> {
-    const skip = query.skip ?? 0;
-    const take = query.take ?? 20;
+    const { page, pageSize, skip, take } = normalizePagination(query);
     const sortBy = query.sortBy ?? "updatedAt";
     const sortOrder = query.sortOrder ?? "desc";
     const q = query.q.trim();
@@ -333,7 +332,7 @@ export class WorkspacesService {
       this.repository.count({ where }),
     ]);
 
-    return { data, pagination: { total, skip, take } };
+    return toPaginatedEnvelope(data, total, page, pageSize);
   }
 
   @MapDbErrors()

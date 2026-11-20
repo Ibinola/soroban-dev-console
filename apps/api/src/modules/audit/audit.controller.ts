@@ -186,8 +186,10 @@ export class AuditController {
     try {
       return await this.auditService.query({
         ...filters,
-        skip: query.skip,
-        take: query.take,
+        ...(query.page !== undefined ? { page: query.page } : {}),
+        ...(query.pageSize !== undefined ? { pageSize: query.pageSize } : {}),
+        ...(query.skip !== undefined ? { skip: query.skip } : {}),
+        ...(query.take !== undefined ? { take: query.take } : {}),
         // Optional params are only forwarded when provided so callers using
         // legacy offset pagination / no time filter keep existing behavior.
         ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
