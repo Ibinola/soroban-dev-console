@@ -38,7 +38,8 @@ const HORIZON_URL: Record<string, string> = {
 export default function TxDetailPage() {
   const { hash } = useParams<{ hash: string }>();
   const router = useRouter();
-  const { currentNetwork } = useNetworkStore();
+  const { currentNetwork, profiles, activeProfileId } = useNetworkStore();
+  const activeProfileName = profiles.find((p) => p.id === activeProfileId)?.name ?? currentNetwork;
   const { savedCalls, addToCart } = useSavedCallsStore();
 
   const [tx, setTx] = useState<NormalizedTx | null>(null);
@@ -142,6 +143,7 @@ export default function TxDetailPage() {
           <Row label="Fee">{tx.feePaid} stroops</Row>
           <Row label="Time">{new Date(tx.createdAt).toLocaleString()}</Row>
           <Row label="Network">{currentNetwork}</Row>
+          <Row label="Active profile">{activeProfileName}</Row>
           <Row label="Explorer">
             <a
               href={`https://stellar.expert/explorer/${currentNetwork}/tx/${tx.hash}`}
