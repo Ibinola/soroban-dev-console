@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   BadRequestException,
@@ -22,8 +23,51 @@ import type {
   ImportWorkspaceDto,
   ListWorkspacesDto,
   PaginatedResponse,
+  SearchWorkspacesDto,
   UpdateWorkspaceDto,
+  WorkspaceExportDto,
 } from "./workspace.dto.js";
+import { normalizePagination, toPaginatedEnvelope } from "../../lib/pagination.js";
+import { ZipArchive } from "archiver";
+import { PassThrough } from "stream";
+
+export interface WorkspaceExportSource {
+  id: string;
+  name: string;
+  selectedNetwork: string;
+  ownerKey: string;
+  createdAt: Date;
+  updatedAt: Date;
+  savedContracts: Array<{ contractId: string }>;
+  savedInteractions: Array<{ id: string }>;
+  artifacts: Array<{ kind: string; hash: string | null; name: string }>;
+}
+
+export function buildWorkspaceExportSnapshot(
+  workspace: WorkspaceExportSource,
+): WorkspaceExportDto {
+  const ownerKeyFingerprint = createHash("sha256")
+    .update(workspace.ownerKey)
+    .digest("hex")
+    .slice(0, 16);
+
+  return {
+    version: API_SNAPSHOT_VERSION,
+    schemaVersion: API_SNAPSHOT_VERSION,
+    id: workspace.id,
+    name: workspace.name,
+    selectedNetwork: workspace.selectedNetwork,
+    owner: { keyFingerprint: ownerKeyFingerprint },
+    contractIds: workspace.savedContracts.map((contract) => contract.contractId),
+    savedCallIds: workspace.savedInteractions.map((interaction) => interaction.id),
+    artifactRefs: workspace.artifacts.map((artifact) => ({
+      kind: artifact.kind,
+      id: artifact.hash || artifact.name,
+    })),
+    createdAt: workspace.createdAt.getTime(),
+    updatedAt: workspace.updatedAt.getTime(),
+  };
+}
 
 @Injectable()
 export class WorkspacesService {
@@ -35,16 +79,20 @@ export class WorkspacesService {
 
   @MapDbErrors()
   async list(ownerKey: string, query: ListWorkspacesDto = {}): Promise<PaginatedResponse<any>> {
-    const skip = query.skip ?? 0;
-    const take = query.take ?? 20;
+    const { page, pageSize, skip, take } = normalizePagination(query);
     const sortBy = query.sortBy ?? "updatedAt";
     const sortOrder = query.sortOrder ?? "desc";
 
-    const where = {
+    const where: any = {
       ownerKey,
       ...(query.network ? { selectedNetwork: query.network } : {}),
       ...(query.includeArchived ? {} : { archived: false }),
     };
+
+    if (query.tag) {
+      // SQLite JSON field: tags is stored as JSON array string
+      where.tags = { contains: `"${query.tag}"` };
+    }
 
     const select = {
       id: true,
@@ -53,6 +101,7 @@ export class WorkspacesService {
       selectedNetwork: true,
       archived: true,
       revision: true,
+      tags: true,
       createdAt: true,
       updatedAt: true,
     };
@@ -68,7 +117,7 @@ export class WorkspacesService {
       this.repository.count({ where }),
     ]);
 
-    return { data, pagination: { total, skip, take } };
+    return toPaginatedEnvelope(data, total, page, pageSize);
   }
 
   @MapDbErrors()
@@ -247,6 +296,90 @@ export class WorkspacesService {
 
 
   @MapDbErrors()
+  async search(ownerKey: string, query: SearchWorkspacesDto): Promise<PaginatedResponse<any>> {
+    const { page, pageSize, skip, take } = normalizePagination(query);
+    const sortBy = query.sortBy ?? "updatedAt";
+    const sortOrder = query.sortOrder ?? "desc";
+    const q = query.q.trim();
+
+    const where = {
+      ownerKey,
+      OR: [
+        { name: { contains: q, mode: "insensitive" as const } },
+        { description: { contains: q, mode: "insensitive" as const } },
+      ],
+    };
+
+    const select = {
+      id: true,
+      name: true,
+      description: true,
+      selectedNetwork: true,
+      revision: true,
+      tags: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
+    const [data, total] = await Promise.all([
+      this.repository.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        select,
+        skip,
+        take,
+      }),
+      this.repository.count({ where }),
+    ]);
+
+    return toPaginatedEnvelope(data, total, page, pageSize);
+  }
+
+  @MapDbErrors()
+  async updateTags(id: string, ownerKey: string, tags: string[]) {
+    await this.get(id, ownerKey);
+    const deduped = [...new Set(tags)];
+    if (deduped.length > 20) {
+      throw new BadRequestException("A workspace can have at most 20 tags");
+    }
+    for (const tag of deduped) {
+      if (tag.length > 50) {
+        throw new BadRequestException(`Tag "${tag}" exceeds max length of 50 characters`);
+      }
+    }
+    const workspace = await this.repository.update({
+      where: { id },
+      data: { tags: deduped },
+    });
+    void this.audit.log({
+      actor: ownerKey,
+      action: "workspace.tags_updated",
+      resourceType: "workspace",
+      resourceId: id,
+      summary: `Updated tags`,
+      metadata: { tags: deduped } as any,
+    });
+    return workspace;
+  }
+
+  @MapDbErrors()
+  async getAllTags(ownerKey: string): Promise<string[]> {
+    const workspaces = await this.repository.findMany({
+      where: { ownerKey, tags: { not: Prisma.DbNull } },
+      select: { tags: true },
+    });
+    const tagSet = new Set<string>();
+    for (const ws of workspaces) {
+      if (Array.isArray(ws.tags)) {
+        for (const tag of ws.tags) {
+          if (typeof tag === "string") tagSet.add(tag);
+        }
+      }
+    }
+    return [...tagSet].sort();
+  }
+
+  @MapDbErrors()
   async import(ownerKey: string, dto: ImportWorkspaceDto) {
     try {
       assertSupportedImportVersion(dto.version);
@@ -326,20 +459,7 @@ export class WorkspacesService {
       throw new NotFoundException("Workspace not found");
     }
 
-    const snapshot = {
-      version: API_SNAPSHOT_VERSION,
-      id: workspace.id,
-      name: workspace.name,
-      selectedNetwork: workspace.selectedNetwork,
-      contractIds: workspace.savedContracts.map((contract) => contract.contractId),
-      savedCallIds: workspace.savedInteractions.map((interaction) => interaction.id),
-      artifactRefs: workspace.artifacts.map((artifact) => ({
-        kind: artifact.kind,
-        id: artifact.hash || artifact.name,
-      })),
-      createdAt: workspace.createdAt.getTime(),
-      updatedAt: workspace.updatedAt.getTime(),
-    };
+    const snapshot = buildWorkspaceExportSnapshot(workspace);
 
     // Export is a read-only operation; still route through the same side-effects boundary.
     await this.runMutationWithSideEffects(
@@ -356,5 +476,170 @@ export class WorkspacesService {
     );
 
     return snapshot;
+  }
+
+  @MapDbErrors()
+  async exportZip(id: string, ownerKey: string): Promise<PassThrough> {
+    const workspace = await this.repository.findFirst({
+      where: { id, ownerKey },
+      include: {
+        savedContracts: true,
+        savedInteractions: true,
+        artifacts: true,
+      },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException("Workspace not found");
+    }
+
+    const snapshot = {
+      version: API_SNAPSHOT_VERSION,
+      id: workspace.id,
+      name: workspace.name,
+      selectedNetwork: workspace.selectedNetwork,
+      contractIds: workspace.savedContracts.map((contract) => contract.contractId),
+      savedCallIds: workspace.savedInteractions.map((interaction) => interaction.id),
+      artifactRefs: workspace.artifacts.map((artifact) => ({
+        kind: artifact.kind,
+        id: artifact.hash || artifact.name,
+      })),
+      createdAt: workspace.createdAt.getTime(),
+      updatedAt: workspace.updatedAt.getTime(),
+    };
+
+    const contracts = workspace.savedContracts.map((c) => ({
+      id: c.id,
+      contractId: c.contractId,
+      network: c.network,
+      label: c.label,
+      createdAt: c.createdAt,
+    }));
+
+    const interactions = workspace.savedInteractions.map((i) => ({
+      id: i.id,
+      contractId: i.contractId,
+      functionName: i.functionName,
+      name: i.name,
+      network: i.network,
+      argumentsJson: i.argumentsJson,
+      createdAt: i.createdAt,
+    }));
+
+    const artifacts = workspace.artifacts.map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      name: a.name,
+      network: a.network,
+      hash: a.hash,
+      metadata: a.metadata,
+      createdAt: a.createdAt,
+    }));
+
+    this.events.emit(WORKSPACE_EXPORTED, { workspaceId: id, ownerKey });
+    void this.audit.log({
+      actor: ownerKey,
+      action: "workspace.exported_zip",
+      resourceType: "workspace",
+      resourceId: id,
+    });
+
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    const stream = new PassThrough();
+
+    archive.pipe(stream);
+
+    archive.append(JSON.stringify(snapshot, null, 2), { name: "workspace.json" });
+    archive.append(JSON.stringify(contracts, null, 2), { name: "contracts.json" });
+    archive.append(JSON.stringify(interactions, null, 2), { name: "interactions.json" });
+    archive.append(JSON.stringify(artifacts, null, 2), { name: "artifacts.json" });
+
+    archive.finalize();
+
+    return stream;
+  }
+
+  @MapDbErrors()
+  async replayInteraction(id: string, interactionId: string, ownerKey: string) {
+    const workspace = await this.repository.findFirst({
+      where: { id, ownerKey },
+      include: { savedInteractions: true },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException("Workspace not found");
+    }
+
+    const interaction = workspace.savedInteractions.find((i) => i.id === interactionId);
+    if (!interaction) {
+      throw new NotFoundException("Interaction not found");
+    }
+
+    return {
+      interactionId: interaction.id,
+      functionName: interaction.functionName,
+      network: interaction.network,
+      contractId: interaction.contractId,
+      argumentsJson: interaction.argumentsJson,
+      createdAt: interaction.createdAt,
+    };
+  }
+
+  @MapDbErrors()
+  async diffInteractions(
+    id: string,
+    interactionId: string,
+    compareId: string,
+    ownerKey: string,
+  ) {
+    const workspace = await this.repository.findFirst({
+      where: { id, ownerKey },
+      include: { savedInteractions: true },
+    });
+
+    if (!workspace) {
+      throw new NotFoundException("Workspace not found");
+    }
+
+    const a = workspace.savedInteractions.find((i) => i.id === interactionId);
+    const b = workspace.savedInteractions.find((i) => i.id === compareId);
+
+    if (!a) throw new NotFoundException(`Interaction ${interactionId} not found`);
+    if (!b) throw new NotFoundException(`Interaction ${compareId} not found`);
+
+    const argsA = (a.argumentsJson as Record<string, unknown>) ?? {};
+    const argsB = (b.argumentsJson as Record<string, unknown>) ?? {};
+
+    const allKeys = new Set([...Object.keys(argsA), ...Object.keys(argsB)]);
+
+    const changed: Record<string, { from: unknown; to: unknown }> = {};
+    const added: Record<string, unknown> = {};
+    const removed: Record<string, unknown> = {};
+
+    for (const key of allKeys) {
+      const inA = key in argsA;
+      const inB = key in argsB;
+
+      if (inA && inB) {
+        const valA = JSON.stringify(argsA[key]);
+        const valB = JSON.stringify(argsB[key]);
+        if (valA !== valB) {
+          changed[key] = { from: argsA[key], to: argsB[key] };
+        }
+      } else if (inA && !inB) {
+        removed[key] = argsA[key];
+      } else {
+        added[key] = argsB[key];
+      }
+    }
+
+    return {
+      interactionA: { id: a.id, functionName: a.functionName },
+      interactionB: { id: b.id, functionName: b.functionName },
+      changed,
+      added,
+      removed,
+      identical: Object.keys(changed).length === 0 && Object.keys(added).length === 0 && Object.keys(removed).length === 0,
+    };
   }
 }

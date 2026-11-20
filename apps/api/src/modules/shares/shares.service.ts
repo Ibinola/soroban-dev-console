@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   GoneException,
@@ -14,6 +15,7 @@ import {
   SHARE_CREATED,
   SHARE_RESOLVED,
   SHARE_REVOKED,
+  WORKSPACE_CREATED,
 } from "../../lib/domain-events.js";
 import { AuditService } from "../../lib/audit.service.js";
 import { randomBytes } from "crypto";
@@ -33,8 +35,11 @@ function sortJsonKeys(obj: any): any {
   return result;
 }
 
-import { IsString, IsOptional, IsObject, IsInt, Min, IsIn } from "class-validator";
+import { IsString, IsOptional, IsInt, Min, Max, IsIn } from "class-validator";
 import { Type } from "class-transformer";
+import { PrismaService } from "../../lib/prisma.service.js";
+import { sanitizeSnapshotPayload } from "./share-payload-sanitizer.js";
+import { normalizePagination, toPaginatedEnvelope } from "../../lib/pagination.js";
 
 export class CreateShareDto {
   @IsString()
@@ -44,26 +49,61 @@ export class CreateShareDto {
   @IsString()
   label?: string;
 
-  @IsObject()
-  snapshotJson!: Prisma.InputJsonValue;
+  /**
+   * Raw workspace snapshot. The shared contract (`@devconsole/api-contracts`)
+   * sends this as a JSON string; legacy API clients send an object. The service
+   * normalizes both forms and enforces size/depth limits after parsing.
+   */
+  @IsOptional()
+  snapshotJson?: Prisma.InputJsonValue | string;
+
+  /**
+   * Issue #1122: When true (default), sensitive RPC custom headers and secret
+   * tokens embedded in the snapshot are stripped before persisting.
+   */
+  @IsOptional()
+  excludeCustomAuthHeaders?: boolean;
 
   @IsOptional()
   @IsString()
   expiresAt?: string;
+
+  /** Seconds from now until the share expires (used by the web client). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expiresInSeconds?: number;
 }
 
-/** BE-005: Pagination and filtering for share list */
+/** Pagination and filtering for share list */
 export class ListSharesDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
+  /** Legacy offset (backward compatibility). */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   skip?: number;
 
+  /** Legacy page size (backward compatibility). */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   take?: number;
 
   @IsOptional()
@@ -75,18 +115,25 @@ export class ListSharesDto {
   sortOrder?: "asc" | "desc";
 }
 
+export class ForkShareDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
 // DEVOPS-002: Security constants for share validation
 const MAX_EXPIRY_YEARS = 1;
 const MAX_SNAPSHOT_SIZE_BYTES = 500_000; // 500KB limit
 const MAX_JSON_DEPTH = 10;
 
-/** BE-005: Pagination response envelope */
+/** Paginated list response envelope */
 export interface PaginatedResponse<T> {
   data: T[];
-  pagination: {
+  meta: {
     total: number;
-    skip: number;
-    take: number;
+    page: number;
+    pageSize: number;
+    hasNext: boolean;
   };
 }
 
@@ -97,15 +144,19 @@ interface PublicShareView {
   snapshotJson: Prisma.JsonValue;
   expiresAt: Date | null;
   createdAt: Date;
+  viewCount: number;
 }
 
 @Injectable()
 export class SharesService {
+  private readonly logger = new Logger(SharesService.name);
+
   constructor(
     private readonly repository: SharesRepository,
     private readonly workspacesRepository: WorkspacesRepository,
     private readonly events: DomainEventBus,
     private readonly audit: AuditService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /** BE-003: create requires the caller to own the target workspace. */
@@ -119,24 +170,19 @@ export class SharesService {
       throw new ForbiddenException("You do not own this workspace");
     }
 
-    // DEVOPS-002: Validate expiration date
-    if (dto.expiresAt) {
-      const expiryDate = new Date(dto.expiresAt);
-      const maxExpiry = new Date();
-      maxExpiry.setFullYear(maxExpiry.getFullYear() + MAX_EXPIRY_YEARS);
-      
-      if (expiryDate <= new Date()) {
-        throw new BadRequestException("Share expiration date must be in the future");
-      }
-      if (expiryDate > maxExpiry) {
-        throw new BadRequestException(
-          `Share expiration date cannot exceed ${MAX_EXPIRY_YEARS} year from now`,
-        );
-      }
-    }
+    // DEVOPS-002: Validate expiration date (computed from either contract).
+    const expiresAt = this.resolveExpiry(dto);
+
+    // Issue #1122: Normalize the snapshot and strip sensitive RPC headers when
+    // enabled (checked by default in the share creation modal).
+    const snapshotObject = this.normalizeSnapshot(dto.snapshotJson);
+    const excludeSensitive = dto.excludeCustomAuthHeaders !== false;
+    const sanitized = excludeSensitive
+      ? sanitizeSnapshotPayload(snapshotObject)
+      : { snapshot: snapshotObject, detectedSensitiveKeys: [], sanitized: false };
 
     // BE-321: Deterministic serialization to ensure consistent state hashing and rebuilds
-    const deterministicSnapshot = sortJsonKeys(dto.snapshotJson);
+    const deterministicSnapshot = sortJsonKeys(sanitized.snapshot);
 
     // DEVOPS-002: Validate snapshot JSON size and depth
     const snapshotString = JSON.stringify(deterministicSnapshot);
@@ -159,7 +205,7 @@ export class SharesService {
         token,
         label: dto.label,
         snapshotJson: deterministicSnapshot,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        expiresAt,
       },
     });
     
@@ -167,7 +213,7 @@ export class SharesService {
     this.events.emit(SHARE_CREATED, {
       shareId: share.id,
       workspaceId: dto.workspaceId,
-      tokenHint: token.slice(0, 6) + "…",
+      tokenHint: token.slice(0, 6) + "\u2026",
       correlationId,
     });
     void this.audit.log({
@@ -176,9 +222,23 @@ export class SharesService {
       resourceType: "share",
       resourceId: share.id,
       summary: `Created share for workspace ${dto.workspaceId}`,
-      metadata: { workspaceId: dto.workspaceId, label: dto.label, correlationId },
+      metadata: {
+        workspaceId: dto.workspaceId,
+        label: dto.label,
+        correlationId,
+        ...(sanitized.sanitized
+          ? { sensitiveHeadersStripped: sanitized.detectedSensitiveKeys }
+          : {}),
+      },
     });
-    return share;
+
+    // Issue #1122: surface sanitization outcome so the web client can render a
+    // warning badge when sensitive headers were detected and removed.
+    return {
+      ...share,
+      sanitized: sanitized.sanitized,
+      strippedSensitiveKeys: sanitized.detectedSensitiveKeys,
+    };
   }
 
   /**
@@ -186,16 +246,38 @@ export class SharesService {
    * Internal fields (id, workspaceId) are not exposed.
    */
   @MapDbErrors()
-  async resolve(token: string): Promise<PublicShareView> {
+  async resolve(token: string, ip?: string, userAgent?: string): Promise<PublicShareView> {
     const share = await this.repository.findUnique({ where: { token } });
-    if (!share) throw new NotFoundException("Share link not found");
+    if (!share) {
+      // Issue #945: log failed resolution attempts — repeated misses from a
+      // single IP are a signal of share-token enumeration.
+      this.logger.warn(`Failed share resolution: token not found ip=${ip ?? "unknown"}`);
+      throw new NotFoundException("Share link not found");
+    }
 
     if (share.revokedAt) {
+      this.logger.warn(`Failed share resolution: token revoked ip=${ip ?? "unknown"}`);
       throw new ForbiddenException("Share link has been revoked");
     }
     if (share.expiresAt && share.expiresAt < new Date()) {
+      this.logger.warn(`Failed share resolution: token expired ip=${ip ?? "unknown"}`);
       throw new GoneException("Share link has expired");
     }
+
+    // Increment view count and log access
+    await this.prisma.$transaction([
+      this.prisma.shareLink.update({
+        where: { token },
+        data: { viewCount: { increment: 1 } },
+      }),
+      this.prisma.shareAccessLog.create({
+        data: {
+          shareId: share.id,
+          ip: ip ?? null,
+          userAgent: userAgent ?? null,
+        },
+      }),
+    ]);
 
     this.events.emit(SHARE_RESOLVED, {
       shareId: share.id,
@@ -209,6 +291,7 @@ export class SharesService {
       snapshotJson: share.snapshotJson,
       expiresAt: share.expiresAt,
       createdAt: share.createdAt,
+      viewCount: share.viewCount + 1,
     };
   }
 
@@ -260,8 +343,7 @@ export class SharesService {
       throw new ForbiddenException("You do not own this workspace");
     }
 
-    const skip = query.skip ?? 0;
-    const take = query.take ?? 20;
+    const { page, pageSize, skip, take } = normalizePagination(query);
     const sortBy = query.sortBy ?? "createdAt";
     const sortOrder = query.sortOrder ?? "desc";
 
@@ -273,6 +355,7 @@ export class SharesService {
       expiresAt: true,
       revokedAt: true,
       createdAt: true,
+      viewCount: true,
     };
 
     const [data, total] = await Promise.all([
@@ -286,13 +369,164 @@ export class SharesService {
       this.repository.count({ where }),
     ]);
 
-    return { data, pagination: { total, skip, take } };
+    // Issue #1115: attach each share's most recent recipient-access timestamp.
+    const shareIds = data.map((s: { id: string }) => s.id);
+    const lastAccessRows = shareIds.length
+      ? await this.prisma.shareAccessLog.groupBy({
+          by: ["shareId"],
+          where: { shareId: { in: shareIds } },
+          _max: { accessedAt: true },
+        })
+      : [];
+    const lastAccessedByShareId = new Map(
+      lastAccessRows.map((row) => [row.shareId, row._max.accessedAt ?? null]),
+    );
+    const dataWithLastAccessed = data.map((s: { id: string }) => ({
+      ...s,
+      lastAccessedAt: lastAccessedByShareId.get(s.id) ?? null,
+    }));
+
+    return toPaginatedEnvelope(dataWithLastAccessed, total, page, pageSize);
+  }
+
+  @MapDbErrors()
+  async stats(token: string, ownerKey: string) {
+    const share = await this.repository.findUnique({ where: { token } });
+    if (!share) throw new NotFoundException("Share link not found");
+
+    const workspace = await this.workspacesRepository.findUnique({
+      where: { id: share.workspaceId },
+    });
+    if (!workspace || workspace.ownerKey !== ownerKey) {
+      throw new ForbiddenException("You do not own this workspace");
+    }
+
+    const accessLogs = await this.prisma.shareAccessLog.findMany({
+      where: { shareId: share.id },
+      orderBy: { accessedAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        accessedAt: true,
+        ip: true,
+        userAgent: true,
+      },
+    });
+
+    return {
+      shareId: share.id,
+      token: share.token,
+      viewCount: share.viewCount,
+      accessLogs,
+    };
+  }
+
+  @MapDbErrors()
+  async fork(token: string, ownerKey: string, dto: ForkShareDto) {
+    const share = await this.repository.findUnique({ where: { token } });
+    if (!share) throw new NotFoundException("Share link not found");
+
+    if (share.revokedAt) {
+      throw new ForbiddenException("Share link has been revoked");
+    }
+    if (share.expiresAt && share.expiresAt < new Date()) {
+      throw new GoneException("Share link has expired");
+    }
+
+    const snapshot = share.snapshotJson as Record<string, any>;
+    const workspaceName = dto.name ?? `${snapshot.name ?? "Shared"} (fork)`;
+
+    const workspace = await this.workspacesRepository.create({
+      data: {
+        ownerKey,
+        name: workspaceName,
+        selectedNetwork: snapshot.selectedNetwork ?? "testnet",
+        savedContracts: Array.isArray(snapshot.contractIds)
+          ? {
+              create: snapshot.contractIds.map((contractId: string) => ({
+                contractId,
+                network: snapshot.selectedNetwork ?? "testnet",
+              })),
+            }
+          : undefined,
+        savedInteractions: Array.isArray(snapshot.savedCallIds)
+          ? {
+              create: snapshot.savedCallIds.map((id: string) => ({
+                functionName: "unknown",
+                argumentsJson: {},
+                network: snapshot.selectedNetwork ?? "testnet",
+              })),
+            }
+          : undefined,
+      },
+    });
+
+    this.events.emit(WORKSPACE_CREATED, {
+      workspaceId: workspace.id,
+      ownerKey,
+      name: workspace.name,
+      selectedNetwork: workspace.selectedNetwork,
+    });
+    void this.audit.log({
+      actor: ownerKey,
+      action: "share.forked",
+      resourceType: "share",
+      resourceId: share.id,
+      summary: `Forked share ${token.slice(0, 6)}\u2026 to workspace ${workspace.id}`,
+      metadata: { newWorkspaceId: workspace.id },
+    });
+
+    return workspace;
   }
 
   @MapDbErrors()
   async cleanup(): Promise<{ deleted: number }> {
     const deleted = await this.repository.deleteExpiredAndRevoked();
     return { deleted };
+  }
+
+  /**
+   * Accept a snapshot as either an object (legacy callers) or a JSON string
+   * (the shared web contract). Rejects scalars/arrays with a clear error.
+   */
+  private normalizeSnapshot(raw: unknown): Prisma.InputJsonValue {
+    let parsed: unknown;
+    if (typeof raw === "string") {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new BadRequestException("snapshotJson must be a valid JSON object or JSON string");
+      }
+    } else if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+      parsed = raw;
+    } else {
+      throw new BadRequestException("snapshotJson is required and must be a JSON object (or JSON string)");
+    }
+    return parsed as Prisma.InputJsonValue;
+  }
+
+  /** Resolve the effective expiry from either contract field, bounding it to MAX_EXPIRY_YEARS. */
+  private resolveExpiry(dto: CreateShareDto): Date | null {
+    let expiresAt: Date | null = null;
+    if (dto.expiresInSeconds !== undefined) {
+      expiresAt = new Date(Date.now() + dto.expiresInSeconds * 1000);
+    } else if (dto.expiresAt) {
+      expiresAt = new Date(dto.expiresAt);
+    }
+    if (!expiresAt) return null;
+
+    const maxExpiry = new Date();
+    maxExpiry.setFullYear(maxExpiry.getFullYear() + MAX_EXPIRY_YEARS);
+
+    if (expiresAt <= new Date()) {
+      throw new BadRequestException("Share expiration date must be in the future");
+    }
+    if (expiresAt > maxExpiry) {
+      throw new BadRequestException(
+        `Share expiration date cannot exceed ${MAX_EXPIRY_YEARS} year from now`,
+      );
+    }
+    return expiresAt;
   }
 
   /**
