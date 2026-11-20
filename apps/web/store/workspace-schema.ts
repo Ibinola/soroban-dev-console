@@ -41,7 +41,7 @@ export interface WorkspaceNote {
   id: string;
   workspaceId: string;
   /** Optional: pin the note to a specific contract, savedCall, or artifact */
-  resourceType?: "contract" | "savedCall" | "artifact";
+  resourceType?: "contract" | "savedCall" | "artifact" | "event" | "transaction";
   resourceId?: string;
   body: string;
   createdAt: number;

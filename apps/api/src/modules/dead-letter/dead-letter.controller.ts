@@ -9,20 +9,8 @@ export class DeadLetterController {
 
   @ApiOperation({ summary: "List" })
   @Get()
-  list(
-    @Query("status") status?: string,
-    @Query("page") page?: string,
-    @Query("pageSize") pageSize?: string,
-    @Query("skip") skip?: string,
-    @Query("take") take?: string,
-  ) {
-    return this.deadLetterService.list({
-      status,
-      page: page ? Number(page) : undefined,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-      skip: skip ? Number(skip) : undefined,
-      take: take ? Number(take) : undefined,
-    });
+  list(@Query("status") status?: string) {
+    return this.deadLetterService.list(status);
   }
 
   @ApiOperation({ summary: "Retry" })

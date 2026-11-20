@@ -1,8 +1,10 @@
-import { Body, Controller, Param, Post, Get, Res, Req, Sse, MessageEvent, UseGuards, ForbiddenException } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, Req, Sse, MessageEvent, UseGuards, ForbiddenException } from "@nestjs/common";
 import { Observable, interval, Subject, takeUntil } from "rxjs";
 import type { Request, Response } from "express";
 import { RpcRateLimitGuard } from "./rpc-rate-limit.guard.js";
+import { rpcCircuitBreakers, sanitizeCircuitSnapshots } from "../../lib/circuit-breaker.js";
 import { RpcService } from "./rpc.service.js";
+import { RpcCacheService } from "./rpc-cache.service.js";
 import { RpcFailoverService } from "./rpc-failover.service.js";
 import { TransactionNormalizerService } from "./transaction-normalizer.service.js";
 import {
@@ -11,27 +13,46 @@ import {
   ApiResponse,
 } from "@devconsole/api-contracts";
 
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 @UseGuards(RpcRateLimitGuard)
+@ApiTags("rpc")
 @Controller("rpc")
 export class RpcController {
   constructor(
     private readonly rpcService: RpcService,
+    private readonly rpcCache: RpcCacheService,
     private readonly normalizer: TransactionNormalizerService,
     private readonly failover: RpcFailoverService,
   ) {}
 
-  @Get("endpoints/status")
-  getEndpointStatus(@Req() req: Request) {
+  private assertInternalRequest(req: Request): void {
     const ip = req.ip || req.socket?.remoteAddress;
     if (ip !== "::1" && ip !== "127.0.0.1" && ip !== "::ffff:127.0.0.1") {
       throw new ForbiddenException("Only internal localhost requests allowed");
     }
+  }
+
+  @ApiOperation({ summary: "Get endpoint status" })
+  @Get("endpoints/status")
+  getEndpointStatus(@Req() req: Request) {
+    this.assertInternalRequest(req);
     return {
       success: true,
       data: this.failover.getStatus(),
     };
   }
 
+  @ApiOperation({ summary: "Get sanitized circuit breaker state" })
+  @Get("circuits/status")
+  getCircuitStatus(@Req() req: Request) {
+    this.assertInternalRequest(req);
+    return {
+      success: true,
+      data: sanitizeCircuitSnapshots(rpcCircuitBreakers.snapshot()),
+    };
+  }
+
+  @ApiOperation({ summary: "Proxy rpc" })
   @Post(":network")
   async proxyRpc(
     @Param("network") network: string,
@@ -49,6 +70,7 @@ export class RpcController {
     return proxied.body;
   }
 
+  @ApiOperation({ summary: "Simulate transaction" })
   @Post(":network/simulate")
   async simulateTransaction(
     @Param("network") network: string,
@@ -70,6 +92,7 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Send transaction" })
   @Post(":network/send")
   async sendTransaction(
     @Param("network") network: string,
@@ -91,6 +114,7 @@ export class RpcController {
     };
   }
 
+  @ApiOperation({ summary: "Get transaction" })
   @Post(":network/status")
   async getTransaction(
     @Param("network") network: string,
@@ -109,6 +133,60 @@ export class RpcController {
     return {
       success: true,
       data: normalized,
+    };
+  }
+
+  // ── Issue #691: Cache TTL config & invalidation ─────────────────────────────
+
+  @ApiOperation({ summary: "Get cache config" })
+  @Get("cache/config")
+  getCacheConfig() {
+    return {
+      success: true,
+      data: this.rpcCache.getTtlConfig(),
+    };
+  }
+
+  @ApiOperation({ summary: "Update cache config" })
+  @Patch("cache/config")
+  updateCacheConfig(
+    @Body() body: { method: string; ttlMs: number },
+  ) {
+    this.rpcCache.setTtl(body.method, body.ttlMs);
+    return {
+      success: true,
+      data: this.rpcCache.getTtlConfig(),
+    };
+  }
+
+  @ApiOperation({ summary: "Flush all cache" })
+  @Delete("cache/all")
+  flushAllCache() {
+    this.rpcCache.flushAll();
+    return { success: true, message: "Cache flushed" };
+  }
+
+  @ApiOperation({ summary: "Invalidate cache" })
+  @Delete("cache")
+  invalidateCache(
+    @Query("method") method?: string,
+    @Query("network") network?: string,
+  ) {
+    const count = this.rpcCache.invalidate(method, network);
+    return {
+      success: true,
+      data: { invalidated: count },
+    };
+  }
+
+  // ── Issue #693: Dedup stats ─────────────────────────────────────────────────
+
+  @ApiOperation({ summary: "Get dedup stats" })
+  @Get("dedup/stats")
+  getDedupStats() {
+    return {
+      success: true,
+      data: this.rpcCache.getDedupStats(),
     };
   }
 
@@ -155,7 +233,7 @@ export class RpcController {
           } as MessageEvent);
 
           // Close the stream once the transaction has reached a terminal state
-          if (normalized.status === "success" || normalized.status === "failed") {
+          if (normalized.status === "success" || normalized.status === "error") {
             clearTimeout(timeoutHandle);
             stop$.next();
           }

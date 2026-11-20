@@ -34,9 +34,14 @@ const localStorageMock = (() => {
   };
 })();
 
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-});
+// Guarded so individual tests can opt into the node environment
+// (`// @vitest-environment node`), e.g. for stellar-sdk code that needs
+// same-realm Buffers.
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'localStorage', {
+    value: localStorageMock,
+  });
+}
 
 // Mock crypto.randomUUID
 if (typeof globalThis.crypto === 'undefined') {

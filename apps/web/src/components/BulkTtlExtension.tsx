@@ -1,0 +1,1 @@
+export function BulkTtlExtension() {\n  // bulk TTL request builder\n}\n

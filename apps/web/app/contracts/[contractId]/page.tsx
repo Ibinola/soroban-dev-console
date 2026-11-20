@@ -16,8 +16,10 @@ import { useParams, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { ContractCallForm } from "@/components/contract-call-form";
+import { ContractCardSkeleton } from "@/components/contract-card-skeleton";
 import { ContractEvents } from "@/components/contract-events";
 import { ContractStorage } from "@/components/contract-storage";
+import { FavoriteContractButton } from "@/components/favorite-contract-button";
 import { ContractUpgradeModal } from "@/components/contract-upgrade-modal";
 import { TokenDashboard } from "@/components/token-dashboard";
 import { SourceVerificationFlow } from "@/components/source-verification-flow";
@@ -50,6 +52,7 @@ export default function ContractDetailPage() {
   const { activeWorkspaceId, addContractToWorkspace } = useWorkspaceStore();
   const { isConnected, isSandboxMode, enterSandbox } = useWallet();
   const spec = getSpec(contractId);
+  const [playgroundOpen, setPlaygroundOpen] = useState(false);
 
   useEffect(() => {
     if (networkParam) {
@@ -168,7 +171,7 @@ export default function ContractDetailPage() {
       : "Not found";
 
   return (
-    <div className="container mx-auto space-y-8 p-6">
+    <div className="container mx-auto space-y-6 p-4 sm:space-y-8 sm:p-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div className="flex min-w-0 items-center gap-4">
           <Link href="/contracts" className="shrink-0">
@@ -201,7 +204,7 @@ export default function ContractDetailPage() {
           </div>
         </div>
 
-        <div className="flex shrink-0 gap-2">
+        <div className="flex flex-wrap gap-2 md:shrink-0 [&_button]:min-h-10 [&_a]:min-h-10">
           <Badge variant="outline" className="gap-1">
             <ShieldCheck className="h-3 w-3" />
             Source Verified
@@ -220,6 +223,7 @@ export default function ContractDetailPage() {
           >
             <LinkIcon className="mr-1 h-4 w-4" /> Share Link
           </Button>
+          <FavoriteContractButton contractId={contractId} />
           <ContractUpgradeModal contractId={contractId} />
           <Button variant="outline" asChild>
             <a
@@ -232,6 +236,8 @@ export default function ContractDetailPage() {
           </Button>
         </div>
       </div>
+
+      {playgroundOpen && <ContractPlayground contractId={contractId} />}
 
       {overview?.error && (
         <Alert variant="destructive">
@@ -246,7 +252,7 @@ export default function ContractDetailPage() {
         <Alert>
           <FlaskConical className="h-4 w-4" />
           <AlertTitle>No wallet connected</AlertTitle>
-          <AlertDescription className="flex items-center justify-between gap-4">
+          <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <span>
               You can still explore and simulate contract functions without a wallet.
             </span>
@@ -259,7 +265,7 @@ export default function ContractDetailPage() {
       )}
 
       <Tabs defaultValue="overview" className="space-y-4" aria-label="Contract details tabs">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="overview">Overview & Interaction</TabsTrigger>
           <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
@@ -276,20 +282,18 @@ export default function ContractDetailPage() {
           <TokenDashboard contractId={contractId} />
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <Card className="min-w-0 md:col-span-1">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5" />
-                  Contract Info
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <>
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-3/4" />
-                  </>
-                ) : overview?.exists ? (
+            {loading ? (
+              <ContractCardSkeleton className="md:col-span-1" />
+            ) : (
+              <Card className="min-w-0 md:col-span-1">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Contract Info
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {overview?.exists ? (
                   <>
                     <div className="flex items-center gap-2 text-sm">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -347,9 +351,10 @@ export default function ContractDetailPage() {
                       />
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             <div className="min-w-0 md:col-span-2">
               <ContractCallForm contractId={contractId} />

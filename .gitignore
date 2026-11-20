@@ -37,6 +37,7 @@ Thumbs.db
 
 # Optional: coverage
 coverage
+apps/api/prisma/dev.db
 .backups/
 
 # Rust build artifacts

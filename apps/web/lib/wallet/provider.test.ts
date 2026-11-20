@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-let xBullWalletConnectMock: ReturnType<typeof vi.fn>;
+let xBullWalletConnectMock: any;
 
 vi.mock('@albedo-link/intent', () => ({
   default: { publicKey: vi.fn(), tx: vi.fn() },
@@ -9,10 +9,14 @@ vi.mock('@stellar/freighter-api', () => ({
   isConnected: vi.fn(() => false),
   isAllowed: vi.fn(() => true),
   getAddress: vi.fn(() => ({})),
+  setAllowed: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('@creit.tech/xbull-wallet-connect', () => {
   xBullWalletConnectMock = vi.fn();
-  return { xBullWalletConnect: xBullWalletConnectMock };
+  function MockBridge(this: any, ...args: any[]) {
+    return xBullWalletConnectMock(...args);
+  }
+  return { xBullWalletConnect: MockBridge };
 });
 
 function getXbullBridge() {
@@ -174,19 +178,93 @@ describe('xBull wallet provider', () => {
     it('should return true in browser environment', async () => {
       const { walletProviders } = await import('./provider');
       const result = await walletProviders['xbull'].revalidate();
-      expect(result).toBe(true);
+      expect(result.isValid).toBe(true);
     });
 
     it('should return false when window is undefined', async () => {
       const { walletProviders } = await import('./provider');
       const originalWindow = global.window;
-      // @ts-ignore
+      // @ts-expect-error Testing behavior when window is undefined in node environment
       global.window = undefined;
 
       const result = await walletProviders['xbull'].revalidate();
-      expect(result).toBe(false);
+      expect(result.isValid).toBe(false);
 
       global.window = originalWindow;
+    });
+  });
+
+  describe('disconnect', () => {
+    it('freighter disconnect should call setAllowed when available', async () => {
+      const { walletProviders } = await import('./provider');
+      const setAllowed = vi.fn(() => Promise.resolve());
+      vi.doMock('@stellar/freighter-api', () => ({
+        isConnected: vi.fn(() => true),
+        isAllowed: vi.fn(() => true),
+        getAddress: vi.fn(() => ({ address: 'GABC' })),
+        setAllowed,
+      }));
+
+      await walletProviders['freighter'].disconnect();
+
+      vi.doUnmock('@stellar/freighter-api');
+    });
+
+    it('freighter disconnect should not throw when setAllowed is missing', async () => {
+      const { walletProviders } = await import('./provider');
+
+      await expect(walletProviders['freighter'].disconnect()).resolves.toBeUndefined();
+    });
+
+    it('albedo disconnect should clear localStorage keys containing albedo and intent', async () => {
+      const { walletProviders } = await import('./provider');
+      const mockStorage: Record<string, string> = {
+        'albedo_token': 'abc',
+        'some_intent': 'def',
+        'other_key': 'ghi',
+      };
+      const removeItem = vi.fn((key: string) => {
+        delete mockStorage[key];
+      });
+      vi.stubGlobal('localStorage', {
+        getItem: vi.fn((key: string) => mockStorage[key] ?? null),
+        setItem: vi.fn(),
+        removeItem,
+        clear: vi.fn(),
+        get length() {
+          return Object.keys(mockStorage).length;
+        },
+        key: vi.fn((i: number) => Object.keys(mockStorage)[i]),
+      } as any);
+
+      await walletProviders['albedo'].disconnect();
+      expect(removeItem).toHaveBeenCalledWith('albedo_token');
+      expect(removeItem).toHaveBeenCalledWith('some_intent');
+      expect(removeItem).not.toHaveBeenCalledWith('other_key');
+    });
+
+    it('xbull disconnect should call closeConnections on xbull bridge', async () => {
+      const { walletProviders } = await import('./provider');
+      const Bridge = getXbullBridge();
+      const closeMock = vi.fn();
+      Bridge.mockImplementation(() => ({
+        connect: vi.fn(),
+        sign: vi.fn(),
+        closeConnections: closeMock,
+      }));
+
+      await walletProviders['xbull'].disconnect();
+      expect(closeMock).toHaveBeenCalled();
+    });
+
+    it('xbull disconnect should not throw when bridge instantiation fails', async () => {
+      const { walletProviders } = await import('./provider');
+      const Bridge = getXbullBridge();
+      Bridge.mockImplementation(() => {
+        throw new Error('boom');
+      });
+
+      await expect(walletProviders['xbull'].disconnect()).resolves.toBeUndefined();
     });
   });
 });

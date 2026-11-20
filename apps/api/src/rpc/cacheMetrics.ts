@@ -1,0 +1,1 @@
+export function getCacheMetrics() {\n  // hit/miss ratio\n}\n

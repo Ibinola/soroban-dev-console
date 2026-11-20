@@ -1,0 +1,45 @@
+name: soroban-utils Benchmarks
+
+# Fails when a benchmark is more than 20% slower (relative to a calibration
+# workload) than packages/soroban-utils/bench/baseline.json. After an
+# intentional change run `npm run bench:update -w @devconsole/soroban-utils`
+# and commit the new baseline.
+
+on:
+  pull_request:
+    paths:
+      - "packages/soroban-utils/**"
+      - ".github/workflows/soroban-utils-bench.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "packages/soroban-utils/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Performance regression check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run benchmarks
+        run: npm run bench -w @devconsole/soroban-utils -- --out "$GITHUB_WORKSPACE/bench-results.json"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-utils-bench-results
+          path: bench-results.json

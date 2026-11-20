@@ -1,0 +1,15 @@
+{
+  "variant": "simulate",
+  "description": "simulate success",
+  "response": {
+    "minResourceFee": "58181",
+    "result": {
+      "retvalXdr": "AAAAAQ==",
+      "auth": []
+    },
+    "cost": {
+      "cpuInsns": "1234567",
+      "memBytes": "4321"
+    }
+  }
+}

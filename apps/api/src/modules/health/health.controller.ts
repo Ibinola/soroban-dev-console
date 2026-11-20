@@ -1,10 +1,21 @@
 import { Controller, Get, Param } from "@nestjs/common";
 import { NetworkHealthService } from "./network-health.service.js";
+import { RpcMetricsService } from "../rpc/rpc-metrics.service.js";
+import { rpcCircuitBreakers, sanitizeCircuitSnapshots } from "../../lib/circuit-breaker.js";
+import { rpcCoalescer } from "../../lib/request-coalescer.js";
+import { DbPoolMetricsService } from "./db-pool-metrics.service.js";
 
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
+@ApiTags("health")
 @Controller()
 export class HealthController {
-  constructor(private readonly networkHealth: NetworkHealthService) {}
+  constructor(
+    private readonly networkHealth: NetworkHealthService,
+    private readonly rpcMetrics: RpcMetricsService,
+    private readonly dbPoolMetrics: DbPoolMetricsService,
+  ) {}
 
+  @ApiOperation({ summary: "Get health" })
   @Get("health")
   getHealth() {
     return {
@@ -15,6 +26,7 @@ export class HealthController {
     };
   }
 
+  @ApiOperation({ summary: "Get version" })
   @Get("version")
   getVersion() {
     return {
@@ -24,14 +36,34 @@ export class HealthController {
   }
 
   /** BE-009: Aggregated health for all supported networks. */
+  @ApiOperation({ summary: "Get network health" })
   @Get("health/networks")
   async getNetworkHealth() {
     return this.networkHealth.getAllHealth();
   }
 
   /** BE-009: Health for a single network. */
+  @ApiOperation({ summary: "Get network health by name" })
   @Get("health/networks/:network")
   async getNetworkHealthByName(@Param("network") network: string) {
     return this.networkHealth.getHealth(network);
+  }
+
+  @ApiOperation({ summary: "Get rpc metrics" })
+  @Get("health/rpc")
+  async getRpcMetrics() {
+    return {
+      ...this.rpcMetrics.getMetrics(),
+      // #1298: coalescing hit rate. #1300: per-endpoint circuit state.
+      coalescing: rpcCoalescer.stats(),
+      circuits: rpcCircuitBreakers.snapshot(),
+      dbPool: await this.dbPoolMetrics.getMetrics(),
+    };
+  }
+
+  @ApiOperation({ summary: "Get database pool metrics" })
+  @Get("health/db-pool")
+  getDbPoolMetrics() {
+    return this.dbPoolMetrics.getMetrics();
   }
 }

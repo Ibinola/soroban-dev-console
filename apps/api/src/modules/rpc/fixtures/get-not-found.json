@@ -1,0 +1,8 @@
+{
+  "variant": "get",
+  "description": "get not found",
+  "response": {
+    "status": "NOT_FOUND",
+    "latestLedger": 300
+  }
+}

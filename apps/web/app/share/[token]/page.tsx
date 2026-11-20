@@ -31,7 +31,6 @@ import {
   Ban,
   Clock,
   FileCode,
-  GitFork,
   Loader2,
   ShieldOff,
 } from "lucide-react";
@@ -132,8 +131,11 @@ export default function SharedWorkspacePage() {
 
   return (
     <div className="container mx-auto max-w-3xl space-y-6 p-6">
-      {/* Read-only banner */}
-      <ReadOnlyBanner isExpired={!!isExpired} />
+      {/* Read-only banner (carries the Fork CTA — issue #1118) */}
+      <ReadOnlyBanner
+        isExpired={!!isExpired}
+        onFork={() => router.push(`/share/${token}/fork`)}
+      />
 
       {/* Dependency Diagnostics */}
       <DependencyDiagnostics
@@ -143,30 +145,18 @@ export default function SharedWorkspacePage() {
         className="mb-6"
       />
 
-      {/* Workspace header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {payload.workspace.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Network:{" "}
-            <Badge variant="secondary">{payload.workspace.selectedNetwork}</Badge>
-            &nbsp;·&nbsp;Exported{" "}
-            {new Date(payload.exportedAt).toLocaleDateString()}
-            {link.label && <>&nbsp;·&nbsp;{link.label}</>}
-          </p>
-        </div>
-        {/* FE-027: Fork CTA */}
-        <Button
-          variant="default"
-          className="shrink-0 gap-2"
-          onClick={() => router.push(`/share/${token}/fork`)}
-          disabled={!!isExpired}
-        >
-          <GitFork className="h-4 w-4" />
-          Fork Workspace
-        </Button>
+      {/* Workspace header (Fork CTA now lives in the ReadOnlyBanner above — issue #1118) */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {payload.workspace.name}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Network:{" "}
+          <Badge variant="secondary">{payload.workspace.selectedNetwork}</Badge>
+          &nbsp;·&nbsp;Exported{" "}
+          {new Date(payload.exportedAt).toLocaleDateString()}
+          {link.label && <>&nbsp;·&nbsp;{link.label}</>}
+        </p>
       </div>
 
       {/* Contracts */}

@@ -168,7 +168,9 @@ function parseNotes(raw: unknown): WorkspaceNote[] {
       const resourceType: WorkspaceNote["resourceType"] =
         entry.resourceType === "contract" ||
         entry.resourceType === "savedCall" ||
-        entry.resourceType === "artifact"
+        entry.resourceType === "artifact" ||
+        entry.resourceType === "event" ||
+        entry.resourceType === "transaction"
           ? entry.resourceType
           : undefined;
 

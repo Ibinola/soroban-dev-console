@@ -7,6 +7,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
 import { cn } from "@devconsole/ui";
 
 /**
@@ -21,7 +22,8 @@ import { cn } from "@devconsole/ui";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export function NetworkHealth() {
-  const { currentNetwork, health, setHealth } = useNetworkStore();
+  const { currentNetwork, health, setHealth, autoFailover, setAutoFailover, failoverNetworkId, degradationThresholdMs } = useNetworkStore();
+  const [latencyHistory, setLatencyHistory] = useState<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +46,7 @@ export function NetworkHealth() {
             latencyMs: data.latencyMs,
             lastCheck: data.checkedAt,
           });
+          setLatencyHistory(prev => [...prev.slice(-4), data.latencyMs]);
         }
       } catch {
         if (!cancelled) {
@@ -134,6 +137,16 @@ export function NetworkHealth() {
               </span>
             </div>
             <div className="flex justify-between px-3 py-2">
+              <span className="text-muted-foreground">Latency graph</span>
+              <span className="font-mono text-[10px] tracking-tight">
+                {latencyHistory.map((h, i) => (
+                  <span key={i} className="mx-0.5" title={`${h}ms`}>
+                    {h > 2000 ? "█" : h > 1000 ? "▅" : h > 500 ? "▄" : "▂"}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="flex justify-between px-3 py-2">
               <span className="text-muted-foreground">Latest ledger</span>
               <span className="font-mono font-medium">
                 {health.latestLedger > 0 ? health.latestLedger.toLocaleString() : "—"}
@@ -157,6 +170,20 @@ export function NetworkHealth() {
               RPC endpoint unreachable. Check your network connection or switch networks.
             </p>
           )}
+
+          <div className="flex items-center justify-between border-t pt-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium">Auto-failover</span>
+              <p className="text-[10px] text-muted-foreground">
+                {autoFailover ? `Switches to ${failoverNetworkId} at &gt;${degradationThresholdMs}ms` : "Off"}
+              </p>
+            </div>
+            <Switch
+              checked={autoFailover}
+              onCheckedChange={setAutoFailover}
+              aria-label="Toggle auto-failover"
+            />
+          </div>
         </div>
       </PopoverContent>
     </Popover>

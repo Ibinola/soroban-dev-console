@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "reporters": ["html", "clear-text", "progress"],
+  "coverageAnalysis": "perTest",
+  "mutate": [
+    "src/spec-validator/**/*.ts",
+    "src/wasm-parser/**/*.ts",
+    "src/xdr-utils/**/*.ts",
+    "!src/**/*.test.ts",
+    "!src/**/*.spec.ts"
+  ],
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "thresholds": {
+    "high": 85,
+    "low": 70,
+    "break": 75
+  }
+}

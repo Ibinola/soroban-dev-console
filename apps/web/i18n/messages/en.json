@@ -1,0 +1,140 @@
+{
+  "home": {
+    "tagline": "Your command center for building, testing, and monitoring Soroban smart contracts.",
+    "templates": {
+      "description": "Bootstrap a new workspace pre-configured for common developer flows.",
+      "title": "Start from a Template"
+    },
+    "documentation": "Documentation",
+    "account": {
+      "title": "Account Overview",
+      "noWallet": "No wallet connected",
+      "description": "Connect your wallet to view balances and asset trustlines."
+    },
+    "links": {
+      "contractExplorer": {
+        "title": "Contract Explorer",
+        "description": "Interact with deployed contracts"
+      },
+      "xdrDecoder": {
+        "title": "XDR Decoder",
+        "description": "Debug raw Stellar data"
+      }
+    }
+  },
+  "common": {
+    "appName": "Soroban DevConsole"
+  },
+  "contracts": {
+    "subtitle": "Manage and interact with your Soroban smart contracts.",
+    "track": {
+      "description": "Paste a Contract ID to add it to your watchlist.",
+      "title": "Track New Contract",
+      "add": "Add Contract"
+    },
+    "fixtures": {
+      "description": "Pre-deployed contracts for testing and demos. Add one to your watchlist with a single click.",
+      "title": "Demo Fixture Contracts",
+      "add": "Add"
+    },
+    "bookmarks": {
+      "description": "Favorites stay pinned at the top. Stale bookmarks can be repaired.",
+      "stale": "stale",
+      "title": "Bookmarked Contracts",
+      "empty": "No bookmarks yet. Bookmark a contract from this page.",
+      "meta": "{network} · source: {source}"
+    },
+    "errors": {
+      "invalidId": "Invalid Contract ID. Must start with \"C\" and be 56 characters."
+    },
+    "toasts": {
+      "added": "Contract added and bookmarked.",
+      "bookmarked": "Contract bookmarked",
+      "removed": "Contract removed",
+      "fixtureAdded": "{label} added",
+      "repaired": "Bookmark repaired"
+    },
+    "title": "Contract Explorer",
+    "dependencyGraph": "Dependency Graph",
+    "table": {
+      "contractId": "Contract ID",
+      "network": "Network",
+      "dateAdded": "Date Added",
+      "actions": "Actions",
+      "empty": "No contracts added yet. Add one above to get started."
+    }
+  },
+  "settings": {
+    "subtitle": "Manage your preferences, custom RPC connections, and configurations.",
+    "appearance": {
+      "themeDescription": "Choose your preferred color scheme. System follows your OS preference.",
+      "dark": "Dark",
+      "system": "System",
+      "title": "Appearance",
+      "light": "Light",
+      "theme": "Theme"
+    },
+    "custom": {
+      "addDescription": "Connect to a private node or QuickNode instance.",
+      "addTitle": "Add Custom Network",
+      "name": "Network Name",
+      "namePlaceholder": "e.g. My Private Node",
+      "rpcUrl": "RPC URL",
+      "passphrase": "Network Passphrase",
+      "test": "Test Connection",
+      "add": "Add Network",
+      "testFailed": "Connection failed. Check CORS or URL.",
+      "testOk": "Endpoint is reachable and healthy.",
+      "listTitle": "Custom Networks",
+      "empty": "No custom networks added.",
+      "tableName": "Name"
+    },
+    "runtime": {
+      "status": "Configuration Status",
+      "description": "Monitor and manage the application's runtime configuration and fallback behavior.",
+      "title": "Runtime Configuration"
+    },
+    "language": {
+      "title": "Language",
+      "label": "Display language",
+      "hint": "More languages can be added by contributors; see docs/contributing/translations.md."
+    },
+    "toasts": {
+      "connected": "Connection Successful!",
+      "connectFailed": "Could not connect to RPC URL",
+      "fillAll": "Please fill all fields",
+      "testFirst": "We recommend testing the connection first",
+      "networkAdded": "Network added!"
+    },
+    "title": "Settings",
+    "editor": {
+      "title": "Editor",
+      "defaultNetwork": "Default Network",
+      "defaultNetworkHint": "New workspaces will use this network by default.",
+      "autoRun": "Auto-run Simulation",
+      "autoRunHint": "Automatically simulate contract calls when a method is selected."
+    },
+    "networks": {
+      "testnet": "Testnet",
+      "mainnet": "Mainnet",
+      "futurenet": "Futurenet",
+      "local": "Local"
+    },
+    "failover": {
+      "title": "Auto-failover",
+      "enable": "Enable Auto-failover",
+      "enableHint": "Automatically switch to a fallback network when latency exceeds the threshold.",
+      "threshold": "Degradation Threshold (ms)",
+      "thresholdHint": "Latency above this triggers auto-failover: {ms}ms",
+      "thresholdAria": "Degradation threshold in milliseconds",
+      "network": "Failover Network",
+      "networkHint": "Network to switch to when failover is triggered."
+    },
+    "data": {
+      "title": "Application Data"
+    },
+    "diagnostics": {
+      "title": "Diagnostics"
+    }
+  }
+}

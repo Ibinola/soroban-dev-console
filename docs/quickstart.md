@@ -34,11 +34,18 @@ Copy environment files:
 2. Paste a deployed Soroban contract ID
 3. Select a method and invoke it from the UI
 
+To deploy your own contract instead, follow the
+[deployment tutorial](./deploy-contract-tutorial.md).
+
 ## Get Testnet Funds
 
 Use the Friendbot button on the wallet page, or run:
 
     curl "https://friendbot.stellar.org?addr=YOUR_PUBLIC_KEY"
+
+## Something Not Working?
+
+See the [troubleshooting guide](./troubleshooting.md).
 
 ## Running Tests
 

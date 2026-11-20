@@ -45,7 +45,7 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as ApiEnvelope<any>;
-    if (body && "error" in body) {
+    if (body && body.error) {
       throw new ApiError(
         `${body.error.message} [${correlationId}]`,
         body.error.code,
@@ -128,6 +128,10 @@ export const sharesApi = {
       method: "DELETE",
     }),
 
+  // The backend returns a paginated envelope ({ data, pagination }), not a
+  // bare array — unwrap it here so callers get the ShareSummary[] they expect.
   listForWorkspace: (workspaceId: string) =>
-    apiFetch<ShareSummary[]>(`/api/shares/workspace/${workspaceId}`),
+    apiFetch<{ data: ShareSummary[]; pagination: { total: number; skip: number; take: number } }>(
+      `/api/shares/workspace/${workspaceId}`,
+    ).then((res) => res.data),
 };

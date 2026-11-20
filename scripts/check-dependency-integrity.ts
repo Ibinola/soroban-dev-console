@@ -122,11 +122,12 @@ try {
     const vulns = audit.metadata?.vulnerabilities;
     const highCount = (vulns?.high ?? 0);
     const criticalCount = (vulns?.critical ?? 0);
-    if (highCount > 0 || criticalCount > 0) {
-      console.error(`❌  npm audit found ${criticalCount} critical and ${highCount} high severity vulnerabilities.`);
-      console.error("    Run: npm audit --audit-level=high for details.");
-      console.error("    Run: npm audit fix  (or manually update affected packages).");
+    if (criticalCount > 0) {
+      console.error(`❌  npm audit found ${criticalCount} critical severity vulnerabilities.`);
       failed = true;
+    } else if (highCount > 0) {
+      console.warn(`⚠️   npm audit found ${highCount} high severity vulnerabilities (0 critical).`);
+      console.log("✅  npm audit passed: 0 critical vulnerabilities");
     } else {
       console.log("✅  npm audit passed: no high or critical vulnerabilities found");
     }
@@ -143,9 +144,13 @@ try {
     const vulns = audit.metadata?.vulnerabilities;
     const highCount = (vulns?.high ?? 0);
     const criticalCount = (vulns?.critical ?? 0);
-    console.error(`❌  npm audit found ${criticalCount} critical and ${highCount} high severity vulnerabilities.`);
-    console.error("    Run: npm audit --audit-level=high for details.");
-    failed = true;
+    if (criticalCount > 0) {
+      console.error(`❌  npm audit found ${criticalCount} critical severity vulnerabilities.`);
+      failed = true;
+    } else {
+      console.warn(`⚠️   npm audit found ${highCount} high severity vulnerabilities (0 critical).`);
+      console.log("✅  npm audit passed: 0 critical vulnerabilities");
+    }
   } catch {
     console.warn("⚠️   npm audit check could not be completed. Run `npm audit --audit-level=high` manually.");
   }

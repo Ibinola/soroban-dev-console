@@ -1,0 +1,28 @@
+name: Reusable CI Cache
+on:
+  workflow_call:
+    inputs:
+      cache-version:
+        description: Bump to invalidate all caches
+        type: string
+        default: v1
+      no-cache:
+        description: Skip restoring caches for this run
+        type: boolean
+        default: false
+
+# #1415: invalidation controls. Usage from a caller workflow:
+#   uses: ./.github/workflows/reusable-ci-cache.yml
+#   with: { cache-version: v2 }
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        if: ${{ !inputs.no-cache }}
+        with:
+          path: ~/.npm
+          key: npm-${{ inputs.cache-version }}-${{ hashFiles('**/package-lock.json', '**/pnpm-lock.yaml') }}
+          restore-keys: npm-${{ inputs.cache-version }}-
+      - run: npm ci

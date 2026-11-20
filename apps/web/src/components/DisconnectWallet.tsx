@@ -1,0 +1,1 @@
+export function DisconnectWallet() {\n  // disconnect and cleanup state\n}\n

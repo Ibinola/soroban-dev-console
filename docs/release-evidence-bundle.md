@@ -1,6 +1,6 @@
 # Release Evidence Bundle (DEVOPS-216)
 
-> Automated audit artifact for wave-prep release candidates. Builds on [DEVOPS-204](./release-candidate.md).
+> Automated audit artifact for wave-prep release candidates. Builds on DEVOPS-204.
 
 ## Overview
 
@@ -138,7 +138,7 @@ Open the log file for full command output. Fix locally, re-run `npm run release-
 
 ## Wave cutover checklist
 
-1. Run [Release Candidate](./release-candidate.md) workflow on `release/<wave>`.
+1. Run the Release Candidate workflow on `release/<wave>`.
 2. Download `release-evidence-<run_id>` artifact.
 3. Confirm `manifest.json` → `summary.ready` is `true`.
 4. Review `EVIDENCE.md` and `git/commits-oneline.txt` for the intended commit range.
@@ -147,6 +147,6 @@ Open the log file for full command output. Fix locally, re-run `npm run release-
 
 ## Related
 
-- [release-candidate.md](./release-candidate.md) — RC workflow and layer matrix
+- DEVOPS-204 — RC workflow and layer matrix (no standalone doc yet)
 - `npm run wave-prep` — local subset of validation (does not produce a bundle)
 - `scripts/generate-release-evidence.ts` — bundle generator implementation

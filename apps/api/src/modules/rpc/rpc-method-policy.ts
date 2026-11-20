@@ -39,7 +39,12 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
 
 const ALLOWED_METHODS = new Set(Object.keys(METHOD_POLICIES));
 
+let customWhitelist: Set<string> | null = null;
+export function setCustomWhitelist(methods: string[]) {
+  customWhitelist = new Set(methods);
+}
 export function isMethodAllowed(method: string): boolean {
+  if (customWhitelist) return customWhitelist.has(method);
   return ALLOWED_METHODS.has(method);
 }
 

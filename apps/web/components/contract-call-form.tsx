@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Contract,
   TransactionBuilder,
   TimeoutInfinite,
   rpc as SorobanRpc,
+  Keypair,
 } from "@stellar/stellar-sdk";
+import { Switch } from "@devconsole/ui";
 import {
   Play,
   Send,
@@ -28,6 +30,7 @@ import {
   PlayCircle,
   CheckCircle2,
   XCircle,
+  Clock,
 } from "lucide-react";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useWallet } from "@/store/useWallet";
@@ -51,6 +54,7 @@ import { useAbiStore } from "@/store/useAbiStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
+import { applyTemplate, templatesForInputs } from "@/lib/param-templates";
 import { Input } from "@devconsole/ui";
 import {
   Card,
@@ -81,6 +85,11 @@ import { toast } from "sonner";
 import { useResultBundlesStore } from "@/store/useResultBundlesStore";
 import { exportResultBundle } from "@/lib/result-bundles";
 import { stateChangesToDiffs } from "@/lib/diff-utils";
+import {
+  isAccordionArg,
+  serializePreset,
+  prefillArgsFromPreset,
+} from "@/lib/preset-serialization";
 
 interface ContractCallFormProps {
   contractId: string;
@@ -174,11 +183,16 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
   const [fnName, setFnName] = useState(initialMethod || "");
   const [args, setArgs] = useState<ContractArg[]>([]);
+  const [presetLoadValue, setPresetLoadValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [autoExecute, setAutoExecute] = useState(true);
   const [result, setResult] = useState<string | null>(null);
   const [simulation, setSimulation] =
     useState<NormalizedSimulationResult | null>(null);
-  const { saveCall, savePreset } = useSavedCallsStore();
+  const [executionTimeMs, setExecutionTimeMs] = useState<number | null>(null);
+  const [rpcLatencyMs, setRpcLatencyMs] = useState<number | null>(null);
+  const { saveCall, savePreset, presets } = useSavedCallsStore();
+  const contractPresets = presets.filter(p => p.contractId === contractId && p.fnName === activeVariant?.fnName);
   const { addBundle } = useResultBundlesStore();
   const { activeWorkspaceId, linkSavedCall } = useWorkspaceStore();
   const [isSaveOpen, setIsSaveOpen] = useState(false);
@@ -194,12 +208,35 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
   const [customFee, setCustomFee] = useState("100");
   const [customCpuLimit, setCustomCpuLimit] = useState("");
   const [customMemLimit, setCustomMemLimit] = useState("");
+
+  // Fee bump state
+  const [enableFeeBump, setEnableFeeBump] = useState(false);
+  const [sponsorType, setSponsorType] = useState<"secret" | "wallet">("wallet");
+  const [sponsorSecretKey, setSponsorSecretKey] = useState("");
+
+  // Simulation failure state
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [showSimulationWarning, setShowSimulationWarning] = useState(false);
+  const [pendingTxToOverride, setPendingTxToOverride] = useState<any>(null);
   // #737: state diff viewer collapsible state
   const [isDiffOpen, setIsDiffOpen] = useState(false);
   // #688: batch invocation state
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchQueue, setBatchQueue] = useState<BatchCallItem[]>([]);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
+  // #1032: accordion collapse state for nested struct/map args (values are never
+  // cleared on collapse - args state is the single source of truth)
+  const [collapsedArgIds, setCollapsedArgIds] = useState<Set<string>>(new Set());
+  const toggleArgCollapsed = (id: string) =>
+    setCollapsedArgIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const collapseAllArgs = () =>
+    setCollapsedArgIds(new Set(args.filter((a) => isAccordionArg(a)).map((a) => a.id)));
+  const expandAllArgs = () => setCollapsedArgIds(new Set());
 
   // FE-044: validate overrides before use
   const feeOverride = (() => {
@@ -235,8 +272,11 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       (key) => key.toUpperCase() === normalizedConnectedAddress,
     );
 
-  const searchParams = useSearchParams();
-  const methodParam = searchParams.get("method");
+  const methodParam = searchParams?.get("method");
+
+  // #1296: values and the sender's result carried by a call permalink.
+  const shared = searchParams ? parseCallPermalink(searchParams) : null;
+  const sharedArgsApplied = useRef(false);
 
   useEffect(() => {
     if (
@@ -258,6 +298,28 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       }
     }
   }, [methodParam, spec, fnName]);
+
+  useEffect(() => {
+    if (sharedArgsApplied.current || !shared?.args) return;
+    if (!spec || fnName !== shared.fnName || args.length === 0) return;
+    sharedArgsApplied.current = true;
+    const values = shared.args;
+    setArgs((current) =>
+      current.map((a, i) => (values[i] === undefined ? a : { ...a, value: values[i] })),
+    );
+  }, [shared, spec, fnName, args.length]);
+
+  const copyPermalink = async () => {
+    const link = buildCallPermalink(window.location.origin, {
+      contractId,
+      network: getActiveNetworkConfig().id,
+      fnName,
+      args: args.map((a) => String(a.value ?? "")),
+      result: result ?? undefined,
+    });
+    await navigator.clipboard.writeText(link);
+    toast.success("Permalink copied");
+  };
 
   const handleFnChange = (name: string) => {
     setFnName(name);
@@ -291,6 +353,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
     setIsLoading(true);
     setResult(null);
     setSimulation(null);
+    setExecutionTimeMs(null);
+    setRpcLatencyMs(null);
+    const startTime = performance.now();
     try {
       const network = getActiveNetworkConfig();
       const server = new SorobanRpc.Server(network.rpcUrl);
@@ -346,6 +411,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         setResult(`Simulation failed: ${normalized.error || "Unknown error"}`);
         toast.error(`Simulation Failed: ${normalized.error || "Unknown error"}`);
       }
+      setExecutionTimeMs(Math.round(performance.now() - startTime));
+      setRpcLatencyMs(Math.round(performance.now() - startTime));
     } catch (e: any) {
       console.error(e);
       setSimulation({
@@ -358,9 +425,59 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       });
       setResult(`Error: ${e.message}`);
       toast.error(`Simulation Error: ${e.message}`);
+      setExecutionTimeMs(Math.round(performance.now() - startTime));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const wrapAndSignFeeBump = async (
+    signedInnerTxXdr: string,
+    network: any,
+    innerTxFee: string
+  ) => {
+    const signedInnerTx = TransactionBuilder.fromXDR(
+      signedInnerTxXdr,
+      network.networkPassphrase
+    ) as any;
+
+    let sponsorPublicKey = "";
+    let sponsorKeypair: Keypair | null = null;
+
+    if (sponsorType === "secret") {
+      try {
+        sponsorKeypair = Keypair.fromSecret(sponsorSecretKey.trim());
+        sponsorPublicKey = sponsorKeypair.publicKey();
+      } catch {
+        throw new Error("Invalid Sponsor Secret Key");
+      }
+    } else {
+      sponsorPublicKey = address!;
+    }
+
+    const feeBumpFee = (Number(innerTxFee) + 100).toString();
+
+    const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
+      sponsorPublicKey,
+      feeBumpFee,
+      signedInnerTx,
+      network.networkPassphrase
+    );
+
+    let finalXdr = "";
+    if (sponsorType === "secret") {
+      feeBumpTx.sign(sponsorKeypair!);
+      finalXdr = feeBumpTx.toXDR();
+    } else {
+      const outerResult = await signTransaction(feeBumpTx.toXDR(), {
+        networkPassphrase: network.networkPassphrase,
+      });
+      finalXdr = typeof outerResult === "object" && outerResult && "signedTxXdr" in outerResult
+        ? (outerResult as any).signedTxXdr
+        : (outerResult as unknown as string);
+    }
+
+    return finalXdr;
   };
 
   const handleSend = async () => {
@@ -371,6 +488,11 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
     setIsLoading(true);
     setResult(null);
+    setExecutionTimeMs(null);
+    setRpcLatencyMs(null);
+    setSimulationError(null);
+    setPendingTxToOverride(null);
+    const sendStart = performance.now();
 
     try {
       const network = getActiveNetworkConfig();
@@ -382,7 +504,6 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
       const sourceAccount = await server.getAccount(address);
 
       const tx = new TransactionBuilder(sourceAccount, {
-        // FE-044: apply fee override
         fee: feeOverride,
         networkPassphrase: network.networkPassphrase,
       })
@@ -392,7 +513,11 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       const sim = await server.simulateTransaction(tx);
       if (!SorobanRpc.Api.isSimulationSuccess(sim)) {
-        throw new Error(`Pre-flight simulation failed: ${sim.error}`);
+        setSimulationError(sim.error || "Simulation failed");
+        setPendingTxToOverride(tx);
+        setShowSimulationWarning(true);
+        setIsLoading(false);
+        return;
       }
 
       const preparedTx = SorobanRpc.assembleTransaction(tx, sim).build();
@@ -401,16 +526,21 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         networkPassphrase: network.networkPassphrase,
       });
 
+      let finalTxXdr = signedResult.signedTxXdr;
+      if (enableFeeBump) {
+        finalTxXdr = await wrapAndSignFeeBump(signedResult.signedTxXdr, network, preparedTx.fee);
+      }
+
       const sendRes = await server.sendTransaction(
         TransactionBuilder.fromXDR(
-          signedResult.signedTxXdr,
+          finalTxXdr,
           network.networkPassphrase,
         ),
       );
 
       addBundle({
         kind: "single-call",
-        title: `Transaction · ${fnName || "unknown"}`,
+        title: `Transaction · ${fnName || "unknown"}${enableFeeBump ? " (Sponsored)" : ""}`,
         networkId: network.id,
         workspaceId: activeWorkspaceId,
         contractId,
@@ -430,12 +560,78 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
       setResult(`Transaction Submitted! Hash: ${sendRes.hash}`);
       toast.success("Transaction sent to network");
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
     } catch (e: any) {
       console.error(e);
       setResult(`Submission Error: ${e.message}`);
       toast.error(`Submission Error: ${e.message}`);
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSendOverride = async (txToSign: any) => {
+    setIsLoading(true);
+    setShowSimulationWarning(false);
+    setResult(null);
+    const sendStart = performance.now();
+
+    try {
+      const network = getActiveNetworkConfig();
+      const server = new SorobanRpc.Server(network.rpcUrl);
+
+      const signedResult = await signTransaction(txToSign.toXDR(), {
+        networkPassphrase: network.networkPassphrase,
+      });
+
+      let finalTxXdr = signedResult.signedTxXdr;
+      if (enableFeeBump) {
+        finalTxXdr = await wrapAndSignFeeBump(signedResult.signedTxXdr, network, txToSign.fee);
+      }
+
+      const sendRes = await server.sendTransaction(
+        TransactionBuilder.fromXDR(
+          finalTxXdr,
+          network.networkPassphrase,
+        ),
+      );
+
+      addBundle({
+        kind: "single-call",
+        title: `Transaction · ${fnName || "unknown"} (Override)${enableFeeBump ? " (Sponsored)" : ""}`,
+        networkId: network.id,
+        workspaceId: activeWorkspaceId,
+        contractId,
+        txHash: sendRes.hash,
+        payload: {
+          mode: "submit",
+          fnName,
+          args,
+          sendStatus: sendRes.status,
+          simulation: { ok: false, error: simulationError || "Simulation failed" } as any,
+        },
+      });
+
+      if (sendRes.status !== "PENDING") {
+        throw new Error(`Submission failed: ${sendRes.status}`);
+      }
+
+      setResult(`Transaction Submitted! Hash: ${sendRes.hash}`);
+      toast.success("Transaction sent to network (simulation bypassed)");
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
+    } catch (e: any) {
+      console.error(e);
+      setResult(`Submission Error: ${e.message}`);
+      toast.error(`Submission Error: ${e.message}`);
+      setExecutionTimeMs(Math.round(performance.now() - sendStart));
+      setRpcLatencyMs(Math.round(performance.now() - sendStart));
+    } finally {
+      setIsLoading(false);
+      setPendingTxToOverride(null);
     }
   };
 
@@ -478,7 +674,14 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
 
     const newArgs = call.args.map((a) => ({ ...a, id: crypto.randomUUID() }));
     setArgs(newArgs);
-    toast.info(`Loaded: ${call.name}`);
+
+  const handleLoadPreset = (presetId: string) => {
+    const preset = contractPresets.find((p) => p.id === presetId);
+    if (!preset) return;
+    setFnName(preset.fnName);
+    setSimulation(null);
+    setArgs(prefillArgsFromPreset(preset));
+    toast.success(`Loaded preset: ${preset.name}`);
   };
 
   const handleSavePreset = () => {
@@ -730,8 +933,62 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         </Dialog>
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Label>Arguments ({args.length})</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              {usesAbiInputs && selectedFunction && templatesForInputs(selectedFunction.inputs).length > 0 && (
+                <Select
+                  value=""
+                  onValueChange={(id) => {
+                    const t = templatesForInputs(selectedFunction.inputs).find((x) => x.id === id);
+                    if (t) {
+                      setSimulation(null);
+                      setArgs((current) => applyTemplate(current, t));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Apply parameter template">
+                    <SelectValue placeholder="Apply template…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templatesForInputs(selectedFunction.inputs).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {contractPresets.length > 0 && (
+                <Select
+                  value={presetLoadValue}
+                  onValueChange={(id) => {
+                    handleLoadPreset(id);
+                    setPresetLoadValue("");
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Load operation preset">
+                    <SelectValue placeholder="Load preset…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contractPresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {args.some((a) => isAccordionArg(a)) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={collapsedArgIds.size > 0 ? expandAllArgs : collapseAllArgs}
+                >
+                  {collapsedArgIds.size > 0 ? "Expand All" : "Collapse All"}
+                </Button>
+              )}
+            </div>
             {!usesAbiInputs && (
               <Button size="sm" variant="outline" onClick={addArg}>
                 <Plus className="mr-1 h-3 w-3" /> Add Arg
@@ -776,6 +1033,8 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               )}
               <AbiInputField
                 arg={arg}
+                expanded={!collapsedArgIds.has(arg.id)}
+                onToggleCollapse={toggleArgCollapsed}
                 onChange={(id, val) => updateArg(id, "value", val)}
               />
               {!usesAbiInputs && (
@@ -797,6 +1056,40 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
           {result && (
             <div className="break-all rounded-md border-l-4 border-blue-500 bg-muted p-4 font-mono text-xs">
               {result}
+            </div>
+          )}
+
+          {result && (
+            <Button variant="outline" size="sm" onClick={copyPermalink}>
+              Copy permalink
+            </Button>
+          )}
+
+          {!result && shared?.result && (
+            <div className="break-all rounded-md border-l-4 border-amber-500 bg-muted p-4 font-mono text-xs">
+              <p className="mb-1 font-sans text-[10px] uppercase text-muted-foreground">
+                Result shared with this link (not verified)
+              </p>
+              {shared.result}
+            </div>
+          )}
+
+          {(executionTimeMs != null || rpcLatencyMs != null) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {executionTimeMs != null && (
+                <Badge variant="secondary" title="Execution duration">
+                  <Clock className="mr-1 h-3 w-3" />
+                  {executionTimeMs}ms
+                </Badge>
+              )}
+              {rpcLatencyMs != null && (
+                <Badge
+                  variant={rpcLatencyMs > 2000 ? "destructive" : "secondary"}
+                  title="RPC round-trip latency"
+                >
+                  RPC {rpcLatencyMs}ms
+                </Badge>
+              )}
             </div>
           )}
 
@@ -1011,6 +1304,54 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
               CPU and memory limits are advisory — the network enforces protocol maximums.
               Unsafe values are validated before signing.
             </p>
+
+            <div className="border-t pt-3 mt-3">
+              <div className="flex items-center justify-between pb-2">
+                <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">Enable Fee Sponsorship (Fee Bump)</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Sponsor the gas fees of this transaction using a secondary account.
+                  </p>
+                </div>
+                <Switch
+                  checked={enableFeeBump}
+                  onCheckedChange={setEnableFeeBump}
+                />
+              </div>
+
+              {enableFeeBump && (
+                <div className="space-y-3 pt-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Sponsor Method</Label>
+                    <Select
+                      value={sponsorType}
+                      onValueChange={(val: "secret" | "wallet") => setSponsorType(val)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select sponsor method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="wallet">Sign with Sponsor Wallet</SelectItem>
+                        <SelectItem value="secret">Sponsor Secret Key</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {sponsorType === "secret" && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Sponsor Secret Key (S...)</Label>
+                      <Input
+                        type="password"
+                        placeholder="SA..."
+                        value={sponsorSecretKey}
+                        onChange={(e) => setSponsorSecretKey(e.target.value)}
+                        className="h-8 text-xs font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1240,6 +1581,45 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         )}
 
       </CardContent>
+
+      <Dialog open={showSimulationWarning} onOpenChange={setShowSimulationWarning}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Simulation Failed
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 text-sm space-y-2">
+            <p>The transaction pre-flight simulation failed with the following error:</p>
+            <div className="rounded bg-muted p-2 font-mono text-xs text-destructive-foreground overflow-auto max-h-40">
+              {simulationError || "Unknown error"}
+            </div>
+            <p>Do you want to override the simulation pre-check and sign the transaction anyway?</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSimulationWarning(false);
+                setPendingTxToOverride(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingTxToOverride) {
+                  handleSendOverride(pendingTxToOverride);
+                }
+              }}
+            >
+              Sign Anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

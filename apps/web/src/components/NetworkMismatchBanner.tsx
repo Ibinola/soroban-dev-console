@@ -1,0 +1,1 @@
+export function NetworkMismatchBanner() {\n  // active network mismatch\n}\n

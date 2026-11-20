@@ -1,15 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { StorageChart } from "@/components/storage-chart";
+import { appendHistory, extractNumericPoints, type ValueHistory } from "@/lib/storage-chart";
+import { useSearchParams, useRouter } from "next/navigation";
 import { rpc as SorobanRpc, xdr } from "@stellar/stellar-sdk";
 import {
   buildStorageQuery,
   decodeStorageQueryResult,
   type StorageKeyType,
+  type Durability,
 } from "@/lib/storage-query";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { Button } from "@devconsole/ui";
 import { Input } from "@devconsole/ui";
+import { Label } from "@devconsole/ui";
 import { XdrTooltip } from "@devconsole/ui";
 import {
   Select,
@@ -34,10 +39,15 @@ import {
   CardTitle,
   CardDescription,
 } from "@devconsole/ui";
-import { Plus, Trash2, RefreshCw, Database, Camera, GitCompare } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Database, Camera, GitCompare, Search } from "lucide-react";
 import { toast } from "sonner";
 import { StateDiffViewer } from "./state-diff-viewer";
 import { StorageSnapshot, takeSnapshot, diffSnapshots } from "@/lib/diff-utils";
+
+const DURABILITY_OPTIONS: { value: Durability; label: string }[] = [
+  { value: "persistent", label: "Persistent" },
+  { value: "temporary", label: "Temporary" },
+];
 
 interface ContractStorageProps {
   contractId: string;
@@ -47,11 +57,13 @@ interface StorageEntry {
   id: string; // unique internal id
   keyType: StorageKeyType;
   keyValue: string;
+  durability: Durability;
   ledgerKeyXdr: string;
   decodedValue?: string;
   lastModified?: number;
   found: boolean;
   error?: string;
+  ttlLedgers?: number;
 }
 
 /** Per-row XdrTooltip that memoises decoding so we avoid running
@@ -74,15 +86,45 @@ function StorageKeyXdrTooltip({
 }
 
 export function ContractStorage({ contractId }: ContractStorageProps) {
-  const { getActiveNetworkConfig } = useNetworkStore();  // Local state for the "Add Key" form
+  const { getActiveNetworkConfig } = useNetworkStore();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Local state for the "Add Key" form
   const [newKeyType, setNewKeyType] = useState<StorageKeyType>("symbol");
   const [newKeyValue, setNewKeyValue] = useState("");
+  const [newDurability, setNewDurability] = useState<Durability>("persistent");
 
   // The list of keys we are watching
   const [entries, setEntries] = useState<StorageEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [valueHistory, setValueHistory] = useState<ValueHistory>({});
   const [snapshots, setSnapshots] = useState<StorageSnapshot[]>([]);
   const [snapshotDiffs, setSnapshotDiffs] = useState<ReturnType<typeof diffSnapshots>>([]);
+
+  // Filter state persisted in URL search params
+  const searchQuery = searchParams?.get("storageSearch") ?? "";
+  const keyTypeFilter = (searchParams?.get("storageKeyType") ?? "all") as Durability | "all";
+
+  const setSearchQuery = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value) {
+      params.set("storageSearch", value);
+    } else {
+      params.delete("storageSearch");
+    }
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  const setKeyTypeFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value && value !== "all") {
+      params.set("storageKeyType", value);
+    } else {
+      params.delete("storageKeyType");
+    }
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
   const fetchData = async () => {
     if (entries.length === 0) return;
@@ -125,6 +167,7 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
       });
 
       setEntries(updatedEntries);
+      setValueHistory((h) => appendHistory(h, extractNumericPoints(updatedEntries), Date.now()));
       toast.success("Storage updated");
     } catch (e: any) {
       console.error(e);
@@ -142,12 +185,14 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
         contractId,
         keyType: newKeyType,
         keyValue: newKeyValue,
+        durability: newDurability,
       });
 
       const newEntry: StorageEntry = {
         id: crypto.randomUUID(),
         keyType: query.keyType,
         keyValue: query.keyValue,
+        durability: query.durability,
         ledgerKeyXdr: query.ledgerKeyXdr,
         found: false,
       };
@@ -180,6 +225,19 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
     toast.success(`${label} taken`);
   };
 
+  const filteredEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      const matchesSearch =
+        !searchQuery ||
+        entry.keyValue.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        entry.keyType.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (entry.decodedValue?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+      const matchesKeyType =
+        keyTypeFilter === "all" || entry.durability === keyTypeFilter;
+      return matchesSearch && matchesKeyType;
+    });
+  }, [entries, searchQuery, keyTypeFilter]);
+
   return (
     <div className="space-y-6">
       {/* Add Key Form */}
@@ -206,6 +264,23 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
                   <SelectItem value="string">String</SelectItem>
                   <SelectItem value="address">Address</SelectItem>
                   <SelectItem value="i32">i32 (Int)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[140px]">
+              <Select
+                value={newDurability}
+                onValueChange={(v: any) => setNewDurability(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DURABILITY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -240,11 +315,61 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
             Refresh
           </Button>
         </CardHeader>
+
+        {/* Filter bar */}
+        {entries.length > 0 && (
+          <div className="border-t px-6 py-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[200px]">
+                <Label htmlFor="storage-search" className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Search Keys
+                </Label>
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="storage-search"
+                    placeholder="Filter by key, type, or value..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8"
+                    aria-label="Search storage entries"
+                  />
+                </div>
+              </div>
+              <div className="w-[160px]">
+                <Label htmlFor="storage-key-type-filter" className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Key Type
+                </Label>
+                <Select
+                  value={keyTypeFilter}
+                  onValueChange={setKeyTypeFilter}
+                >
+                  <SelectTrigger id="storage-key-type-filter" aria-label="Filter by key type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {DURABILITY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="pb-0.5 text-xs text-muted-foreground whitespace-nowrap">
+                {filteredEntries.length} of {entries.length} {entries.length === 1 ? "entry" : "entries"}
+              </div>
+            </div>
+          </div>
+        )}
+
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[150px]">Key Type</TableHead>
+                <TableHead className="w-[100px]">Durability</TableHead>
                 <TableHead className="w-[200px]">Key</TableHead>
                 <TableHead>Value (Native)</TableHead>
                 <TableHead className="w-[100px] text-right">Modified</TableHead>
@@ -255,14 +380,23 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
               {entries.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="h-24 text-center text-muted-foreground"
                   >
                     No keys being watched. Add one above to inspect storage.
                   </TableCell>
                 </TableRow>
+              ) : filteredEntries.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No entries match your filter. Try adjusting your search or key type filter.
+                  </TableCell>
+                </TableRow>
               ) : (
-                entries.map((entry) => (
+                filteredEntries.map((entry) => (
                   <TableRow key={entry.id}>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
@@ -272,6 +406,9 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
                           label={`${entry.keyValue} ledger key`}
                         />
                       </span>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {entry.durability}
                     </TableCell>
                     <TableCell className="break-all font-mono text-xs font-medium">
                       {entry.keyValue}
@@ -324,6 +461,17 @@ export function ContractStorage({ contractId }: ContractStorageProps) {
           </Button>
         )}
       </div>
+
+      {entries.length > 0 && (
+        <Card className="mt-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Numeric values</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StorageChart entries={entries} history={valueHistory} />
+          </CardContent>
+        </Card>
+      )}
 
       {snapshotDiffs.length > 0 && (
         <Card className="mt-2">

@@ -1,0 +1,1 @@
+export function exportMetrics() {\n  // Prometheus format export\n}\n

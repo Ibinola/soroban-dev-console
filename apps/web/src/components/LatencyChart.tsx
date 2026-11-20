@@ -1,0 +1,1 @@
+export function LatencyChart() {\n  return <div>Chart</div>;\n}\n

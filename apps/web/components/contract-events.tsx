@@ -24,6 +24,7 @@ import { Card, CardContent } from "@devconsole/ui";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
 import { Skeleton } from "@devconsole/ui";
+import { AnnotationControl } from "@/components/annotation-control";
 import {
   Select,
   SelectContent,
@@ -53,6 +54,7 @@ interface EventRecord {
   data: string;
   ledger: number;
   ts: string;
+  txHash?: string;
 }
 
 export function ContractEvents({ contractId }: ContractEventsProps) {
@@ -67,7 +69,11 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [polling, setPolling] = useState(false);
+  const [scrollLock, setScrollLock] = useState(false);
   const [error, setError] = useState("");
+  const filteredEvents = useMemo(() => {
+    return events.filter(e => !topicFilter || e.type.toLowerCase().includes(topicFilter.toLowerCase()));
+  }, [events, topicFilter]);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
   const refreshIntervalMs = useRef<number>(0);
@@ -133,6 +139,7 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
               : JSON.stringify(evt.value),
           ledger: evt.ledger,
           ts: evt.ledgerClosedAt,
+          txHash: (evt as { txHash?: string }).txHash,
         }));
 
         if (!mountedRef.current) return;
@@ -308,6 +315,7 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <EventsExportMenu contractId={contractId} events={events} />
             <Select value={refreshInterval} onValueChange={(v) => handleRefreshChange(v as RefreshInterval)}>
               <SelectTrigger className="h-8 w-[110px]" aria-label="Auto-refresh interval">
                 <SelectValue />
@@ -345,13 +353,14 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
               <TableHead>Type</TableHead>
               <TableHead>Topics (Raw)</TableHead>
               <TableHead className="text-right">Data</TableHead>
+              <TableHead>Note</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No events found for this contract.
@@ -384,6 +393,9 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
                   <TableCell className="max-w-[200px] truncate text-right font-mono text-xs">
                     {evt.data.slice(0, 20)}...
                   </TableCell>
+                  <TableCell>
+                    <AnnotationControl resourceType="event" resourceId={evt.id} />
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -391,7 +403,7 @@ export function ContractEvents({ contractId }: ContractEventsProps) {
               <>
                 {Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={`skel-${i}`} aria-hidden="true">
-                    <TableCell colSpan={4}>
+                    <TableCell colSpan={5}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
                   </TableRow>

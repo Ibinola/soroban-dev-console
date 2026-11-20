@@ -7,10 +7,13 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "npm run typecheck"
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "lint": "npm run typecheck",
+    "bench": "tsx bench/run.ts",
+    "bench:update": "tsx bench/run.ts --update-baseline"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^16.1.0"
+    "@stellar/stellar-sdk": "^17.0.1"
   },
   "devDependencies": {
     "@devconsole/typescript-config": "*",

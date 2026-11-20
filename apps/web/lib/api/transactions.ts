@@ -50,12 +50,16 @@ export async function simulateTransaction(
 
   const result = (await response.json()) as ApiEnvelope<NormalizedSimulationPayload>;
 
-  if (!result.success) {
+  if (result.error) {
     throw new TransactionApiError(
       result.error.message,
       result.error.code,
       result.error.details,
     );
+  }
+
+  if (!result.data) {
+    throw new TransactionApiError("Empty response data", "EMPTY_RESPONSE");
   }
 
   return result.data;
@@ -85,12 +89,16 @@ export async function sendTransaction(
 
   const result = (await response.json()) as ApiEnvelope<NormalizedTransactionResult>;
 
-  if (!result.success) {
+  if (result.error) {
     throw new TransactionApiError(
       result.error.message,
       result.error.code,
       result.error.details,
     );
+  }
+
+  if (!result.data) {
+    throw new TransactionApiError("Empty response data", "EMPTY_RESPONSE");
   }
 
   return result.data;
@@ -120,12 +128,16 @@ export async function getTransactionStatus(
 
   const result = (await response.json()) as ApiEnvelope<NormalizedTransactionResult>;
 
-  if (!result.success) {
+  if (result.error) {
     throw new TransactionApiError(
       result.error.message,
       result.error.code,
       result.error.details,
     );
+  }
+
+  if (!result.data) {
+    throw new TransactionApiError("Empty response data", "EMPTY_RESPONSE");
   }
 
   return result.data;
@@ -150,7 +162,7 @@ export async function pollTransactionStatus(
     
     onStatus?.(status);
 
-    if (status.status === "success" || status.status === "failed") {
+    if (status.status === "success" || status.status === "error") {
       return status;
     }
 

@@ -47,6 +47,9 @@ Thank you for considering contributing to Soroban DevConsole! This project aims 
 
 6. Open [http://localhost:3000](http://localhost:3000) to view the application.
 
+Stuck on setup? The [troubleshooting guide](./docs/troubleshooting.md) covers
+common Node, Prisma, port and RPC problems, with fixes.
+
 ## Development Workflow
 
 ### Branch Naming
@@ -160,6 +163,10 @@ soroban-dev-console/
 - `/src/lib` - Shared utilities and services
 - `/src/auth` - Authentication guards (including `OwnerKeyGuard` and `VerificationGuard`)
 - `/prisma` - Database schema, migrations, and seeds
+
+Changing `schema.prisma`? Follow the
+[Prisma migration authoring guide](./docs/prisma-migration-authoring-guide.md)
+for naming conventions, data preservation, testing and rollback.
 
 ## CI Gates
 
@@ -344,6 +351,7 @@ We are committed to providing a friendly, safe, and welcoming environment for al
 
 ## Questions?
 
+- Read the [troubleshooting guide and FAQ](./docs/troubleshooting.md)
 - Check existing [Issues](https://github.com/Ibinola/soroban-dev-console/issues)
 - Start a [Discussion](https://github.com/Ibinola/soroban-dev-console/discussions)
 - Join the [Stellar Discord](https://discord.gg/stellardev)

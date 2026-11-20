@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="760" height="340" fill="#f8fafc"/>
+  <rect x="0" y="0" width="760" height="28" fill="#e2e8f0"/>
+  <circle cx="16" cy="14" r="5" fill="#f87171"/><circle cx="32" cy="14" r="5" fill="#fbbf24"/><circle cx="48" cy="14" r="5" fill="#34d399"/>
+  <rect x="70" y="6" width="420" height="16" rx="8" fill="#ffffff"/>
+  <text x="82" y="18" font-size="11" fill="#475569">localhost:3000/deploy</text>
+  <text x="40" y="70" font-size="24" font-weight="700" fill="#0f172a">Deploy Contract</text>
+  <text x="40" y="94" font-size="13" fill="#64748b">Upload, simulate, and deploy your Soroban smart contract.</text>
+  <circle cx="50" cy="120" r="10" fill="#1e293b"/><text x="50" y="124" font-size="11" text-anchor="middle" fill="#ffffff" font-weight="600">1</text>
+  <text x="66" y="124" font-size="12" fill="#0f172a" font-weight="700">Upload WASM</text>
+  <circle cx="200" cy="120" r="10" fill="#e2e8f0"/><text x="200" y="124" font-size="11" text-anchor="middle" fill="#64748b" font-weight="600">2</text>
+  <text x="216" y="124" font-size="12" fill="#64748b" font-weight="400">Configure</text>
+  <circle cx="350" cy="120" r="10" fill="#e2e8f0"/><text x="350" y="124" font-size="11" text-anchor="middle" fill="#64748b" font-weight="600">3</text>
+  <text x="366" y="124" font-size="12" fill="#64748b" font-weight="400">Review &amp; simulate</text>
+  <circle cx="500" cy="120" r="10" fill="#e2e8f0"/><text x="500" y="124" font-size="11" text-anchor="middle" fill="#64748b" font-weight="600">4</text>
+  <text x="516" y="124" font-size="12" fill="#64748b" font-weight="400">Deploy</text>
+  <rect x="40" y="144" width="680" height="150" rx="10" fill="#fff" stroke="#cbd5e1"/>
+  <text x="60" y="176" font-size="16" font-weight="700" fill="#0f172a">Step 1: Upload WASM</text>
+  <text x="60" y="196" font-size="12" fill="#64748b">Upload your compiled Soroban smart contract (.wasm)</text>
+  <text x="60" y="224" font-size="12" font-weight="600" fill="#0f172a">Contract File</text>
+  <rect x="60" y="232" width="460" height="32" rx="6" fill="#fff" stroke="#cbd5e1"/>
+  <text x="72" y="253" font-size="12" fill="#0f172a">Choose File   counter_fixture.wasm</text>
+  <rect x="560" y="232" width="140" height="32" rx="6" fill="#0f172a"/>
+  <text x="630" y="253" font-size="12" text-anchor="middle" fill="#fff" font-weight="600">Next: Configure ›</text>
+  <circle cx="48" cy="232" r="12" fill="#e11d48"/><text x="48" y="237" font-size="13" text-anchor="middle" fill="#fff" font-weight="700">1</text>
+  <circle cx="712" cy="232" r="12" fill="#e11d48"/><text x="712" y="237" font-size="13" text-anchor="middle" fill="#fff" font-weight="700">2</text>
+  <text x="40" y="322" font-size="12" fill="#be123c">① Pick the .wasm built by stellar contract build. ② Next stays disabled until a .wasm file is selected.</text>
+</svg>

@@ -9,6 +9,8 @@ import { XdrTooltip } from "@devconsole/ui";
 import { toast } from "sonner";
 import { decodeXdr } from "@devconsole/soroban-utils";
 import type { TxResult } from "@/lib/tx-orchestrator";
+import { AnnotationControl } from "@/components/annotation-control";
+import { transactionAnnotationId } from "@/lib/annotations";
 import type { NormalizedSimulationResult } from "@devconsole/soroban-utils";
 
 export interface TransactionResultProps {
@@ -18,6 +20,8 @@ export interface TransactionResultProps {
   showSimulation?: boolean;
   compact?: boolean;
   actions?: React.ReactNode;
+  executionTimeMs?: number;
+  rpcLatencyMs?: number;
 }
 
 export function TransactionResult({
@@ -27,6 +31,8 @@ export function TransactionResult({
   showSimulation = true,
   compact = false,
   actions,
+  executionTimeMs,
+  rpcLatencyMs,
 }: TransactionResultProps) {
   const isSuccess = result.status === "success";
   const isError = result.status === "error";
@@ -51,10 +57,7 @@ export function TransactionResult({
   const renderSimulationDetails = (simulation: NormalizedSimulationResult) => {
     if (!showSimulation || compact) return null;
 
-    const simDecoded = useMemo(
-      () => decodeXdr(simulation.resultXdr ?? ""),
-      [simulation.resultXdr],
-    );
+    const simDecoded = decodeXdr(simulation.resultXdr ?? "");
 
     return (
       <div className="space-y-3">
@@ -164,12 +167,37 @@ export function TransactionResult({
               {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
             </div>
             {getStatusBadge()}
+            {result.hash && (
+              <AnnotationControl
+                resourceType="transaction"
+                resourceId={transactionAnnotationId(result.hash, "")}
+              />
+            )}
           </div>
           {actions}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Execution Timer & RPC Latency */}
+        {(executionTimeMs != null || rpcLatencyMs != null) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {executionTimeMs != null && (
+              <Badge variant="secondary" title="Execution duration">
+                <Clock className="mr-1 h-3 w-3" />
+                {executionTimeMs}ms
+              </Badge>
+            )}
+            {rpcLatencyMs != null && (
+              <Badge
+                variant={rpcLatencyMs > 2000 ? "destructive" : "secondary"}
+                title="RPC round-trip latency"
+              >
+                RPC {rpcLatencyMs}ms
+              </Badge>
+            )}
+          </div>
+        )}
         {/* Transaction Hash */}
         {result.hash && (
           <div>

@@ -52,6 +52,11 @@ interface AccountData {
   thresholds: { low_threshold: number; med_threshold: number; high_threshold: number };
 }
 
+interface SequenceSample {
+  value: string;
+  observedAt: string;
+}
+
 interface RecentOp {
   id: string;
   type: string;
@@ -128,6 +133,8 @@ export default function AccountDashboard() {
   const [recentOps, setRecentOps] = useState<RecentOp[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sequenceHistory, setSequenceHistory] = useState<SequenceSample[]>([]);
+  const [sequenceUpdatedAt, setSequenceUpdatedAt] = useState<string | null>(null);
 
   const fetchAccountData = useCallback(async () => {
     if (!address) return;
@@ -160,6 +167,26 @@ export default function AccountDashboard() {
           high_threshold: account.thresholds.high_threshold,
         },
       });
+
+      const observedAt = new Date().toISOString();
+      const storageKey = `devconsole:sequence-history:${address}`;
+      let history: SequenceSample[] = [];
+      try {
+        const stored = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
+        if (Array.isArray(stored)) history = stored;
+      } catch {
+        history = [];
+      }
+      history = [{ value: account.sequence, observedAt }, ...history]
+        .filter((entry, index, all) => all.findIndex((e) => e.value === entry.value) === index)
+        .slice(0, 5);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(history));
+      } catch {
+        history = history.slice(0, 1);
+      }
+      setSequenceHistory(history);
+      setSequenceUpdatedAt(observedAt);
 
       setRecentOps(
         (opsPage.records as any[]).map((op) => ({
@@ -290,7 +317,32 @@ export default function AccountDashboard() {
             {loading ? (
               <Skeleton className="h-8 w-full" />
             ) : accountData ? (
-              <p className="font-mono text-xl">{accountData.sequence}</p>
+              <div className="space-y-2">
+                <p className="font-mono text-xl">{accountData.sequence}</p>
+                {sequenceUpdatedAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Refreshed {new Date(sequenceUpdatedAt).toLocaleTimeString()}
+                  </p>
+                )}
+                {sequenceHistory.length > 1 && (
+                  <div className="border-t pt-2">
+                    <p className="text-xs font-medium">Recent values</p>
+                    <ul className="mt-1 space-y-1">
+                      {sequenceHistory.slice(1).map((sample) => (
+                        <li
+                          key={sample.observedAt}
+                          className="flex justify-between gap-3 font-mono text-xs"
+                        >
+                          <span>{sample.value}</span>
+                          <span className="text-muted-foreground">
+                            {new Date(sample.observedAt).toLocaleTimeString()}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             ) : (
               <p className="text-muted-foreground">N/A</p>
             )}

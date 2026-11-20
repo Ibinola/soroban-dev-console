@@ -1,17 +1,20 @@
 import { Address, StrKey, scValToNative, xdr } from "@stellar/stellar-sdk";
 
 export type StorageKeyType = "symbol" | "string" | "address" | "i32";
+export type Durability = "persistent" | "temporary";
 
 export interface StorageQueryInput {
   contractId: string;
   keyType: StorageKeyType;
   keyValue: string;
+  durability?: Durability;
 }
 
 export interface StorageQuery {
   contractId: string;
   keyType: StorageKeyType;
   keyValue: string;
+  durability: Durability;
   ledgerKeyXdr: string;
 }
 
@@ -42,6 +45,7 @@ function toStorageScVal(type: StorageKeyType, value: string): xdr.ScVal {
 export function buildStorageQuery(input: StorageQueryInput): StorageQuery {
   const contractId = input.contractId.trim();
   const keyValue = input.keyValue.trim();
+  const durability = input.durability ?? "persistent";
 
   if (!contractId) {
     throw new Error("Contract ID is required");
@@ -55,11 +59,22 @@ export function buildStorageQuery(input: StorageQueryInput): StorageQuery {
     throw new Error("Key value is required");
   }
 
+  let durabilityXdr: xdr.ContractDataDurability;
+  switch (durability) {
+    case "temporary":
+      durabilityXdr = xdr.ContractDataDurability.temporary();
+      break;
+    case "persistent":
+    default:
+      durabilityXdr = xdr.ContractDataDurability.persistent();
+      break;
+  }
+
   const ledgerKey = xdr.LedgerKey.contractData(
     new xdr.LedgerKeyContractData({
       contract: new Address(contractId).toScAddress(),
       key: toStorageScVal(input.keyType, keyValue),
-      durability: xdr.ContractDataDurability.persistent(),
+      durability: durabilityXdr,
     }),
   );
 
@@ -67,6 +82,7 @@ export function buildStorageQuery(input: StorageQueryInput): StorageQuery {
     contractId,
     keyType: input.keyType,
     keyValue,
+    durability,
     ledgerKeyXdr: ledgerKey.toXDR("base64"),
   };
 }

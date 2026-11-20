@@ -1,0 +1,10 @@
+{
+  "variant": "send",
+  "description": "send duplicate",
+  "response": {
+    "status": "DUPLICATE",
+    "hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "latestLedger": 1000,
+    "latestLedgerCloseTime": "1700000000"
+  }
+}

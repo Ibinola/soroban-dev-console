@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "errorMessage": "Transaction failed",
+  "ledger": 124,
+  "resultXdr": "AAAAAQ=="
+}

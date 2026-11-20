@@ -1,3 +1,5 @@
+"use client";
+
 // Export Utility
 export * from "./lib/utils";
 
@@ -23,3 +25,4 @@ export * from "./ui/textarea";
 export * from "./ui/tooltip";
 export * from "./ui/xdr-tooltip";
 export * from "./ui/sidebar";
+export * from "./ui/switch";

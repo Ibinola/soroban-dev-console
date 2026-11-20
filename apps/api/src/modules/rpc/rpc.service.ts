@@ -21,8 +21,11 @@ import {
   getMethodPolicy,
   buildMethodNotAllowedError,
 } from "./rpc-method-policy.js";
-import { getCorrelationId } from "../../lib/request-context.js";
+import { getCorrelationId, resolveCorrelationId } from "../../lib/request-context.js";
+import { validateJsonDepth } from "../../lib/json-validation.js";
 import { createLogger } from "../../lib/logger.js";
+import { rpcCircuitBreakers } from "../../lib/circuit-breaker.js";
+import { RequestCoalescer, isCoalescible, rpcCoalescer } from "../../lib/request-coalescer.js";
 
 // Issue #753: Structured logger for RPC upstream call tracing
 const log = createLogger("RpcService");
@@ -38,7 +41,8 @@ const singleRpcRequestSchema = z
   })
   .passthrough();
 
-const rpcRequestSchema = z.union([
+// Issue #950: exported so it can be reused/tested independently of the service.
+export const RpcProxyRequestSchema = z.union([
   singleRpcRequestSchema,
   z.array(singleRpcRequestSchema).min(1)
 ]);
@@ -47,6 +51,8 @@ type RpcNetwork = z.infer<typeof networkSchema>;
 
 const MAX_BATCH_REQUESTS = 25;
 const MAX_PAYLOAD_BYTES = 50_000;
+const RPC_MAX_JSON_DEPTH = Number(process.env.RPC_MAX_JSON_DEPTH) || 10;
+const RPC_MAX_STRING_LENGTH = Number(process.env.RPC_MAX_STRING_LENGTH) || 10_000;
 
 export type ProxiedRpcResponse = {
   statusCode: number;
@@ -69,11 +75,25 @@ export class RpcService {
       throw new BadRequestException("Unsupported network");
     }
 
-    const parsedPayload = rpcRequestSchema.safeParse(payload);
+    // Issue #950: validate the raw payload against RpcProxyRequestSchema and
+    // reject malformed JSON-RPC structures with the standard -32600 error.
+    const parsedPayload = RpcProxyRequestSchema.safeParse(payload);
     if (!parsedPayload.success) {
+      const rawId =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as { id?: unknown }).id
+          : undefined;
+      const id =
+        typeof rawId === "string" || typeof rawId === "number" ? rawId : null;
+
       throw new BadRequestException({
-        error: "Invalid JSON-RPC payload",
-        details: parsedPayload.error.flatten()
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32600,
+          message: "Invalid Request",
+          data: parsedPayload.error.flatten(),
+        },
       });
     }
 
@@ -110,6 +130,8 @@ export class RpcService {
         };
       }
     }
+
+    validateJsonDepth(parsedPayload.data, RPC_MAX_JSON_DEPTH, RPC_MAX_STRING_LENGTH);
 
     const serializedPayload = JSON.stringify(parsedPayload.data);
     if (serializedPayload.length > MAX_PAYLOAD_BYTES) {
@@ -158,6 +180,18 @@ export class RpcService {
       });
     }
 
+    // #1298: coalesce concurrent identical read-only calls into one upstream request.
+    if (isSingle && isCoalescible(method)) {
+      const key = RequestCoalescer.buildKey(
+        parsedNetwork.data,
+        method,
+        (parsedPayload.data as { params?: unknown }).params,
+      );
+      return rpcCoalescer.run(key, () =>
+        this.fetchWithFailover(endpoints, parsedNetwork.data, method, serializedPayload),
+      );
+    }
+
     return this.fetchWithFailover(endpoints, parsedNetwork.data, method, serializedPayload);
   }
 
@@ -170,13 +204,22 @@ export class RpcService {
   ): Promise<ProxiedRpcResponse> {
     let lastError: unknown;
 
+    let skippedOpen = 0;
+
     for (const url of endpoints) {
+      // #1300: an open circuit fast-fails without an upstream request.
+      if (!rpcCircuitBreakers.canRequest(url)) {
+        skippedOpen++;
+        continue;
+      }
       try {
         const result = await this.fetchUpstream(url, serializedPayload, network, method);
         this.failover.recordSuccess(network, url);
+        rpcCircuitBreakers.recordSuccess(url);
         return result;
       } catch (err) {
         this.failover.recordFailure(network, url);
+        rpcCircuitBreakers.recordFailure(url);
         lastError = err;
         // Continue to next endpoint unless it's a client error (4xx)
         if (
@@ -186,6 +229,12 @@ export class RpcService {
           throw err;
         }
       }
+    }
+
+    if (!lastError && skippedOpen > 0) {
+      throw new ServiceUnavailableException(
+        "RPC circuit open: upstream endpoint is failing, retry shortly"
+      );
     }
 
     throw lastError ?? new BadGatewayException("All upstream RPC endpoints failed");
@@ -202,7 +251,7 @@ export class RpcService {
     const timeout = setTimeout(() => controller.abort(), policy.timeoutMs);
     const start = Date.now();
     // Issue #753: Get correlation ID for end-to-end trace propagation
-    const correlationId = getCorrelationId();
+    const correlationId = resolveCorrelationId(getCorrelationId());
 
     // Issue #753: Log the upstream RPC call before it starts
     log.debug("rpc.upstream.start", {
@@ -218,10 +267,8 @@ export class RpcService {
         headers: {
           "content-type": "application/json",
           // Issue #753: Propagate both X-Request-ID and X-Correlation-ID to upstream
-          ...(correlationId ? {
-            "x-request-id": correlationId,
-            "x-correlation-id": correlationId,
-          } : {}),
+          "x-request-id": correlationId,
+          "x-correlation-id": correlationId,
         },
         body: serializedPayload,
         signal: controller.signal,

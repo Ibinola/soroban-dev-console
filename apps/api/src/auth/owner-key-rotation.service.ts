@@ -14,10 +14,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  TooManyRequestsException,
+  HttpException,
+  HttpStatus,
 } from "@nestjs/common";
-import { PrismaService } from "../../lib/prisma.service.js";
-import { AuditService } from "../../lib/audit.service.js";
+import { PrismaService } from "../lib/prisma.service.js";
+import { AuditService } from "../lib/audit.service.js";
 
 const GRACE_PERIOD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -66,8 +67,9 @@ export class OwnerKeyRotationService {
       const retryAfterMs = RATE_LIMIT_WINDOW_MS - (Date.now() - lastRotation);
       const retryAfterMin = Math.ceil(retryAfterMs / 60_000);
       this.logger.warn(`Owner-key rotation rate limited for key (hint: ...${oldKey.slice(-4)})`);
-      throw new TooManyRequestsException(
+      throw new HttpException(
         `Owner key rotation is rate limited to once per hour. Retry in ${retryAfterMin} minute(s).`,
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
@@ -83,7 +85,7 @@ export class OwnerKeyRotationService {
     }
 
     // Issue #756: Atomic update of all workspace ownerKey fields
-    const updateResult = await this.prisma.$transaction(async (tx) => {
+    const updateResult = await this.prisma.$transaction(async (tx: any) => {
       const result = await tx.workspace.updateMany({
         where: { ownerKey: oldKey },
         data: { ownerKey: newKey },

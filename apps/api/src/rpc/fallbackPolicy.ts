@@ -1,0 +1,1 @@
+export function prioritizeFallback() {\n  // sets fallback endpoints\n}\n

@@ -6,15 +6,15 @@ import { useNetworkStore } from "@/store/useNetworkStore";
 import { canFundWithProvider, fundWithProvider } from "@/lib/funding";
 import { Button } from "@devconsole/ui";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  Dialog as AlertDialog,
+  Button as AlertDialogAction,
+  DialogContent as AlertDialogContent,
+  DialogHeader as AlertDialogHeader,
+  DialogTitle as AlertDialogTitle,
+  DialogDescription as AlertDialogDescription,
+  DialogFooter as AlertDialogFooter,
+  DialogTrigger as AlertDialogTrigger,
+  DialogClose as AlertDialogCancel,
 } from "@devconsole/ui";
 import { Loader2, Coins, CheckCircle2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -126,7 +126,7 @@ export function FundAccountButton() {
       setIsLoading(false);
 
       // Issue #740: Poll balance until funded amount is reflected
-      pollBalance(result.txHash);
+      pollBalance(result.transactionHash);
     } catch (error: any) {
       setIsLoading(false);
       const message: string = error?.message ?? "Funding failed";

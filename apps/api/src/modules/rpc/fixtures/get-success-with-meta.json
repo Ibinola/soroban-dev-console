@@ -1,0 +1,11 @@
+{
+  "variant": "get",
+  "description": "get success with meta",
+  "response": {
+    "status": "SUCCESS",
+    "latestLedger": 200,
+    "ledger": 5,
+    "resultXdr": "AAAAAQ==",
+    "resultMetaXdr": "AAAAAg=="
+  }
+}

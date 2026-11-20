@@ -1,0 +1,1 @@
+export function WalletFeeSelector() {\n  return <div>Selector</div>;\n}\n

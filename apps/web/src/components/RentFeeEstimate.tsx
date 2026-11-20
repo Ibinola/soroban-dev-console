@@ -1,0 +1,1 @@
+export function RentFeeEstimate() {\n  // storage rent fee\n}\n

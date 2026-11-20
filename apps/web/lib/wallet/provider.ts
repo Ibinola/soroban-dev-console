@@ -1,6 +1,7 @@
 import * as freighter from "@stellar/freighter-api";
 import albedo from "@albedo-link/intent";
 import { xBullWalletConnect } from "@creit.tech/xbull-wallet-connect";
+import { withSignatureTimeout } from "@/lib/wallet/signature-timeout";
 
 export type WalletProviderId = "freighter" | "albedo" | "xbull";
 
@@ -44,6 +45,8 @@ export interface WalletProviderDefinition {
   // W7-FE-002 / #675: best-effort lookup of the wallet's active network
   // passphrase without re-prompting the user.
   getNetworkPassphrase?: () => Promise<string | null>;
+  // #674: Disconnect — deauthorize the provider and clear local session state.
+  disconnect: () => Promise<void>;
 }
 
 /**
@@ -142,17 +145,27 @@ async function connectAlbedo(): Promise<WalletSession> {
 
 // FE-041: Signing abstraction implementations
 async function freighterSign(xdr: string, networkPassphrase: string): Promise<string> {
-  const { signTransaction } = await import("@stellar/freighter-api");
-  const res = await signTransaction(xdr, { networkPassphrase });
-  if (typeof res === "object" && "signedTxXdr" in res) {
-    return (res as { signedTxXdr: string }).signedTxXdr;
-  }
-  return res as unknown as string;
+  return withSignatureTimeout(
+    async () => {
+      const { signTransaction } = await import("@stellar/freighter-api");
+      const res = await signTransaction(xdr, { networkPassphrase });
+      if (typeof res === "object" && "signedTxXdr" in res) {
+        return (res as { signedTxXdr: string }).signedTxXdr;
+      }
+      return res as unknown as string;
+    },
+    { provider: "freighter" },
+  );
 }
 
 async function albedoSign(xdr: string, networkPassphrase: string): Promise<string> {
-  const result = await albedo.tx({ xdr, network: networkPassphrase });
-  return result.signed_envelope_xdr;
+  return withSignatureTimeout(
+    async () => {
+      const result = await albedo.tx({ xdr, network: networkPassphrase });
+      return result.signed_envelope_xdr;
+    },
+    { provider: "albedo" },
+  );
 }
 
 // FE-042: Revalidation helpers
@@ -182,6 +195,17 @@ async function freighterRevalidate(): Promise<RevalidationResult> {
   }
 }
 
+// #674: Freighter disconnect — deauthorize the extension.
+async function disconnectFreighter(): Promise<void> {
+  if (freighter.setAllowed) {
+    try {
+      await (freighter.setAllowed as unknown as () => Promise<void>)();
+    } catch {
+      // best-effort
+    }
+  }
+}
+
 // W7-FE-002 / #651: albedoRevalidate now attempts a session probe via
 // publicKey({}). A rejection (user revoked access or session expired)
 // yields `isValid: false` so the wallet store clears itself.
@@ -194,6 +218,35 @@ async function albedoRevalidate(): Promise<RevalidationResult> {
     };
   } catch {
     return { isValid: false };
+  }
+}
+
+// #674: Albedo disconnect — best-effort cleanup of stored intent tokens.
+async function disconnectAlbedo(): Promise<void> {
+  try {
+    if (typeof window !== "undefined") {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (
+          key &&
+          (key.toLowerCase().includes("albedo") || key.toLowerCase().includes("intent"))
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      for (const key of Object.keys(window.localStorage)) {
+        if (
+          (key.toLowerCase().includes("albedo") || key.toLowerCase().includes("intent")) &&
+          !keysToRemove.includes(key)
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+    }
+  } catch {
+    // best-effort
   }
 }
 
@@ -211,21 +264,35 @@ async function connectXbull(): Promise<WalletSession> {
 }
 
 async function xbullSign(xdr: string, networkPassphrase: string): Promise<string> {
-  const bridge = new xBullWalletConnect();
-  try {
-    const result = await bridge.sign({ xdr, network: networkPassphrase });
-    return result;
-  } finally {
-    bridge.closeConnections();
-  }
+  return withSignatureTimeout(
+    async () => {
+      const bridge = new xBullWalletConnect();
+      try {
+        const result = await bridge.sign({ xdr, network: networkPassphrase });
+        return result;
+      } finally {
+        bridge.closeConnections();
+      }
+    },
+    { provider: "xbull" },
+  );
 }
 
-async function xbullRevalidate(): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+async function xbullRevalidate(): Promise<RevalidationResult> {
+  if (typeof window === "undefined") return { isValid: false };
   // xBull does not expose a persistent isConnected API.
   // We optimistically return true; connect/sign will surface errors
   // if the extension or webapp is unavailable.
-  return true;
+  return { isValid: true };
+}
+
+async function disconnectXbull(): Promise<void> {
+  try {
+    const bridge = new xBullWalletConnect();
+    bridge.closeConnections();
+  } catch {
+    // best-effort
+  }
 }
 
 export const walletProviders: Record<WalletProviderId, WalletProviderDefinition> = {
@@ -245,6 +312,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     signTransaction: freighterSign,
     revalidate: freighterRevalidate,
     getNetworkPassphrase: freighterGetNetworkPassphrase,
+    disconnect: disconnectFreighter,
   },
   albedo: {
     id: "albedo",
@@ -261,6 +329,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectAlbedo,
     signTransaction: albedoSign,
     revalidate: albedoRevalidate,
+    disconnect: disconnectAlbedo,
   },
   xbull: {
     id: "xbull",
@@ -277,6 +346,7 @@ export const walletProviders: Record<WalletProviderId, WalletProviderDefinition>
     connect: connectXbull,
     signTransaction: xbullSign,
     revalidate: xbullRevalidate,
+    disconnect: disconnectXbull,
   },
 };
 
