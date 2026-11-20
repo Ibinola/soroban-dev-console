@@ -50,6 +50,7 @@ import { signTransaction } from "@stellar/freighter-api";
 import { SavedCallsSheet } from "./saved-calls-sheet";
 import { AbiInputField } from "./abi-input-field";
 import { SimulationExplainerDisplay } from "./simulation-explainer-display";
+import { ContractMethodListSkeleton } from "./contract-method-list-skeleton";
 import { useAbiStore } from "@/store/useAbiStore";
 import { useWorkspaceStore } from "@/store/useWorkspaceStore";
 import { Badge } from "@devconsole/ui";
@@ -93,6 +94,7 @@ import {
 
 interface ContractCallFormProps {
   contractId: string;
+  methodsLoading?: boolean;
 }
 
 // #688: Batch invocation types
@@ -171,7 +173,10 @@ function toContractArg(field: NonNullable<NormalizedContractSpec["functions"][nu
   };
 }
 
-export function ContractCallForm({ contractId }: ContractCallFormProps) {
+export function ContractCallForm({
+  contractId,
+  methodsLoading = false,
+}: ContractCallFormProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -865,7 +870,9 @@ export function ContractCallForm({ contractId }: ContractCallFormProps) {
         )}
         <div className="space-y-2">
           <Label>Function Name</Label>
-          {spec ? (
+          {methodsLoading ? (
+            <ContractMethodListSkeleton />
+          ) : spec ? (
             <Select value={fnName} onValueChange={handleFnChange}>
               <SelectTrigger aria-describedby={selectedFunction?.doc ? "method-description" : undefined}>
                 <SelectValue placeholder="Select a function..." />
