@@ -24,6 +24,7 @@ import {
   verifyAuditChain,
   type ChainVerification,
 } from "../modules/audit/audit-hash.js";
+import { normalizePagination, toPaginatedEnvelope } from "./pagination.js";
 
 export interface AuditEntry {
   actor: string;
@@ -472,6 +473,8 @@ export class AuditService {
     action?: string;
     resourceType?: string;
     resourceId?: string;
+    page?: number;
+    pageSize?: number;
     skip?: number;
     take?: number;
     cursor?: string;
@@ -506,7 +509,7 @@ export class AuditService {
 
     // Cursor-based pagination: stable across concurrent inserts. Ordering is
     // (createdAt desc, id desc) so the cursor uniquely identifies a position.
-    if (query.cursor !== undefined || query.limit !== undefined) {
+    if (query.cursor !== undefined || (query.limit !== undefined && query.page === undefined && query.pageSize === undefined && query.skip === undefined && query.take === undefined)) {
       const limit = Math.min(
         Math.max(query.limit ?? CURSOR_DEFAULT_LIMIT, 1),
         CURSOR_MAX_LIMIT,
@@ -537,20 +540,26 @@ export class AuditService {
 
       const hasMore = rows.length > limit;
       const data = hasMore ? rows.slice(0, limit) : rows;
-      const last = data[data.length - 1];
-      const nextCursor =
-        hasMore && last
-          ? encodeAuditCursor({ createdAt: last.createdAt, id: last.id }, filterKey)
-          : null;
+      const total = await this.prisma.auditLog.count({ where });
 
-      return { data, pagination: { limit, nextCursor } };
+      return {
+        data,
+        meta: {
+          total,
+          page: 1,
+          pageSize: limit,
+          hasNext: hasMore,
+        },
+      };
     }
 
-    // Legacy offset-based pagination (kept for backward compatibility).
-    // `take` is clamped to the 100-row cap defensively, even though the DTO
-    // already enforces it at the HTTP boundary.
-    const { skip = 0 } = query;
-    const take = Math.min(query.take ?? 50, CURSOR_MAX_LIMIT);
+    // Page/offset-based pagination with standard paginated envelope.
+    const { page, pageSize, skip, take } = normalizePagination({
+      page: query.page,
+      pageSize: query.pageSize ?? query.take ?? query.limit,
+      skip: query.skip,
+      take: query.take ?? query.limit,
+    });
 
     const [data, total] = await Promise.all([
       this.prisma.auditLog.findMany({
@@ -562,8 +571,6 @@ export class AuditService {
       this.prisma.auditLog.count({ where }),
     ]);
 
-    const hasMore = skip + data.length < total;
-
-    return { data, pagination: { total, skip, take, hasMore } };
+    return toPaginatedEnvelope(data, total, page, pageSize);
   }
 }

@@ -99,6 +99,7 @@ interface WorkspaceState {
   setWorkspaceNetwork: (workspaceId: string, networkId: string) => void;
   getActiveWorkspace: () => WorkspaceSnapshot | undefined;
   deleteWorkspace: (id: string) => void;
+  clearLocalData: () => void;
   /** Push the active workspace to the cloud API */
   syncToCloud: (payload: CreateWorkspacePayload) => Promise<string | null>;
   /** Load a workspace from the cloud by its cloud ID */
@@ -376,6 +377,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           },
         });
       },
+
+      clearLocalData: () =>
+        set({
+          workspaces: [defaultWorkspace],
+          activeWorkspaceId: defaultWorkspace.id,
+          cloudId: null,
+          syncState: "idle",
+          syncError: null,
+          checkpoints: {},
+          pendingConflict: null,
+          contractBookmarks: {},
+        }),
 
       duplicateWorkspace: (id, customName) => {
         const source = get().workspaces.find((w) => w.id === id);

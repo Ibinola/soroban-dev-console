@@ -14,7 +14,7 @@ test("AuditController routes query parameters to service correctly", async () =>
       capturedQuery = q;
       return {
         data: [{ id: "1", action: "test" }],
-        pagination: { total: 1, skip: q.skip || 0, take: q.take || 50, hasMore: false },
+        meta: { total: 1, page: 1, pageSize: q.pageSize || q.take || 20, hasNext: false },
       };
     },
   } as unknown as AuditService;
@@ -41,14 +41,14 @@ test("AuditController routes query parameters to service correctly", async () =>
 
   assert.equal(result.data.length, 1);
   assert.equal(result.data[0].id, "1");
-  assert.equal(result.pagination.total, 1);
+  assert.equal(result.meta.total, 1);
 });
 
 test("AuditController response includes the full pagination shape", async () => {
   const mockService = {
     query: async () => ({
       data: [],
-      pagination: { total: 0, skip: 0, take: 50, hasMore: false },
+      meta: { total: 0, page: 1, pageSize: 20, hasNext: false },
     }),
   } as unknown as AuditService;
 
@@ -56,11 +56,11 @@ test("AuditController response includes the full pagination shape", async () => 
   const result = await controller.getAuditLogs({});
 
   assert.ok("data" in result);
-  assert.ok("pagination" in result);
-  assert.ok("total" in result.pagination);
-  assert.ok("skip" in result.pagination);
-  assert.ok("take" in result.pagination);
-  assert.ok("hasMore" in result.pagination);
+  assert.ok("meta" in result);
+  assert.ok("total" in result.meta);
+  assert.ok("page" in result.meta);
+  assert.ok("pageSize" in result.meta);
+  assert.ok("hasNext" in result.meta);
 });
 
 test("AuditController forwards createdAfter and createdBefore to the service", async () => {
@@ -69,7 +69,7 @@ test("AuditController forwards createdAfter and createdBefore to the service", a
   const mockService = {
     query: async (q: any) => {
       capturedQuery = q;
-      return { data: [], pagination: { total: 0, skip: 0, take: 50, hasMore: false } };
+      return { data: [], meta: { total: 0, page: 1, pageSize: 20, hasNext: false } };
     },
   } as unknown as AuditService;
 

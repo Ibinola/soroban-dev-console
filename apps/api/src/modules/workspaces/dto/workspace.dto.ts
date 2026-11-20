@@ -234,8 +234,24 @@ export class ImportWorkspaceDto {
   selectedNetwork!: string;
 }
 
-/** BE-005: Pagination and filtering for workspace list */
+/** Pagination and filtering for workspace list */
 export class ListWorkspacesDto {
+  @ApiPropertyOptional({ description: "Page number (1-based). Defaults to 1." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ description: "Page size (max 100). Defaults to 20." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
+  /** Legacy offset (backward compatibility). */
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
@@ -243,11 +259,13 @@ export class ListWorkspacesDto {
   @Min(0)
   skip?: number;
 
+  /** Legacy page size (backward compatibility). */
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   take?: number;
 
   @ApiPropertyOptional()
@@ -277,13 +295,14 @@ export class ListWorkspacesDto {
   includeArchived?: boolean;
 }
 
-/** BE-005: Pagination response envelope */
+/** Paginated list response envelope */
 export interface PaginatedResponse<T> {
   data: T[];
-  pagination: {
+  meta: {
     total: number;
-    skip: number;
-    take: number;
+    page: number;
+    pageSize: number;
+    hasNext: boolean;
   };
 }
 
@@ -292,6 +311,22 @@ export class SearchWorkspacesDto {
   @IsString()
   q!: string;
 
+  @ApiPropertyOptional({ description: "Page number (1-based). Defaults to 1." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ description: "Page size (max 100). Defaults to 20." })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
+  /** Legacy offset (backward compatibility). */
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
@@ -299,11 +334,13 @@ export class SearchWorkspacesDto {
   @Min(0)
   skip?: number;
 
+  /** Legacy page size (backward compatibility). */
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   take?: number;
 
   @ApiPropertyOptional()
