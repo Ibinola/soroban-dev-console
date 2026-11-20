@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { explainSimulation } from "@devconsole/soroban-utils";
+import { explainSimulation, explainSorobanError } from "@devconsole/soroban-utils";
 
 describe("explainSimulation", () => {
   it("should handle simulation error", () => {
@@ -12,6 +12,8 @@ describe("explainSimulation", () => {
     expect(result.stateChanges).toHaveLength(0);
     expect(result.outputSummary).toContain("Error: Insufficient resources");
     expect(result.warnings).toContain("Simulation failed: Insufficient resources");
+    expect(result.errorCode).toBe("Insufficient resources");
+    expect(result.errorExplanation?.explanation).toBeTruthy();
   });
 
   it("should parse successful simulation with auth entries", () => {
@@ -126,5 +128,40 @@ describe("explainSimulation", () => {
     const result = explainSimulation(raw);
 
     expect(result.stateChanges).toHaveLength(0);
+  });
+});
+
+describe("explainSorobanError", () => {
+  it("maps standard host budget/storage/vm errors with remedies and docs", () => {
+    const cpu = explainSorobanError("HostError: Error(Budget, CpuLimitExceeded)");
+    expect(cpu.code).toContain("CpuLimitExceeded");
+    expect(cpu.title).toMatch(/CPU budget/i);
+    expect(cpu.remedies.some((r) => /cpu/i.test(r))).toBe(true);
+    expect(cpu.docsUrl).toContain("stellar.org");
+
+    const mem = explainSorobanError("HostError: Error(Budget, MemLimitExceeded)");
+    expect(mem.code).toContain("MemLimitExceeded");
+    expect(mem.remedies.length).toBeGreaterThan(0);
+
+    const storage = explainSorobanError("HostError: Error(Storage, ExceededLimit)");
+    expect(storage.code).toContain("ExceededLimit");
+    expect(storage.title).toMatch(/Storage limit/i);
+    expect(storage.remedies.some((r) => /storage|footprint|entries/i.test(r))).toBe(true);
+
+    const missing = explainSorobanError("HostError: Error(Storage, MissingValue)");
+    expect(missing.code).toContain("MissingValue");
+    expect(missing.remedies.some((r) => /restore|ttl|initialize|network|key/i.test(r))).toBe(true);
+
+    const invalid = explainSorobanError("HostError: Error(WasmVm, InvalidAction)");
+    expect(invalid.code).toContain("InvalidAction");
+    expect(invalid.explanation).toBeTruthy();
+  });
+
+  it("falls back for unknown host errors", () => {
+    const unknown = explainSorobanError("HostError: Error(Contract, #123)");
+    expect(unknown.code).toContain("Contract");
+    expect(unknown.title).toBeTruthy();
+    expect(unknown.remedies.length).toBeGreaterThan(0);
+    expect(unknown.docsUrl).toContain("http");
   });
 });

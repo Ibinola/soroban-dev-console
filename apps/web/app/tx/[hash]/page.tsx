@@ -146,6 +146,7 @@ export default function TxDetailPage() {
 
   useEffect(() => {
     if (!hash) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
     setDiagnosticLogs([]);
@@ -165,6 +166,23 @@ export default function TxDetailPage() {
           setTx(result);
         } else {
           setError("Transaction not found.");
+          return;
+        }
+        setTx(result);
+
+        if (!result.successful) {
+          let code: string | null = null;
+          if (rpcUrl) {
+            try {
+              const server = new SorobanRpc.Server(rpcUrl);
+              const rpcTx = await server.getTransaction(hash);
+              code = extractFailureCode(rpcTx);
+            } catch {
+              // ignore best-effort RPC lookup
+            }
+          }
+          if (!code) code = "Transaction failed";
+          if (!cancelled) setFailureCode(code);
         }
         if (rpcTx) {
           const events = toRawDiagnosticEvents(rpcTx);
@@ -244,6 +262,50 @@ export default function TxDetailPage() {
           </Badge>
         )}
       </div>
+
+      {!tx.successful && failureExplanation && (
+        <Card className="border-red-500/40">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              Failed Transaction Error Explainer
+            </CardTitle>
+            <CardDescription>
+              Human-readable explanation alongside the raw error code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Raw error code</p>
+              <p className="font-mono break-all rounded border bg-muted/40 p-2 text-xs">
+                {failureCode}
+              </p>
+            </div>
+            <div>
+              <p className="font-medium">{failureExplanation.title}</p>
+              <p className="text-muted-foreground mt-1">{failureExplanation.explanation}</p>
+            </div>
+            {failureExplanation.remedies.length > 0 && (
+              <div>
+                <p className="font-medium mb-1">Suggested remedies</p>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  {failureExplanation.remedies.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <a
+              href={failureExplanation.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+            >
+              Stellar documentation <ExternalLink className="h-3 w-3" />
+            </a>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Core fields */}
       <Card>
