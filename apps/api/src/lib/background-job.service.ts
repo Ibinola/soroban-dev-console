@@ -21,6 +21,7 @@ import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { AuditService } from "./audit.service.js";
 import { PrismaService } from "./prisma.service.js";
+import { normalizePagination, toPaginatedEnvelope } from "./pagination.js";
 
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "dead";
 
@@ -191,11 +192,8 @@ export class BackgroundJobService {
 
   /** INFRA-820: Inspect dead-letter queue for operator visibility. */
   async getDeadLetterJobs(limit = 50): Promise<JobRecord[]> {
-    return this.prisma.backgroundJob.findMany({
-      where: { queue: "dead_letter", status: "dead" },
-      orderBy: { deadLetterAt: "desc" },
-      take: limit,
-    }) as Promise<JobRecord[]>;
+    const result = await this.findByStatus("dead", { page: 1, pageSize: limit });
+    return result.data as JobRecord[];
   }
 
   /** INFRA-820: Returns queue depth stats for monitoring. */
@@ -241,12 +239,27 @@ export class BackgroundJobService {
     return this.prisma.backgroundJob.findUnique({ where: { id } }) as Promise<JobRecord>;
   }
 
-  async findByStatus(status: JobStatus, limit = 50): Promise<JobRecord[]> {
-    return this.prisma.backgroundJob.findMany({
-      where: { status },
-      orderBy: { scheduledAt: "asc" },
-      take: limit,
-    }) as Promise<JobRecord[]>;
+  async findByStatus(
+    status: JobStatus,
+    query: { page?: number; pageSize?: number; skip?: number; take?: number; limit?: number } = {},
+  ) {
+    const { page, pageSize, skip, take } = normalizePagination({
+      page: query.page,
+      pageSize: query.pageSize ?? query.take ?? query.limit,
+      skip: query.skip,
+      take: query.take ?? query.limit,
+    });
+    const where = { status };
+    const [data, total] = await Promise.all([
+      this.prisma.backgroundJob.findMany({
+        where,
+        orderBy: { scheduledAt: "asc" },
+        skip,
+        take,
+      }) as Promise<JobRecord[]>,
+      this.prisma.backgroundJob.count({ where }),
+    ]);
+    return toPaginatedEnvelope(data, total, page, pageSize);
   }
 
   async getStats(): Promise<Record<JobStatus, number>> {

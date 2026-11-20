@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { rpc as SorobanRpc, scValToNative, xdr } from "@stellar/stellar-sdk";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useSavedCallsStore } from "@/store/useSavedCallsStore";
 import { fetchTransactionByHash, type NormalizedTx } from "@/lib/history-utils";
 import {
-  formatRelativeTimestamp,
-  formatUtcTimestamp,
-  getLedgerExplorerUrl,
-} from "@/lib/tx-detail-format";
+  decodeDiagnosticEvents,
+  type DecodedDiagnosticLog,
+  type RawDiagnosticEvent,
+} from "@/lib/diagnostic-event-decoder";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -30,6 +31,8 @@ import {
 } from "@devconsole/ui";
 import { Badge } from "@devconsole/ui";
 import { Button } from "@devconsole/ui";
+import { Switch } from "@devconsole/ui";
+import { Label } from "@devconsole/ui";
 import { toast } from "sonner";
 
 import { DEFAULT_LOCAL_HORIZON_URL } from "@devconsole/api-contracts";
@@ -41,15 +44,103 @@ const HORIZON_URL: Record<string, string> = {
   local: DEFAULT_LOCAL_HORIZON_URL,
 };
 
+function stringifyScVal(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+  } catch {
+    return String(value);
+  }
+}
+
+function toRawDiagnosticEvents(response: unknown): RawDiagnosticEvent[] {
+  const res = response as any;
+  const parsed = res?.diagnosticEvents;
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((ev: any) => {
+        const event = ev?.event?.() ?? ev?.event ?? ev;
+        const topicsRaw = typeof event?.topics === "function" ? event.topics() : event?.topics ?? ev?.topics ?? [];
+        const dataRaw = typeof event?.data === "function" ? event.data() : event?.body?.() ?? event?.data ?? ev?.data ?? null;
+        const topics = Array.isArray(topicsRaw)
+          ? topicsRaw.map((t: any) => {
+              try {
+                return stringifyScVal(scValToNative(t));
+              } catch {
+                return stringifyScVal(t?.toString?.() ?? t);
+              }
+            })
+          : [];
+        let data: unknown = dataRaw;
+        try {
+          data = scValToNative(dataRaw);
+        } catch {
+          // keep raw
+        }
+        const inSuccessfulContractCall =
+          typeof ev?.inSuccessfulContractCall === "function"
+            ? Boolean(ev.inSuccessfulContractCall())
+            : Boolean(ev?.inSuccessfulContractCall ?? true);
+        return { topics, data, inSuccessfulContractCall } as RawDiagnosticEvent;
+      })
+      .filter(Boolean);
+  }
+
+  const xdrEvents: string[] = res?.diagnosticEventsXdr ?? [];
+  if (!Array.isArray(xdrEvents)) return [];
+  return xdrEvents.flatMap((evXdr) => {
+    try {
+      const de = (xdr as any).DiagnosticEvent.fromXDR(evXdr, "base64");
+      const inSuccessfulContractCall = Boolean(de.inSuccessfulContractCall?.());
+      const ce = de.event?.();
+      const topics = (ce?.body?.()?.v0?.()?.topics?.() ?? ce?.topics?.() ?? []).map((t: any) => {
+        try {
+          return stringifyScVal(scValToNative(t));
+        } catch {
+          return String(t);
+        }
+      });
+      let data: unknown = null;
+      try {
+        const body = ce?.body?.();
+        const v0 = body?.v0?.();
+        const datum = v0?.data?.();
+        data = datum ? scValToNative(datum) : null;
+      } catch {
+        data = null;
+      }
+      return [{ topics, data, inSuccessfulContractCall } as RawDiagnosticEvent];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function severityBadgeClass(severity: DecodedDiagnosticLog["severity"]) {
+  switch (severity) {
+    case "INFO":
+      return "border-green-500/30 bg-green-500/15 text-green-700";
+    case "WARN":
+      return "border-yellow-500/30 bg-yellow-500/15 text-yellow-700";
+    case "ERROR":
+      return "border-red-500/30 bg-red-500/15 text-red-700";
+    case "DEBUG":
+    default:
+      return "border-slate-500/30 bg-slate-500/15 text-slate-700";
+  }
+}
+
 export default function TxDetailPage() {
   const { hash } = useParams<{ hash: string }>();
   const router = useRouter();
-  const { currentNetwork } = useNetworkStore();
+  const { currentNetwork, getActiveNetworkConfig } = useNetworkStore();
   const { savedCalls, addToCart } = useSavedCallsStore();
 
   const [tx, setTx] = useState<NormalizedTx | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<DecodedDiagnosticLog[]>([]);
+  const [hideDebugLogs, setHideDebugLogs] = useState(false);
 
   const horizonUrl = HORIZON_URL[currentNetwork] ?? HORIZON_URL.testnet;
 
@@ -57,17 +148,37 @@ export default function TxDetailPage() {
     if (!hash) return;
     setLoading(true);
     setError(null);
-    fetchTransactionByHash(hash, horizonUrl)
-      .then((result) => {
+    setDiagnosticLogs([]);
+
+    const networkConfig = getActiveNetworkConfig();
+    const rpcUrl = networkConfig?.rpcUrl;
+    const server = rpcUrl ? new SorobanRpc.Server(rpcUrl) : null;
+
+    Promise.all([
+      fetchTransactionByHash(hash, horizonUrl),
+      server
+        ? server.getTransaction(hash).catch(() => null)
+        : Promise.resolve(null),
+    ])
+      .then(([result, rpcTx]) => {
         if (result) {
           setTx(result);
         } else {
           setError("Transaction not found.");
         }
+        if (rpcTx) {
+          const events = toRawDiagnosticEvents(rpcTx);
+          setDiagnosticLogs(decodeDiagnosticEvents(events));
+        }
       })
-      .catch((e) => setError(e.message ?? "Failed to load transaction."))
+      .catch((e) => setError(e?.message ?? "Failed to load transaction."))
       .finally(() => setLoading(false));
-  }, [hash, horizonUrl]);
+  }, [hash, horizonUrl, currentNetwork, getActiveNetworkConfig]);
+
+  const visibleDiagnosticLogs = useMemo(
+    () => (hideDebugLogs ? diagnosticLogs.filter((l) => l.severity !== "DEBUG") : diagnosticLogs),
+    [diagnosticLogs, hideDebugLogs],
+  );
 
   // FE-046: Find saved calls that match this tx's source account for replay
   const replayableCalls = savedCalls.filter(
@@ -189,6 +300,65 @@ export default function TxDetailPage() {
               stellar.expert <ExternalLink className="h-3 w-3" />
             </a>
           </Row>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-base">Diagnostic Events</CardTitle>
+              <CardDescription>
+                Decoded diagnostic events with severity indicators.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="hide-debug-logs"
+                checked={hideDebugLogs}
+                onCheckedChange={setHideDebugLogs}
+              />
+              <Label htmlFor="hide-debug-logs" className="text-xs">
+                Hide DEBUG
+              </Label>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {visibleDiagnosticLogs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {diagnosticLogs.length === 0
+                ? "No diagnostic events available for this transaction."
+                : "No diagnostic events match the current filter."}
+            </p>
+          ) : (
+            visibleDiagnosticLogs.map((log, idx) => (
+              <div key={idx} className="rounded-md border p-3 text-sm">
+                <div className="mb-2 flex items-center gap-2">
+                  <Badge variant="outline" className={severityBadgeClass(log.severity)}>
+                    {log.severity}
+                  </Badge>
+                  {log.isError ? (
+                    <span className="text-xs text-red-600">Contract call error</span>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-xs font-medium text-muted-foreground">Topics</span>
+                    <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
+                      {JSON.stringify(log.topics, null, 2)}
+                    </pre>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-muted-foreground">Data</span>
+                    <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
+                      {stringifyScVal(log.data)}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 

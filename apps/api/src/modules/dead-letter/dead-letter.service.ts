@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../lib/prisma.service.js";
 import { DomainEventBus } from "../../lib/domain-event-bus.js";
+import { normalizePagination, toPaginatedEnvelope } from "../../lib/pagination.js";
 
 export interface EnqueueJobDto {
   jobType: string;
@@ -41,11 +42,19 @@ export class DeadLetterService {
     return job;
   }
 
-  async list(status?: string) {
-    return this.prisma.deadLetterJob.findMany({
-      where: status ? { status } : undefined,
-      orderBy: { createdAt: "desc" },
-    });
+  async list(query: { status?: string; page?: number; pageSize?: number; skip?: number; take?: number } = {}) {
+    const { page, pageSize, skip, take } = normalizePagination(query);
+    const where = query.status ? { status: query.status } : undefined;
+    const [data, total] = await Promise.all([
+      this.prisma.deadLetterJob.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      this.prisma.deadLetterJob.count({ where }),
+    ]);
+    return toPaginatedEnvelope(data, total, page, pageSize);
   }
 
   async retry(id: string) {

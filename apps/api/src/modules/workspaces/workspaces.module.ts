@@ -6,10 +6,18 @@ import { WorkspacesController } from "./workspaces.controller.js";
 import { AnalyticsController } from "./analytics.controller.js";
 import { WorkspacesService } from "./workspaces.service.js";
 import { WorkspacesRepository } from "./workspaces.repository.js";
+import { WorkspaceIdempotencyService } from "./workspace-idempotency.service.js";
 
 @Module({
   controllers: [WorkspacesController, AnalyticsController],
-  providers: [WorkspacesService, WorkspacesRepository, PrismaService, DomainEventBus, AuditService],
+  providers: [
+    WorkspacesService,
+    WorkspacesRepository,
+    WorkspaceIdempotencyService,
+    PrismaService,
+    DomainEventBus,
+    AuditService,
+  ],
   exports: [WorkspacesService, WorkspacesRepository, DomainEventBus, AuditService],
 })
 export class WorkspacesModule {}
