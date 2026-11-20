@@ -3,11 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -25,6 +27,7 @@ import {
   WorkspaceExportDto,
 } from "./workspace.dto.js";
 import { WorkspacesService } from "./workspaces.service.js";
+import { WorkspaceIdempotencyService } from "./workspace-idempotency.service.js";
 
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 type OwnerKeyRequest = Request & { ownerKey: string };
@@ -33,7 +36,18 @@ type OwnerKeyRequest = Request & { ownerKey: string };
 @Controller("workspaces")
 @UseGuards(OwnerKeyGuard)
 export class WorkspacesController {
-  constructor(private readonly workspacesService: WorkspacesService) {}
+  constructor(
+    private readonly workspacesService: WorkspacesService,
+    private readonly idempotency: WorkspaceIdempotencyService,
+  ) {}
+
+  private getIdempotencyKey(
+    header: string | string[] | undefined,
+  ): string | undefined {
+    if (Array.isArray(header)) return header[0]?.trim() || undefined;
+    const value = header?.trim();
+    return value ? value : undefined;
+  }
 
   @ApiOperation({ summary: "List" })
   @Get()
@@ -62,36 +76,125 @@ export class WorkspacesController {
   @ApiOperation({ summary: "Create" })
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() dto: CreateWorkspaceDto, @Req() req: Request) {
-    return this.workspacesService.create((req as OwnerKeyRequest).ownerKey, dto);
+  async create(
+    @Body() dto: CreateWorkspaceDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Headers("idempotency-key") idempotencyHeader?: string | string[],
+  ) {
+    const ownerKey = (req as OwnerKeyRequest).ownerKey;
+    const idemKey = this.getIdempotencyKey(idempotencyHeader);
+    if (idemKey) {
+      const cacheKey = this.idempotency.makeKey(
+        ownerKey,
+        idemKey,
+        req.method,
+        req.originalUrl?.split("?")[0] ?? req.url,
+        dto,
+      );
+      const cached = this.idempotency.get(cacheKey);
+      if (cached) {
+        res.status(cached.status);
+        return cached.body;
+      }
+      const created = await this.workspacesService.create(ownerKey, dto);
+      this.idempotency.set(cacheKey, HttpStatus.CREATED, created);
+      return created;
+    }
+    return this.workspacesService.create(ownerKey, dto);
   }
 
   @ApiOperation({ summary: "Update" })
   @Patch(":id")
-  update(
+  async update(
     @Param("id") id: string,
     @Body() dto: UpdateWorkspaceDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Headers("idempotency-key") idempotencyHeader?: string | string[],
   ) {
-    return this.workspacesService.update(
-      id,
-      (req as OwnerKeyRequest).ownerKey,
-      dto,
-    );
+    const ownerKey = (req as OwnerKeyRequest).ownerKey;
+    const idemKey = this.getIdempotencyKey(idempotencyHeader);
+    if (idemKey) {
+      const cacheKey = this.idempotency.makeKey(
+        ownerKey,
+        idemKey,
+        req.method,
+        req.originalUrl?.split("?")[0] ?? req.url,
+        { id, dto },
+      );
+      const cached = this.idempotency.get(cacheKey);
+      if (cached) {
+        res.status(cached.status);
+        return cached.body;
+      }
+      const updated = await this.workspacesService.update(id, ownerKey, dto);
+      this.idempotency.set(cacheKey, HttpStatus.OK, updated);
+      return updated;
+    }
+    return this.workspacesService.update(id, ownerKey, dto);
+  }
+
+  @ApiOperation({ summary: "Update (PUT)" })
+  @Put(":id")
+  async updatePut(
+    @Param("id") id: string,
+    @Body() dto: UpdateWorkspaceDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Headers("idempotency-key") idempotencyHeader?: string | string[],
+  ) {
+    const ownerKey = (req as OwnerKeyRequest).ownerKey;
+    const idemKey = this.getIdempotencyKey(idempotencyHeader);
+    if (idemKey) {
+      const cacheKey = this.idempotency.makeKey(
+        ownerKey,
+        idemKey,
+        req.method,
+        req.originalUrl?.split("?")[0] ?? req.url,
+        { id, dto },
+      );
+      const cached = this.idempotency.get(cacheKey);
+      if (cached) {
+        res.status(cached.status);
+        return cached.body;
+      }
+      const updated = await this.workspacesService.update(id, ownerKey, dto);
+      this.idempotency.set(cacheKey, HttpStatus.OK, updated);
+      return updated;
+    }
+    return this.workspacesService.update(id, ownerKey, dto);
   }
 
   @ApiOperation({ summary: "Update tags" })
   @Patch(":id/tags")
-  updateTags(
+  async updateTags(
     @Param("id") id: string,
     @Body() dto: UpdateWorkspaceTagsDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Headers("idempotency-key") idempotencyHeader?: string | string[],
   ) {
-    return this.workspacesService.updateTags(
-      id,
-      (req as OwnerKeyRequest).ownerKey,
-      dto.tags,
-    );
+    const ownerKey = (req as OwnerKeyRequest).ownerKey;
+    const idemKey = this.getIdempotencyKey(idempotencyHeader);
+    if (idemKey) {
+      const cacheKey = this.idempotency.makeKey(
+        ownerKey,
+        idemKey,
+        req.method,
+        req.originalUrl?.split("?")[0] ?? req.url,
+        { id, dto },
+      );
+      const cached = this.idempotency.get(cacheKey);
+      if (cached) {
+        res.status(cached.status);
+        return cached.body;
+      }
+      const updated = await this.workspacesService.updateTags(id, ownerKey, dto.tags);
+      this.idempotency.set(cacheKey, HttpStatus.OK, updated);
+      return updated;
+    }
+    return this.workspacesService.updateTags(id, ownerKey, dto.tags);
   }
 
   @ApiOperation({ summary: "Remove" })
@@ -104,8 +207,32 @@ export class WorkspacesController {
   @ApiOperation({ summary: "Import workspace" })
   @Post("import")
   @HttpCode(HttpStatus.CREATED)
-  importWorkspace(@Body() dto: ImportWorkspaceDto, @Req() req: Request) {
-    return this.workspacesService.import((req as OwnerKeyRequest).ownerKey, dto);
+  async importWorkspace(
+    @Body() dto: ImportWorkspaceDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Headers("idempotency-key") idempotencyHeader?: string | string[],
+  ) {
+    const ownerKey = (req as OwnerKeyRequest).ownerKey;
+    const idemKey = this.getIdempotencyKey(idempotencyHeader);
+    if (idemKey) {
+      const cacheKey = this.idempotency.makeKey(
+        ownerKey,
+        idemKey,
+        req.method,
+        req.originalUrl?.split("?")[0] ?? req.url,
+        dto,
+      );
+      const cached = this.idempotency.get(cacheKey);
+      if (cached) {
+        res.status(cached.status);
+        return cached.body;
+      }
+      const imported = await this.workspacesService.import(ownerKey, dto);
+      this.idempotency.set(cacheKey, HttpStatus.CREATED, imported);
+      return imported;
+    }
+    return this.workspacesService.import(ownerKey, dto);
   }
 
   @ApiOperation({ summary: "Export" })
