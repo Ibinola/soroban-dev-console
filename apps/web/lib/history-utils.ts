@@ -9,6 +9,8 @@ export interface NormalizedTx {
   operationSummary: string;
   sourceAccount: string;
   feePaid: number;
+  ledger?: number;
+  pending?: boolean;
 }
 
 function summarizeOpType(opType: string): string {
@@ -42,15 +44,23 @@ function summarizeOpType(opType: string): string {
 
 export function normalizeTx(record: any): NormalizedTx {
   const opType = record.type ?? record.operation_type ?? "unknown";
+  const ledgerValue =
+    record.ledger ?? record.ledger_attr ?? record.ledger_sequence ?? record.ledgerSequence;
+  const ledger =
+    ledgerValue === undefined || ledgerValue === null || ledgerValue === ""
+      ? undefined
+      : Number(ledgerValue);
   return {
-    id: record.transaction_hash ?? record.id,
-    hash: record.transaction_hash ?? record.id,
+    id: record.transaction_hash ?? record.id ?? record.hash,
+    hash: record.transaction_hash ?? record.id ?? record.hash,
     successful: record.transaction_successful ?? record.successful ?? true,
-    createdAt: record.created_at,
+    createdAt: record.created_at ?? "",
     operationCount: record.operation_count ?? 1,
     operationSummary: summarizeOpType(opType),
     sourceAccount: record.source_account ?? record.from ?? "",
-    feePaid: Number(record.fee_charged ?? 0),
+    feePaid: Number(record.fee_charged ?? record.fee ?? 0),
+    ...(Number.isFinite(ledger) ? { ledger } : {}),
+    pending: Boolean(record.pending ?? record.status === "pending"),
   };
 }
 

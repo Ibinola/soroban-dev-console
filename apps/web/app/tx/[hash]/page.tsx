@@ -20,7 +20,7 @@ import {
   Copy,
   RotateCcw,
   Loader2,
-  AlertTriangle,
+  Clock,
 } from "lucide-react";
 import {
   Card,
@@ -237,8 +237,7 @@ export default function TxDetailPage() {
     );
   }
 
-  const failureExplanation: SorobanErrorExplanation | null =
-    !tx.successful && failureCode ? explainSorobanError(failureCode) : null;
+  const isPending = Boolean(tx.pending) || !tx.createdAt || !Number.isFinite(tx.ledger);
 
   return (
     <div className="container mx-auto space-y-6 p-6">
@@ -249,7 +248,11 @@ export default function TxDetailPage() {
           </Link>
         </Button>
         <h1 className="text-xl font-semibold">Transaction Detail</h1>
-        {tx.successful ? (
+        {isPending ? (
+          <Badge variant="outline" className="text-amber-700">
+            <Clock className="mr-1 h-3 w-3" /> Pending Confirmation
+          </Badge>
+        ) : tx.successful ? (
           <Badge className="bg-green-500/15 text-green-700">
             <CheckCircle2 className="mr-1 h-3 w-3" /> Success
           </Badge>
@@ -316,13 +319,38 @@ export default function TxDetailPage() {
               <Copy className="h-3 w-3" />
             </Button>
           </Row>
+          <Row label="Ledger">
+            {Number.isFinite(tx.ledger) ? (
+              <a
+                href={getLedgerExplorerUrl(currentNetwork, Number(tx.ledger))}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+              >
+                #{tx.ledger} <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <span>Pending Confirmation</span>
+            )}
+          </Row>
+          <Row label="Timestamp">
+            {tx.createdAt ? (
+              <span className="flex flex-col">
+                <span>{formatRelativeTimestamp(tx.createdAt)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatUtcTimestamp(tx.createdAt)}
+                </span>
+              </span>
+            ) : (
+              <span>Pending Confirmation</span>
+            )}
+          </Row>
           <Row label="Operation">{tx.operationSummary}</Row>
           <Row label="Operations">{tx.operationCount}</Row>
           <Row label="Source">
             <span className="font-mono">{tx.sourceAccount || "—"}</span>
           </Row>
           <Row label="Fee">{tx.feePaid} stroops</Row>
-          <Row label="Time">{new Date(tx.createdAt).toLocaleString()}</Row>
           <Row label="Network">{currentNetwork}</Row>
           <Row label="Explorer">
             <a
