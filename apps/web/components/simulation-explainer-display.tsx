@@ -5,7 +5,7 @@ import {
   type SimulationExplanation,
 } from "@devconsole/soroban-utils";
 import { Badge } from "@devconsole/ui";
-import { AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle, Info, ExternalLink, CircleX } from "lucide-react";
 import { TerminalOutputViewer } from "@/components/terminal-output-viewer";
 import { buildTerminalSections } from "@/lib/simulation-terminal";
 
@@ -35,6 +35,58 @@ export function SimulationExplainerDisplay({
     
     return { status: "contract-level", label: "Contract Authorization", color: "bg-blue-600" };
   };
+
+  if (!explanation.success && explanation.errorExplanation) {
+    const err = explanation.errorExplanation;
+    return (
+      <div
+        className="rounded-md border border-red-500/40 bg-red-500/10 p-4"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <CircleX className="h-4 w-4 text-red-700" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+            Transaction Simulation Failed
+          </p>
+        </div>
+
+        <div className="mb-3 rounded-md border bg-background/70 p-3">
+          <p className="text-[10px] text-muted-foreground mb-1">Raw error code</p>
+          <p className="font-mono text-xs break-all">{explanation.errorCode ?? err.code}</p>
+        </div>
+
+        <div className="mb-3 rounded-md border bg-background/70 p-3">
+          <p className="text-sm font-semibold">{err.title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{err.explanation}</p>
+        </div>
+
+        {err.remedies.length > 0 && (
+          <div className="mb-3 rounded-md border bg-background/70 p-3">
+            <p className="text-xs font-semibold mb-2">Suggested remedies</p>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              {err.remedies.map((remedy, i) => (
+                <li key={i}>{remedy}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <a
+          href={err.docsUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+        >
+          View Stellar documentation <ExternalLink className="h-3 w-3" />
+        </a>
+
+        <div className="mt-3">
+          <TerminalOutputViewer sections={buildTerminalSections(explanation)} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 

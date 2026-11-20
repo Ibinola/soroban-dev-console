@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { rpc as SorobanRpc } from "@stellar/stellar-sdk";
+import { explainSorobanError, type SorobanErrorExplanation } from "@devconsole/soroban-utils";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { useSavedCallsStore } from "@/store/useSavedCallsStore";
 import { fetchTransactionByHash, type NormalizedTx } from "@/lib/history-utils";
@@ -14,6 +16,7 @@ import {
   Copy,
   RotateCcw,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Card,
@@ -35,33 +38,74 @@ const HORIZON_URL: Record<string, string> = {
   local: DEFAULT_LOCAL_HORIZON_URL,
 };
 
+function extractFailureCode(response: unknown): string | null {
+  if (!response || typeof response !== "object") return null;
+  const r = response as any;
+  if (typeof r.error === "string" && r.error.trim()) return r.error;
+  if (typeof r.errorMessage === "string" && r.errorMessage.trim()) return r.errorMessage;
+  if (typeof r.resultXdr === "string" && r.resultXdr.trim()) return "Transaction failed (see result XDR)";
+  if (typeof r.status === "string" && /fail/i.test(r.status)) return r.status;
+  return null;
+}
+
 export default function TxDetailPage() {
   const { hash } = useParams<{ hash: string }>();
   const router = useRouter();
-  const { currentNetwork } = useNetworkStore();
+  const { currentNetwork, getActiveNetworkConfig } = useNetworkStore();
   const { savedCalls, addToCart } = useSavedCallsStore();
 
   const [tx, setTx] = useState<NormalizedTx | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [failureCode, setFailureCode] = useState<string | null>(null);
 
   const horizonUrl = HORIZON_URL[currentNetwork] ?? HORIZON_URL.testnet;
 
   useEffect(() => {
     if (!hash) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchTransactionByHash(hash, horizonUrl)
-      .then((result) => {
-        if (result) {
-          setTx(result);
-        } else {
+    setFailureCode(null);
+
+    const networkConfig = getActiveNetworkConfig();
+    const rpcUrl = networkConfig?.rpcUrl;
+
+    (async () => {
+      try {
+        const result = await fetchTransactionByHash(hash, horizonUrl);
+        if (cancelled) return;
+        if (!result) {
           setError("Transaction not found.");
+          return;
         }
-      })
-      .catch((e) => setError(e.message ?? "Failed to load transaction."))
-      .finally(() => setLoading(false));
-  }, [hash, horizonUrl]);
+        setTx(result);
+
+        if (!result.successful) {
+          let code: string | null = null;
+          if (rpcUrl) {
+            try {
+              const server = new SorobanRpc.Server(rpcUrl);
+              const rpcTx = await server.getTransaction(hash);
+              code = extractFailureCode(rpcTx);
+            } catch {
+              // ignore best-effort RPC lookup
+            }
+          }
+          if (!code) code = "Transaction failed";
+          if (!cancelled) setFailureCode(code);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? "Failed to load transaction.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hash, horizonUrl, currentNetwork, getActiveNetworkConfig]);
 
   // FE-046: Find saved calls that match this tx's source account for replay
   const replayableCalls = savedCalls.filter(
@@ -102,6 +146,9 @@ export default function TxDetailPage() {
     );
   }
 
+  const failureExplanation: SorobanErrorExplanation | null =
+    !tx.successful && failureCode ? explainSorobanError(failureCode) : null;
+
   return (
     <div className="container mx-auto space-y-6 p-6">
       <div className="flex items-center gap-3">
@@ -121,6 +168,50 @@ export default function TxDetailPage() {
           </Badge>
         )}
       </div>
+
+      {!tx.successful && failureExplanation && (
+        <Card className="border-red-500/40">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              Failed Transaction Error Explainer
+            </CardTitle>
+            <CardDescription>
+              Human-readable explanation alongside the raw error code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Raw error code</p>
+              <p className="font-mono break-all rounded border bg-muted/40 p-2 text-xs">
+                {failureCode}
+              </p>
+            </div>
+            <div>
+              <p className="font-medium">{failureExplanation.title}</p>
+              <p className="text-muted-foreground mt-1">{failureExplanation.explanation}</p>
+            </div>
+            {failureExplanation.remedies.length > 0 && (
+              <div>
+                <p className="font-medium mb-1">Suggested remedies</p>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  {failureExplanation.remedies.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <a
+              href={failureExplanation.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+            >
+              Stellar documentation <ExternalLink className="h-3 w-3" />
+            </a>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Core fields */}
       <Card>
